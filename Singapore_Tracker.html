@@ -228,17 +228,15 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 <!-- FLOATING SYNC BUTTON -->
 <div id="sync-fab" style="position:fixed;bottom:24px;right:16px;z-index:999;display:flex;flex-direction:column;align-items:flex-end;gap:8px">
   <!-- expanded panel -->
-  <div id="sync-panel" style="display:none;background:var(--navy);border-radius:12px;padding:14px;box-shadow:0 4px 24px rgba(0,0,0,.35);min-width:220px">
-    <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:10px;letter-spacing:.4px">📱↔💻 SYNC DATA</div>
-    <button class="btn btn-gold" style="width:100%;margin-bottom:8px;justify-content:center" onclick="saveDataFile()">💾 Save Data File</button>
-    <label class="btn btn-outline" style="width:100%;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px">
-      📂 Load Data File
-      <input type="file" accept=".json" style="display:none" onchange="loadDataFile(this)">
-    </label>
+  <div id="sync-panel" style="display:none;background:var(--navy);border-radius:12px;padding:14px;box-shadow:0 4px 24px rgba(0,0,0,.35);min-width:240px">
+    <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:10px;letter-spacing:.4px">📱↔💻 CLOUD SYNC</div>
+    <button class="btn btn-gold" style="width:100%;margin-bottom:8px;justify-content:center" onclick="cloudPush()">☁️ Push to Cloud</button>
+    <button class="btn btn-outline" style="width:100%;margin-bottom:10px;justify-content:center" onclick="cloudPull()">🔄 Pull from Cloud</button>
+    <div style="font-size:10px;color:rgba(255,255,255,.4);margin-bottom:6px">Auto-pulls every 60 s when open</div>
     <div id="sync-status" style="font-size:10px;color:rgba(255,255,255,.55);line-height:1.5"></div>
   </div>
   <!-- FAB trigger -->
-  <button onclick="toggleSyncPanel()" style="width:56px;height:56px;border-radius:50%;background:var(--gold);color:var(--navy);border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center" title="Sync data between phone & PC">💾</button>
+  <button onclick="toggleSyncPanel()" id="sync-fab-btn" style="width:56px;height:56px;border-radius:50%;background:var(--gold);color:var(--navy);border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center" title="Sync data between phone & PC">☁️</button>
 </div>
 
 <!-- ======= ITINERARY PAGE ======= -->
@@ -1230,54 +1228,75 @@ function exportXLSX(filename, sheets) {
   document.head.appendChild(sc);
 }
 
-// ─── CROSS-DEVICE SYNC (save/load JSON data file via OneDrive) ───────────────
+// ─── JSONBIN CLOUD SYNC ────────────────────────────────────────────────────────
+const JBIN_KEY = '$2a$10$5DwpaoPQIHCeHk8XXtJqTeeYsRfiwLxtrXWGpGlg1BkmVJANMaJ5u';
+const JBIN_BASE = 'https://api.jsonbin.io/v3';
 
-function saveDataFile() {
-  const payload = {
+function syncPayload() {
+  return {
     _version: 1,
     _saved: new Date().toISOString(),
-    _device: navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad') ? 'mobile' : 'desktop',
-    notes,
-    findings,
-    qChecked,
-    synthesis,
-    mediaStore
+    _device: /iPhone|iPad/.test(navigator.userAgent) ? 'mobile' : 'desktop',
+    notes, findings, qChecked, synthesis, mediaStore
   };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'SG_Tracker_Data.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  setSyncStatus('✓ Saved — move SG_Tracker_Data.json to your OneDrive Itinerary folder');
 }
 
-function loadDataFile(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const d = JSON.parse(e.target.result);
-      if (d._version !== 1) { setSyncStatus('⚠ Unrecognised file format'); return; }
-      if (d.notes)      { notes = d.notes;           save('sg26_notes', notes); }
-      if (d.findings)   { findings = d.findings;     save('sg26_findings', findings); }
-      if (d.qChecked)   { qChecked = d.qChecked;     save('sg26_q', qChecked); }
-      if (d.synthesis)  { synthesis = d.synthesis;   save('sg26_synthesis', synthesis); }
-      if (d.mediaStore) { mediaStore = d.mediaStore; save('sg26_media', mediaStore); }
-      // Re-render everything
-      renderVenues(); renderFindings(); renderQuestions(); renderSynthesis(); renderOverview();
-      const when = d._saved ? new Date(d._saved).toLocaleString() : '?';
-      const from = d._device || '?';
-      setSyncStatus(`✓ Loaded — data from ${from}, saved ${when}`);
-    } catch(err) {
-      setSyncStatus('⚠ Could not read file — make sure it\'s a SG_Tracker_Data.json');
-    }
-  };
-  reader.readAsText(file);
-  input.value = '';
+function applyPayload(d) {
+  if (d._version !== 1) { setSyncStatus('⚠ Unrecognised data format'); return; }
+  if (d.notes)      { notes = d.notes;           save('sg26_notes', notes); }
+  if (d.findings)   { findings = d.findings;     save('sg26_findings', findings); }
+  if (d.qChecked)   { qChecked = d.qChecked;     save('sg26_q', qChecked); }
+  if (d.synthesis)  { synthesis = d.synthesis;   save('sg26_synthesis', synthesis); }
+  if (d.mediaStore) { mediaStore = d.mediaStore; save('sg26_media', mediaStore); }
+  renderVenues(); renderFindings(); renderQuestions(); renderSynthesis(); renderOverview();
 }
+
+async function cloudPush() {
+  setSyncStatus('⏳ Pushing to cloud…');
+  const binId = localStorage.getItem('sg26_binId');
+  const body = JSON.stringify(syncPayload());
+  const headers = { 'Content-Type': 'application/json', 'X-Master-Key': JBIN_KEY };
+  try {
+    let res, msg;
+    if (binId) {
+      res = await fetch(`${JBIN_BASE}/b/${binId}`, { method: 'PUT', headers, body });
+      msg = '✓ Pushed — ' + new Date().toLocaleTimeString();
+    } else {
+      headers['X-Bin-Name'] = 'SG_Tracker';
+      headers['X-Bin-Private'] = 'true';
+      res = await fetch(`${JBIN_BASE}/b`, { method: 'POST', headers, body });
+      if (res.ok) {
+        const j = await res.json();
+        localStorage.setItem('sg26_binId', j.metadata.id);
+        msg = '✓ Cloud bin created! Push again from other device after opening it.';
+      }
+    }
+    if (res && res.ok) setSyncStatus(msg || '✓ Done');
+    else setSyncStatus('⚠ Push failed (' + (res ? res.status : 'no response') + ')');
+  } catch(e) {
+    setSyncStatus('⚠ Network error — check connection');
+  }
+}
+
+async function cloudPull() {
+  const binId = localStorage.getItem('sg26_binId');
+  if (!binId) { setSyncStatus('⚠ Push first from any device to create the cloud bin'); return; }
+  setSyncStatus('⏳ Pulling from cloud…');
+  try {
+    const res = await fetch(`${JBIN_BASE}/b/${binId}/latest`, {
+      headers: { 'X-Master-Key': JBIN_KEY }
+    });
+    if (!res.ok) { setSyncStatus('⚠ Pull failed (' + res.status + ')'); return; }
+    const j = await res.json();
+    applyPayload(j.record);
+    setSyncStatus('✓ Pulled — ' + new Date().toLocaleTimeString());
+  } catch(e) {
+    setSyncStatus('⚠ Network error — check connection');
+  }
+}
+
+// Auto-pull every 60 seconds while page is open
+setInterval(() => { if (localStorage.getItem('sg26_binId')) cloudPull(); }, 60000);
 
 function toggleSyncPanel() {
   const panel = document.getElementById('sync-panel');
