@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SG Immersion 2026 — Tracker</title>
+<!-- XLSX loaded dynamically on export only, so CDN failure never breaks the app -->
+<style>
+:root {
+  --navy: #1a2744;
+  --gold: #c9a84c;
+  --gold-light: #f0d890;
+  --bg: #f4f6fa;
+  --card: #ffffff;
+  --border: #dde3ee;
+  --text: #1e2535;
+  --muted: #6b7898;
+  --accent: #2e5bcc;
+  --green: #1a7a4a;
+  --red: #b94040;
+  --orange: #c07030;
+  --purple: #6040a0;
+  --tag-hotel: #dbeafe;
+  --tag-hotel-t: #1d4ed8;
+  --tag-resto: #fef3c7;
+  --tag-resto-t: #92400e;
+  --tag-bar: #ede9fe;
+  --tag-bar-t: #5b21b6;
+  --tag-cafe: #d1fae5;
+  --tag-cafe-t: #065f46;
+  --tag-meet: #fee2e2;
+  --tag-meet-t: #991b1b;
+  --tag-wellness: #e0f2fe;
+  --tag-wellness-t: #0369a1;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+/* HEADER */
+.header { background: var(--navy); color: white; padding: 14px 16px 0; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+.header-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.header-top h1 { font-size: 15px; font-weight: 700; line-height: 1.2; flex: 1; }
+.header-top .dates { font-size: 11px; color: var(--gold-light); white-space: nowrap; }
+.tabs { display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { padding: 8px 14px; font-size: 12px; font-weight: 600; color: rgba(255,255,255,.65); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; transition: color .15s, border-color .15s; }
+.tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+.tab:hover { color: white; }
+
+/* MAIN */
+.page { display: none; padding: 14px 12px; max-width: 1200px; margin: 0 auto; }
+.page.active { display: block; }
+
+/* CARDS / PANELS */
+.card { background: var(--card); border-radius: 10px; border: 1px solid var(--border); margin-bottom: 12px; overflow: hidden; }
+.card-header { padding: 10px 14px; background: var(--navy); color: white; font-size: 12px; font-weight: 700; letter-spacing: .5px; display: flex; justify-content: space-between; align-items: center; }
+.card-body { padding: 12px 14px; }
+
+/* FILTERS */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
+.filters select, .filters input { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px; background: white; color: var(--text); outline: none; }
+.filters select:focus, .filters input:focus { border-color: var(--accent); }
+.filters input { flex: 1; min-width: 120px; }
+.btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: opacity .15s; }
+.btn:hover { opacity: .85; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-gold { background: var(--gold); color: var(--navy); }
+.btn-outline { background: white; color: var(--navy); border: 1px solid var(--border); }
+.btn-sm { padding: 4px 9px; font-size: 11px; }
+
+/* ITINERARY TABLE */
+.venue-list { display: flex; flex-direction: column; gap: 10px; }
+.day-group { }
+.day-label { font-size: 11px; font-weight: 700; color: white; background: var(--navy); padding: 5px 12px; border-radius: 6px 6px 0 0; letter-spacing: .5px; }
+.part2-label { background: var(--purple); }
+.venue-card { background: var(--card); border: 1px solid var(--border); border-top: none; }
+.venue-card:last-child { border-radius: 0 0 8px 8px; }
+.venue-row { padding: 10px 12px; display: grid; grid-template-columns: 70px 1fr; gap: 8px; cursor: pointer; position: relative; }
+.venue-row:hover { background: #f8f9fd; }
+.venue-time { font-size: 11px; color: var(--muted); font-weight: 600; padding-top: 2px; }
+.venue-main { }
+.venue-name { font-weight: 700; font-size: 13px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.venue-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+.tag-hotel { background: var(--tag-hotel); color: var(--tag-hotel-t); }
+.tag-resto { background: var(--tag-resto); color: var(--tag-resto-t); }
+.tag-bar { background: var(--tag-bar); color: var(--tag-bar-t); }
+.tag-cafe { background: var(--tag-cafe); color: var(--tag-cafe-t); }
+.tag-meeting { background: var(--tag-meet); color: var(--tag-meet-t); }
+.tag-wellness { background: var(--tag-wellness); color: var(--tag-wellness-t); }
+.tag-ssp { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+.venue-summary { font-size: 11px; color: var(--muted); line-height: 1.5; }
+.venue-addr { font-size: 10px; color: var(--muted); margin-top: 3px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.status-planned { background: #94a3b8; }
+.status-confirmed { background: var(--gold); }
+.status-done { background: var(--green); }
+
+/* EXPANDED PANEL */
+.venue-detail { display: none; padding: 0 12px 12px 12px; border-top: 1px dashed var(--border); }
+.venue-detail.open { display: block; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+@media (max-width: 500px) { .detail-grid { grid-template-columns: 1fr; } }
+.detail-item label { font-size: 10px; font-weight: 700; color: var(--muted); display: block; margin-bottom: 2px; text-transform: uppercase; letter-spacing: .4px; }
+.detail-item p { font-size: 12px; line-height: 1.5; }
+.detail-full { margin-bottom: 8px; }
+.notes-section { margin-top: 8px; }
+.notes-section label { font-size: 10px; font-weight: 700; color: var(--navy); text-transform: uppercase; letter-spacing: .4px; display: block; margin-bottom: 4px; }
+.notes-section textarea { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 12px; line-height: 1.5; resize: vertical; min-height: 70px; font-family: inherit; color: var(--text); background: #f8faff; }
+.notes-section textarea:focus { outline: none; border-color: var(--accent); background: white; }
+.notes-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 500px) { .notes-row { grid-template-columns: 1fr; } }
+.rating-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.rating-row label { font-size: 10px; font-weight: 700; color: var(--navy); text-transform: uppercase; letter-spacing: .4px; }
+.stars { display: flex; gap: 4px; }
+.star { font-size: 20px; cursor: pointer; color: #d1d5db; transition: color .1s; }
+.star.filled { color: var(--gold); }
+.status-select { border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 11px; font-weight: 600; }
+.saved-badge { font-size: 10px; color: var(--green); font-weight: 600; opacity: 0; transition: opacity .3s; margin-left: 6px; }
+.saved-badge.show { opacity: 1; }
+
+/* NEARBY SPOTS */
+.spots-grid { display: grid; gap: 10px; }
+.spot-area { }
+.spot-area-header { font-size: 11px; font-weight: 700; background: #eef1f8; padding: 6px 12px; border-radius: 6px 6px 0 0; color: var(--navy); text-transform: uppercase; letter-spacing: .5px; }
+.spot-item { display: flex; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-top: none; align-items: flex-start; background: white; }
+.spot-item:last-child { border-radius: 0 0 6px 6px; }
+.spot-type-badge { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--tag-bar); color: var(--tag-bar-t); white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+.spot-info { flex: 1; }
+.spot-name { font-weight: 700; font-size: 12px; }
+.spot-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+.spot-addr { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* QUESTIONS */
+.q-group { margin-bottom: 10px; }
+.q-group-header { font-size: 11px; font-weight: 700; background: var(--navy); color: white; padding: 7px 12px; border-radius: 6px 6px 0 0; }
+.q-item { display: flex; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-top: none; background: white; align-items: flex-start; }
+.q-item:last-child { border-radius: 0 0 6px 6px; }
+.q-theme { font-size: 10px; font-weight: 700; color: var(--accent); min-width: 90px; flex-shrink: 0; padding-top: 1px; }
+.q-who { font-size: 10px; color: var(--muted); min-width: 80px; flex-shrink: 0; padding-top: 1px; font-style: italic; }
+.q-text { font-size: 12px; line-height: 1.5; flex: 1; }
+.q-check { flex-shrink: 0; width: 16px; height: 16px; margin-top: 2px; cursor: pointer; }
+
+/* KEY FINDINGS */
+.findings-grid { display: grid; gap: 12px; }
+.finding-card { background: white; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.finding-header { background: var(--navy); color: white; padding: 9px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+.finding-header h3 { font-size: 13px; font-weight: 700; }
+.finding-header-meta { display: flex; gap: 6px; align-items: center; }
+.finding-body { padding: 12px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 500px) { .finding-body { grid-template-columns: 1fr; } }
+.finding-field { }
+.finding-field label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; display: block; margin-bottom: 3px; }
+.finding-field textarea { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 7px 8px; font-size: 12px; resize: vertical; min-height: 55px; font-family: inherit; color: var(--text); background: #f8faff; }
+.finding-field textarea:focus { outline: none; border-color: var(--accent); background: white; }
+.finding-field-full { grid-column: 1 / -1; }
+.top3-list { display: flex; flex-direction: column; gap: 4px; }
+.top3-item { display: flex; gap: 6px; align-items: flex-start; }
+.top3-num { font-size: 10px; font-weight: 700; color: var(--gold); background: var(--navy); padding: 1px 5px; border-radius: 3px; flex-shrink: 0; margin-top: 3px; }
+.top3-input { flex: 1; border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-size: 12px; font-family: inherit; background: #f8faff; }
+.top3-input:focus { outline: none; border-color: var(--accent); background: white; }
+
+/* SYNTHESIS */
+.synthesis-section { margin-bottom: 14px; }
+.synthesis-section h3 { font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 8px; padding: 6px 10px; background: #eef1f8; border-radius: 6px; }
+.synth-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.synth-table th { background: var(--navy); color: white; padding: 7px 10px; text-align: left; font-size: 11px; font-weight: 600; }
+.synth-table td { border: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
+.synth-table tr:nth-child(even) td { background: #f8f9fd; }
+.synth-table textarea { width: 100%; border: none; background: transparent; resize: vertical; min-height: 40px; font-size: 12px; font-family: inherit; color: var(--text); }
+.synth-table textarea:focus { outline: none; background: #fffef0; border-radius: 3px; }
+.synth-table select { border: none; background: transparent; font-size: 12px; font-family: inherit; color: var(--text); width: 100%; }
+.synth-table input { border: none; background: transparent; font-size: 12px; font-family: inherit; color: var(--text); width: 100%; }
+.synth-table input:focus, .synth-table select:focus { outline: none; background: #fffef0; border-radius: 3px; }
+
+/* EXPORT BAR */
+.export-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+.export-bar span { font-size: 11px; color: var(--muted); flex: 1; }
+
+/* SSP OUTLET BADGES */
+.ssp-boudoir { background: #fce7f3; color: #9d174d; }
+.ssp-le17 { background: #ecfdf5; color: #065f46; }
+.ssp-mezz { background: #eff6ff; color: #1d4ed8; }
+.ssp-st25 { background: #fff7ed; color: #c2410c; }
+.ssp-club { background: #f5f3ff; color: #5b21b6; }
+.ssp-wellness { background: #e0f2fe; color: #0369a1; }
+.ssp-terrasse { background: #f0fdf4; color: #166534; }
+.ssp-lobby { background: #fef3c7; color: #92400e; }
+
+/* SCROLLBAR CUSTOM */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+/* RESPONSIVE */
+@media (max-width: 600px) {
+  .venue-row { grid-template-columns: 55px 1fr; }
+  .q-who { display: none; }
+  .filters { gap: 6px; }
+}
+
+/* OVERVIEW */
+.overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.stat-card { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; }
+.stat-num { font-size: 28px; font-weight: 800; color: var(--navy); }
+.stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.outlet-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.outlet-chip { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <h1>🇸🇬 Singapore F&B, Design & Wellness Immersion</h1>
+    <div class="dates">24 Jun – 3 Jul 2026</div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('itinerary')">📅 Itinerary</div>
+    <div class="tab" onclick="showTab('nearby')">📍 Nearby</div>
+    <div class="tab" onclick="showTab('questions')">❓ Questions</div>
+    <div class="tab" onclick="showTab('findings')">📝 Findings</div>
+    <div class="tab" onclick="showTab('synthesis')">🎯 Synthesis</div>
+    <div class="tab" onclick="showTab('overview')">📊 Overview</div>
+  </div>
+</div>
+
+<!-- ======= ITINERARY PAGE ======= -->
+<div class="page active" id="page-itinerary">
+  <div class="filters">
+    <input type="text" id="search" placeholder="Search venues…" oninput="filterVenues()">
+    <select id="filter-type" autocomplete="off" onchange="filterVenues()">
+      <option value="">All Types</option>
+      <option value="hotel">Hotel / Lobby</option>
+      <option value="restaurant">Restaurant</option>
+      <option value="bar">Bar</option>
+      <option value="cafe">Café / Retail</option>
+      <option value="wellness">Wellness / Club</option>
+      <option value="meeting">Meeting / Ops</option>
+    </select>
+    <select id="filter-ssp" autocomplete="off" onchange="filterVenues()">
+      <option value="">All SSP Outlets</option>
+      <option value="Boudoir">Boudoir Lounge</option>
+      <option value="Le 17">Le 17 Bistro</option>
+      <option value="MEZZ">MEZZ</option>
+      <option value="ST25">ST25 by KOTO</option>
+      <option value="Club Lounge">Club Lounge 18F</option>
+      <option value="Wellness">Premiere Wellness</option>
+      <option value="Terrasse">Terrasse L4</option>
+      <option value="Lobby Bar">Lobby Bar</option>
+    </select>
+    <select id="filter-part" autocomplete="off" onchange="filterVenues()">
+      <option value="">All Parts</option>
+      <option value="1">Part 1 — Self-Directed</option>
+      <option value="2">Part 2 — Pan Pacific</option>
+    </select>
+    <button class="btn btn-outline btn-sm" onclick="exportItinerary()">⬇ Export</button>
+  </div>
+  <div class="venue-list" id="venue-list"></div>
+</div>
+
+<!-- ======= NEARBY PAGE ======= -->
+<div class="page" id="page-nearby">
+  <div class="filters">
+    <input type="text" id="nearby-search" placeholder="Search spots…" oninput="filterNearby()">
+    <select id="nearby-area" onchange="filterNearby()">
+      <option value="">All Areas</option>
+      <option value="Fort Canning">Fort Canning</option>
+      <option value="Tanjong Pagar">Tanjong Pagar / Duxton</option>
+      <option value="Holland Village">Holland Village</option>
+      <option value="Dempsey">Dempsey Hill</option>
+      <option value="Orchard">Orchard Road</option>
+      <option value="City Hall">City Hall / Beach Rd</option>
+      <option value="Marina">Marina Centre</option>
+      <option value="Chinatown">Chinatown / CBD</option>
+      <option value="Kampong">Kampong Glam</option>
+    </select>
+    <select id="nearby-type" onchange="filterNearby()">
+      <option value="">All Types</option>
+      <option value="Bar">Bar / Cocktail</option>
+      <option value="Coffee">Coffee</option>
+      <option value="Dessert">Dessert</option>
+      <option value="Spot">Spot / Gallery</option>
+      <option value="Hawker">Hawker / Local</option>
+      <option value="Bakery">Bakery / Pastry</option>
+      <option value="Wine">Wine Bar</option>
+      <option value="Chocolate">Chocolate</option>
+    </select>
+  </div>
+  <div id="nearby-list"></div>
+</div>
+
+<!-- ======= QUESTIONS PAGE ======= -->
+<div class="page" id="page-questions">
+  <div class="filters">
+    <input type="text" id="q-search" placeholder="Search questions…" oninput="filterQuestions()">
+    <select id="q-group" onchange="filterQuestions()">
+      <option value="">All Themes</option>
+      <option value="Design">Design & Arrival</option>
+      <option value="F&B">F&B Concepts</option>
+      <option value="Bar">Bars & Beverage</option>
+      <option value="Buffet">Buffet & All-Day</option>
+      <option value="Club">Club Lounge</option>
+      <option value="Wellness">Wellness & Members</option>
+      <option value="Landscape">Landscape & Housekeeping</option>
+      <option value="Cross">Cross-Cutting</option>
+      <option value="Revenue">Revenue & Performance</option>
+    </select>
+    <button class="btn btn-outline btn-sm" onclick="exportQuestions()">⬇ Export</button>
+  </div>
+  <div id="q-list"></div>
+</div>
+
+<!-- ======= KEY FINDINGS PAGE ======= -->
+<div class="page" id="page-findings">
+  <div class="export-bar">
+    <span>Notes auto-saved in browser.</span>
+    <button class="btn btn-gold" onclick="exportFindings()">⬇ Export to Excel</button>
+    <button class="btn btn-outline btn-sm" onclick="clearAllFindings()">🗑 Clear All</button>
+  </div>
+  <div class="filters" style="margin-bottom:12px">
+    <select id="f-sort-part" autocomplete="off" onchange="renderFindings()">
+      <option value="">All Parts</option>
+      <option value="1">Part 1 — Self-Directed</option>
+      <option value="2">Part 2 — Pan Pacific</option>
+    </select>
+    <select id="f-sort-loc" autocomplete="off" onchange="renderFindings()">
+      <option value="date">Sort by Date (default)</option>
+      <option value="az">Sort A → Z (venue name)</option>
+      <option value="rating">Sort by Rating ★</option>
+    </select>
+  </div>
+  <div class="findings-grid" id="findings-grid"></div>
+</div>
+
+<!-- ======= SYNTHESIS PAGE ======= -->
+<div class="page" id="page-synthesis">
+  <div class="export-bar">
+    <span>Fill this in before the Ms Wee debrief on Fri 3 Jul.</span>
+    <button class="btn btn-gold" onclick="exportSynthesis()">⬇ Export to Excel</button>
+  </div>
+
+  <div class="synthesis-section">
+    <h3>1 · Top Cross-Cutting Themes</h3>
+    <table class="synth-table" id="themes-table">
+      <thead><tr><th style="width:28%">Theme</th><th style="width:32%">What I Saw (evidence)</th><th style="width:28%">Why it Matters for SSP</th><th style="width:12%">Priority</th></tr></thead>
+      <tbody id="themes-body"></tbody>
+    </table>
+  </div>
+
+  <div class="synthesis-section">
+    <h3>2 · Findings by SSP Outlet</h3>
+    <table class="synth-table" id="outlets-table">
+      <thead><tr><th style="width:22%">SSP Outlet</th><th style="width:28%">Best References Seen</th><th style="width:32%">Specific Idea to Apply</th><th style="width:18%">Owner / Next Step</th></tr></thead>
+      <tbody id="outlets-body"></tbody>
+    </table>
+  </div>
+
+  <div class="synthesis-section">
+    <h3>3 · Decisions & Follow-Up Actions</h3>
+    <table class="synth-table" id="actions-table">
+      <thead><tr><th style="width:30%">Action / Decision</th><th style="width:35%">Detail</th><th style="width:18%">Owner</th><th style="width:17%">Due</th></tr></thead>
+      <tbody id="actions-body"></tbody>
+    </table>
+  </div>
+
+  <div class="synthesis-section">
+    <h3>4 · Notes for / from Debrief with Ms Wee (Fri 3 Jul)</h3>
+    <div class="card-body" style="background:white;border:1px solid var(--border);border-radius:8px;">
+      <textarea id="debrief-notes" rows="7" style="width:100%;border:none;resize:vertical;font-size:13px;font-family:inherit;background:transparent;" placeholder="Preparation notes, questions, and outcomes from the debrief…" oninput="saveSynthesis()"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- ======= OVERVIEW PAGE ======= -->
+<div class="page" id="page-overview">
+  <div class="card">
+    <div class="card-header">Trip Purpose</div>
+    <div class="card-body" style="font-size:12px;line-height:1.7;color:var(--muted)">
+      <strong style="color:var(--text)">Part 1 (24–27 Jun)</strong> — Self-directed F&B and design immersion across Singapore's design-led hotels, destination restaurants and signature bars — benchmarking arrival, lobby/bar atmosphere, F&B concepts and beverage storytelling, each mapped to a specific Sofitel Saigon Plaza (SSP) outlet.<br><br>
+      <strong style="color:var(--text)">Part 2 (29 Jun–3 Jul)</strong> — Hosted operational learning visit across Pan Pacific Hotels Group properties: F&B operations, club-lounge service, wellness/spa and landscape & housekeeping.
+    </div>
+  </div>
+
+  <div class="overview-grid" id="stat-grid"></div>
+
+  <div class="card">
+    <div class="card-header">SSP Outlets Being Informed</div>
+    <div class="card-body">
+      <div class="outlet-chips">
+        <span class="outlet-chip ssp-boudoir">Boudoir Lounge — arrival + outdoor</span>
+        <span class="outlet-chip ssp-le17">Le 17 Bistro — independent operator + beverage</span>
+        <span class="outlet-chip ssp-mezz">MEZZ — weekend destination, seafood buffet, brunch</span>
+        <span class="outlet-chip ssp-st25">ST25 by KOTO — elevated authentic-local</span>
+        <span class="outlet-chip ssp-club">Club Lounge 18F — members' experience</span>
+        <span class="outlet-chip ssp-wellness">Premiere Wellness — spa & wellness</span>
+        <span class="outlet-chip ssp-terrasse">Terrasse L4 — outdoor programming & events</span>
+        <span class="outlet-chip ssp-lobby">Lobby Bar — signature-drink storytelling</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Travel Notes</div>
+    <div class="card-body" style="font-size:12px;color:var(--muted);line-height:1.7">
+      Travel times & fares are estimates for planning (Singapore traffic varies; Grab/taxi flag-down ~S$4.50). Status colours: <span style="color:#94a3b8">●</span> Planned &nbsp; <span style="color:var(--gold)">●</span> Confirmed &nbsp; <span style="color:var(--green)">●</span> Done. Café Q + Tofu G = Tofu G Gelato at Takashimaya (verify Café Q unit on site).
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── DATA ───────────────────────────────────────────────────────────────────
+
+const VENUES = [
+  { id:'v1', part:1, date:'Wed 24 Jun', time:'Afternoon', name:'Mett (lobby) + L\'Amo patio', address:'11 Canning Walk, S178881', mrt:'Fort Canning (DT) / Dhoby Ghaut', travel:'From Changi Airport: ≈25–35 min taxi (est. S$25–35)', type:'hotel', types:['Hotel / Café'], purpose:'Arrival sequence and the outdoor patio used as a lounge.', ssp:['Boudoir Lounge'], summary:'Fort Canning Park hilltop hotel (ex-Fort Canning Hotel, Sunset Hospitality). Canning Bar & Lounge is an all-day \'living room\' lobby; L\'Amo Bistro del Mare is coastal-Italian with an elegant white indoor room and a Riviera-style umbrella patio (5–7pm aperitivo). Celine\'s solo walk.', host:'Celine (solo walk)', link:'https://www.lamo.sg', status:'Planned' },
+  { id:'v2', part:1, date:'Wed 24 Jun', time:'Afternoon', name:'Marriott Crossroads Café', address:'320 Orchard Rd, S238865', mrt:'Orchard (NS/TE)', travel:'≈2.2 km • ~11 min Grab/taxi (est. S$5–11)', type:'cafe', types:['Café'], purpose:'Streetside café format and how it captures passing/local trade.', ssp:['Boudoir Lounge'], summary:'Open-fronted street café at Singapore Marriott Tang Plaza on a prime Orchard Rd corner — a classic people-watching / walk-in capture spot.', host:'Celine (solo walk)', link:'', status:'Planned' },
+  { id:'v3', part:1, date:'Wed 24 Jun', time:'Evening', name:'Mondrian Duxton', address:'16A Duxton Hill, S089970', mrt:'Outram Park / Maxwell / Tanjong Pagar', travel:'≈350 m / 5 min walk from Sofitel City Centre', type:'hotel', types:['Hotel / Lobby + Bar'], purpose:'Design-led lobby and F&B social atmosphere; benchmark for lobby/bar and repositioning. Also the rooftop bar.', ssp:['Lobby Bar', 'Overall repositioning'], summary:'Mondrian Singapore Duxton (Accor): deconstructed-shophouse design by Studio Carter + DP Architects, with a living restaurant/bar in place of a lobby (Christina\'s), Bottega di Carna (Italian), the hidden Jungle Ballroom cocktail bar, and the 1970s-Hollywood Canyon Club rooftop pool & bar.', host:'Team', link:'https://www.mondrianduxton.com', status:'Planned' },
+  { id:'v4', part:1, date:'Thu 25 Jun', time:'AM', name:'Cafe Q + Tofu G, Takashimaya', address:'391 Orchard Rd, Takashimaya B1-29, S238872', mrt:'Orchard (NS/TE)', travel:'Start of day from hotel', type:'cafe', types:['Retail Café'], purpose:'Retail-café aesthetic and local-ingredient gelato.', ssp:['Lounge / cake-salon concept'], summary:'Mall retail-café concepts at Takashimaya / Ngee Ann City. Tofu G Gelato (B1-29) is Korean tofu-based gelato — lower-fat, fresh-churned, fixed price per scoop; study the retail-café look and dessert presentation for a lounge/cake-salon counter. (Confirm \'Cafe Q\' unit on site.)', host:'Team', link:'', status:'Planned' },
+  { id:'v5', part:1, date:'Thu 25 Jun', time:'Lunch', name:'Chip Bee Bistro, Holland Village', address:'44 Jln Merah Saga, #01-48, S278116', mrt:'Holland Village (CC)', travel:'≈7 km • ~18 min Grab/taxi (est. S$13–18); or MRT Orchard→Holland Village', type:'restaurant', types:['Restaurant / Bar'], purpose:'Independent-operator model and in-house beverage programme.', ssp:['Le 17 Bistro'], summary:'New concept from the original PS.Cafe founders in Chip Bee Gardens. Retro-modern teak room, all-day modern-Australian / European sharing menu, and an in-house beverage programme using their own Distillius craft distillery — a strong independent-operator template.', host:'Lunch with Ed', link:'', status:'Planned' },
+  { id:'v6', part:1, date:'Thu 25 Jun', time:'Afternoon', name:'La Terrace + Claudine, Dempsey', address:'39C Harding Rd, S249541', mrt:'Napier (TE) ~1 km / taxi', travel:'≈2.6 km • ~12 min Grab/taxi (est. S$6–12)', type:'restaurant', types:['Restaurant / Events'], purpose:'F&B in heritage buildings; event & private-dining space; weekend-destination conversion. (tbc with Gwen)', ssp:['MEZZ'], summary:'Claudine is Julien Royer\'s French neo-brasserie in a restored 1930s chapel at Dempsey, with a strong weddings / corporate-events / private-dining business. La Terrace is its casual, gin-led terrace extension.', host:'Walk-through (tbc with Gwen)', link:'https://www.claudine.com.sg', status:'Planned' },
+  { id:'v7', part:1, date:'Thu 25 Jun', time:'Evening', name:'Burnt Ends (drinks with Neil)', address:'7 Dempsey Rd, #01-02, S249671', mrt:'Napier (TE) ~1 km / taxi', travel:'≈0.7 km • 8 min walk or ~6 min Grab/taxi (est. S$6–9)', type:'restaurant', types:['Restaurant / Bar / Bakery'], purpose:'Bar-as-theatre and bakery retail adjacency; informs espresso/tea theatre and cake-salon.', ssp:['Espresso/tea theatre', 'Cake-salon'], summary:'Dave Pynt\'s one-Michelin wood-fire BBQ. Counter seats face an open kitchen with a custom four-tonne oven — cooking as theatre — clustered with Burnt Ends Bakery, a bar & lounge and wine cellars.', host:'Drinks with Neil', link:'https://www.burntends.com.sg', status:'Planned' },
+  { id:'v8', part:1, date:'Thu 25 Jun', time:'Evening', name:'Violet Oon (dinner)', address:'7 Dempsey Rd, #01-05, S249671', mrt:'Napier (TE) ~1 km / taxi', travel:'Adjacent / same building — under 1 min walk', type:'restaurant', types:['Restaurant'], purpose:'Elevated authentic-local cuisine as a destination.', ssp:['ST25 by KOTO'], summary:'Singapore\'s doyenne of Peranakan cuisine. The Dempsey flagship is a heritage building with antique Nyonya tiles, chandeliers, private dining rooms and an edible herb garden — refined, celebratory local cuisine as a destination.', host:'Dinner', link:'https://www.violetoon.com', status:'Planned' },
+  { id:'v9', part:1, date:'Fri 26 Jun', time:'9am–2pm', name:'Meeting with Mr Liam', address:'—', mrt:'—', travel:'—', type:'meeting', types:['Meeting'], purpose:'Working meeting. Mrs Tan may host a walk-around. Keep the afternoon flexible.', ssp:['—'], summary:'Blocked the full window as Mrs Tan may take the group around.', host:'Mr Liam / Mrs Tan', link:'', status:'Planned' },
+  { id:'v10', part:1, date:'Fri 26 Jun', time:'Afternoon', name:'The Singapore EDITION + Artyzen', address:'EDITION: 38 Cuscaden Rd, S249731 / Artyzen: 9 Cuscaden Rd, S249719', mrt:'Orchard Boulevard (TE) / Napier', travel:'From meeting / city centre. EDITION & Artyzen directly across Cuscaden Rd (≈2 min walk apart)', type:'hotel', types:['Hotel / Lobby + Bar'], purpose:'Design-led lobby and use of volume; informs lobby/bar atmosphere.', ssp:['Lobby Bar', 'Lobby atmosphere'], summary:'The Singapore EDITION (Schrager/Marriott): dramatic circular lobby of curving white marble, gold-leaf domed ceiling and greenery-filled conservatory. F&B includes FYSH (Josh Niland), the Yves-Klein-blue Punch Room and a Lobby Bar. Across the road, Artyzen (1 Michelin Key) offers a colour-rich, residential-feeling lobby and Café Quenino.', host:'Team', link:'', status:'Planned' },
+  { id:'v11', part:1, date:'Fri 26 Jun', time:'Afternoon', name:'Madison House + Mett (Fort Canning)', address:'11 Canning Walk, S178881', mrt:'Fort Canning (DT) / Dhoby Ghaut', travel:'≈4 km • ~12 min Grab/taxi (est. S$11–16)', type:'wellness', types:['Café + Members\' Club / Wellness'], purpose:'L\'Amo outdoor patio informs Boudoir outdoor. Madison House members\' & wellness-club model informs Club Lounge 18F and Premiere Wellness, plus Terrasse programming.', ssp:['Boudoir (outdoor)', 'Club Lounge 18F', 'Premiere Wellness', 'Terrasse L4'], summary:'Private members\' club by Sunset Hospitality inside Mett (~37,000 sq ft / 4 floors): Technogym gym, boutique studios (Reformer Pilates/HIIT/TRX/Barrecore), cold plunge/sauna/steam, padel & pickleball, two pools, a botanical members\' lounge & bar, and a longevity/biohacking partnership.', host:'Team', link:'', status:'Planned' },
+  { id:'v12', part:1, date:'Fri 26 Jun', time:'Evening', name:'Raffles Hotel — Writers Bar', address:'1 Beach Rd, S189673', mrt:'City Hall (NS/EW) / Esplanade (CC)', travel:'≈1.3 km • ~7 min Grab/taxi (est. S$8–12)', type:'bar', types:['Hotel / Bar'], purpose:'Signature-drink storytelling; informs lobby-bar and cocktail narrative. Dinner tbc.', ssp:['Lobby Bar'], summary:'Writers Bar sits in Raffles\' Grand Lobby, honouring literary guests (Kipling, Conrad, Maugham) with a cocktail menu tied yearly to the Writer-in-Residence. Raffles 1915 Gin (Sipsmith collab) and the Million Dollar Cocktail by the Singapore Sling\'s creator.', host:'Team (dinner tbc)', link:'', status:'Planned' },
+  { id:'v13', part:1, date:'Sat 27 Jun', time:'Brunch', name:'Shangri-La: Lobby Lounge + The Line buffet', address:'22 Orange Grove Rd, S258350', mrt:'Orchard Boulevard (TE) / Orchard', travel:'Start of day from hotel', type:'restaurant', types:['Lounge / Buffet'], purpose:'Destination-buffet and all-day lobby-lounge format; informs MEZZ seafood buffet and city-brunch positioning.', ssp:['MEZZ'], summary:'Two references in one stop. The Lobby Lounge runs an all-day local-heritage format. The Line (Adam Tihany design) is the destination international buffet with ~16 live stations.', host:'Team', link:'', status:'Planned' },
+  { id:'v14', part:1, date:'Sat 27 Jun', time:'Afternoon', name:'Mr Bucket Chocolaterie', address:'391A Orchard Rd, Ngee Ann City #B2-41, S238873', mrt:'Orchard (NS/TE)', travel:'—', type:'cafe', types:['Chocolate shop'], purpose:'Artisan-chocolate retail and gifting; informs cake salon and boutique merchandise.', ssp:['Café'], summary:'Boutique bean-to-bar chocolate (pandan, Dubai-pistachio) — great gifts; lots of samples.', host:'Team', link:'', status:'Planned' },
+  { id:'v15', part:2, date:'Mon 29 Jun', time:'All Day', name:'Pan Pacific Singapore — F&B Concepts & Ops', address:'7 Raffles Blvd, S039595', mrt:'Promenade (CC/DT) / Esplanade', travel:'—', type:'hotel', types:['Hotel / Multi-outlet F&B'], purpose:'All-Day Dining (Edge) · Chinese (Hai Tien Lo) · Japanese (Keyaki) · Casual (Pacific Emporium) · Club Lounge Ops · Bar (PLUME)', ssp:['MEZZ', 'Le 17 Bistro', 'Club Lounge 18F', 'Lobby Bar'], summary:'Marina flagship (~S$80M revamp). Edge = international live-station buffet (L3); Hai Tien Lo = Cantonese fine-dining/dim-sum (L3); Keyaki = Japanese w/ garden + teppanyaki (L4); Pacific Emporium = casual café + cake counter (L1); plus Club Lounge ops and PLUME bar.', host:'Loo Chooi Li (Hotel Mgr); Stephen Moroney (Dir. F&B); Andy Oh (Exec Chef)', link:'', status:'Planned' },
+  { id:'v16', part:2, date:'Tue 30 Jun', time:'All Day', name:'Pan Pacific Orchard — F&B Concepts & Ops', address:'10 Claymore Rd, S229540', mrt:'Orchard Boulevard (TE) / Orchard', travel:'—', type:'hotel', types:['Hotel / F&B + Design'], purpose:'Modern Mediterranean (Mosella) · Private Dining (Chairman\'s Lounge) · Bar (Park90)', ssp:['MEZZ', 'Lobby Bar', 'Boudoir / Terrasse'], summary:'WOHA icon (Prix Versailles \'World\'s Most Beautiful Hotel\'). Four open-air terraces (Forest/Beach/Garden/Cloud). Mosella = modern-Mediterranean in a ~10m-tall longhouse-inspired volume w/ Josper grill & open kitchen; Chairman\'s Lounge = private dining; Park90 = bar.', host:'Douglas Fernandez (Hotel Mgr); Antoine Capelli (Dir. F&B)', link:'', status:'Planned' },
+  { id:'v17', part:2, date:'Wed 1 Jul', time:'All Day', name:'PARKROYAL COLLECTION Marina Bay — F&B + Wellness', address:'6 Raffles Blvd, S039594', mrt:'Promenade (CC/DT) / Esplanade', travel:'—', type:'wellness', types:['Hotel / F&B + Spa'], purpose:'All-Day Dining Halal (Peppermint) · Fine Chinese (Peach Blossoms) · St. Gregory Spa & Wellness Floor', ssp:['MEZZ', 'ST25 by KOTO', 'Premiere Wellness'], summary:'Singapore\'s first \'Garden-in-a-Hotel\'. 2,400+ plants, 13m green wall, rooftop Urban Farm. Peppermint = halal all-day buffet; Peach Blossoms = progressive Cantonese. St. Gregory spa anchors wellness.', host:'Jamie Tan (Hotel Mgr); Benjamin Ng (Dir. F&B); Carol Aw (Lifestyle Mgr)', link:'', status:'Planned' },
+  { id:'v18', part:2, date:'Thu 2 Jul', time:'All Day', name:'PARKROYAL COLLECTION Pickering — Landscape & Housekeeping', address:'3 Upper Pickering St, S058289', mrt:'Chinatown (NE/DT) / Telok Ayer', travel:'—', type:'wellness', types:['Hotel / Operations'], purpose:'Landscape & Housekeeping operations', ssp:['Premiere Wellness', 'BOH standards', 'Terrasse greenery'], summary:'WOHA\'s landmark \'hotel-in-a-garden\' — ~15,000 sq m greenery (≈2× the site), zero-energy solar sky gardens, rainwater/NEWater irrigation, Green Mark Platinum. Session = how large vertical landscape is maintained and housekeeping standards run.', host:'Dennis Johny (Dir. Operations); Bill Li (Exec Housekeeper)', link:'', status:'Planned' },
+  { id:'v19', part:2, date:'Fri 3 Jul', time:'AM', name:'PARKROYAL on Beach Road — St Gregory Spa', address:'7500 Beach Rd, S199591', mrt:'Nicoll Highway (CC) / Bugis / Lavender', travel:'—', type:'wellness', types:['Hotel / Wellness'], purpose:'St Gregory Spa & Wellness Floor', ssp:['Premiere Wellness', 'Club Lounge 18F (wellness tie-in)'], summary:'St. Gregory\'s refreshed single-level Wellness Floor (opened Nov 2025): signature spa + hydrotherapy + gym + outdoor pool on one level, pairing science-backed modalities (NuCalm, EMS, Reiki, sound baths) with heritage Chinese & Indonesian therapies.', host:'Sophia Osman (Dir. Rooms); Renee Chong (Lifestyle Mgr)', link:'', status:'Planned' },
+  { id:'v20', part:2, date:'Fri 3 Jul', time:'Late', name:'Debrief with Ms Wee Wei Ling (PPHG)', address:'PARKROYAL on Beach Road, 7500 Beach Rd', mrt:'—', travel:'—', type:'meeting', types:['Debrief'], purpose:'Consolidate takeaways across the week; align on what applies to SSP.', ssp:['All outlets (synthesis)'], summary:'Closing debrief with Ms Wee Wei Ling (Executive Director, Sustainability Partnerships, Lifestyle & Asset, PPHG). Come with the Trip Synthesis sheet completed so the conversation is structured around SSP applications.', host:'Ms Wee Wei Ling', link:'', status:'Planned' },
+];
+
+const NEARBY = [
+  { area:'Fort Canning', name:'Canning Bar & Lounge', type:'Bar', desc:'Mett\'s own all-day lounge — great espresso martinis, cosy lit garden seating at night.', addr:'11 Canning Walk, S178881' },
+  { area:'Fort Canning', name:'Fort Canning Tree Tunnel', type:'Spot', desc:'Iconic spiral-staircase \'tree tunnel\' photo spot; go early to beat crowds.', addr:'Canning Rise, S179872' },
+  { area:'Fort Canning', name:'am coffee co.', type:'Coffee', desc:'Specialty coffee/matcha in a restored 1960s chapel up Mount Sophia — quiet, light-filled hideaway.', addr:'31 Mount Sophia, S228480' },
+  { area:'Fort Canning', name:'Here Kitty Kitty', type:'Bar', desc:'Zouk-group speakeasy off Clarke Quay, themed on Shinjuku\'s Golden Gai; cosy nooks & swing chairs.', addr:'3E River Valley Rd, Clarke Quay, S179024' },
+  { area:'Tanjong Pagar', name:'Cat Bite Club', type:'Bar', desc:'Agave (tequila/mezcal) specialist on Duxton Rd, Asia\'s-50-Best regular — try the Cat Bite Margarita.', addr:'75 Duxton Rd, S089534' },
+  { area:'Tanjong Pagar', name:'Corner Corner', type:'Coffee', desc:'Vintage vinyl \'kissaten\' — coffee by day, bar vibes later; cult Mont Blanc & nama-cream roll.', addr:'16 Duxton Rd, S089482' },
+  { area:'Tanjong Pagar', name:'Overscoop', type:'Dessert', desc:'Croffles, mochi waffles & gelato — open very late; quick sweet stop.', addr:'55 Tanjong Pagar Rd, S088476' },
+  { area:'Tanjong Pagar', name:'Keong Saik Road', type:'Spot', desc:'Heritage shophouse street packed with bars, bakeries & restaurants — a stroll worth doing.', addr:'Keong Saik Rd, S089' },
+  { area:'Holland Village', name:'Le Bon Funk', type:'Wine', desc:'Natural-wine bar with inventive small plates (burrata, beef-tongue sandwich) — a few doors away.', addr:'277 Holland Ave, S278994' },
+  { area:'Holland Village', name:'Lola\'s', type:'Coffee', desc:'Hugely popular brunch & dessert café — pistachio matcha latte, lemon-meringue tart.', addr:'48 Lorong Mambong, S277699' },
+  { area:'Holland Village', name:'The Daily Scoop', type:'Dessert', desc:'Long-loved artisanal scoop shop — mochi waffles, walnut-whisky flavour.', addr:'118 Holland Ave, #02-04, S278997' },
+  { area:'Holland Village', name:'Tango\'s / Lorong Mambong', type:'Bar', desc:'Chill bar on the buzzy alfresco bar-and-eats street — good for people-watching.', addr:'35 Lorong Mambong, S277692' },
+  { area:'Dempsey', name:'Burnt Ends Bakery', type:'Bakery', desc:'Right next door — cult brioche doughnuts, cruffins, sourdough & coffee (Thu–Sun).', addr:'7 Dempsey Rd, #01-01, S249671' },
+  { area:'Dempsey', name:'Deviate Wine Bar', type:'Wine', desc:'Hidden Loewen-Rd wine bar with garden seating, open late — quiet hideaway.', addr:'71 Loewen Rd, #01-06, S248847' },
+  { area:'Dempsey', name:'Ling Ling by The Wine Company', type:'Wine', desc:'Airy, unpretentious wine spot pairing reasonable wines with local bites (CKT, satay).', addr:'Dempsey Rd, S247696' },
+  { area:'Dempsey', name:'REDSEA Gallery & ARTitude Galería', type:'Spot', desc:'Free art galleries in the Dempsey barracks — a cultured pre/post-dinner wander.', addr:'Block 9 Dempsey Rd, S247697' },
+  { area:'Orchard', name:'Tofu G Gelato', type:'Dessert', desc:'Korean tofu-based gelato (lower-fat, fresh-churn) at Takashimaya — free tastings, fixed price/scoop.', addr:'391 Orchard Rd, Takashimaya B1-29, S238872' },
+  { area:'Orchard', name:'Hvala', type:'Coffee', desc:'Serene Japanese tea house — ceremonial matcha, hojicha lattes & soufflé-style waffles.', addr:'391 Orchard Rd, Takashimaya #B2-28, S238872' },
+  { area:'Orchard', name:'Mr Bucket Chocolaterie', type:'Chocolate', desc:'Boutique bean-to-bar chocolate (pandan, Dubai-pistachio) — great gifts; lots of samples.', addr:'391A Orchard Rd, Ngee Ann City #B2-41, S238873' },
+  { area:'Orchard', name:'Atico Lounge / 1-Atico', type:'Bar', desc:'Top of ION Orchard (L55–56): skyline-view lounge for sunset drinks or high tea.', addr:'2 Orchard Turn, ION #55/56, S238801' },
+  { area:'Orchard', name:'The Backdrop', type:'Bar', desc:'Theatre-themed speakeasy at voco Orchard (QR-code entry) — near EDITION/Artyzen.', addr:'581 Orchard Rd, voco #01-15/16, S238883' },
+  { area:'Orchard', name:'The Other Room', type:'Bar', desc:'Hidden barrel-aged-cocktail speakeasy behind an unmarked door at Marriott Tang Plaza.', addr:'320 Orchard Rd, Marriott, S238865' },
+  { area:'Orchard', name:'Gumption Coffee', type:'Coffee', desc:'Indie Australian roaster at Wheelock Place — free Nespresso-pod tastings; good for beans/gifts.', addr:'501 Orchard Rd, Wheelock #02-01, S238880' },
+  { area:'Orchard', name:'Books Kinokuniya (flagship)', type:'Spot', desc:'Singapore\'s largest bookstore at Takashimaya — huge design/architecture & F&B sections.', addr:'391 Orchard Rd, Takashimaya #04-20, S238872' },
+  { area:'City Hall', name:'Long Bar (Raffles)', type:'Bar', desc:'Birthplace of the Singapore Sling — the heritage-cocktail benchmark; toss peanut shells on the floor.', addr:'1 Beach Rd, Raffles Arcade L2, S189673' },
+  { area:'City Hall', name:'YY Kafei Dian', type:'Hawker', desc:'Old-school Hainanese kopitiam — thick kaya toast, soft eggs & strong kopi, ~150 m away.', addr:'37 Beach Rd, #01-01, S189678' },
+  { area:'City Hall', name:'CHIJMES', type:'Spot', desc:'Restored Gothic convent & chapel turned dining/bar courtyard — heritage-adaptive-reuse reference.', addr:'30 Victoria St, S187996' },
+  { area:'City Hall', name:'ASK Coffee Roastery', type:'Coffee', desc:'Smell-before-you-order roastery on Seah St — single origins, pistachio cruffin; calm morning stop.', addr:'32 Seah St, S188388' },
+  { area:'Marina', name:'PLUME (Pan Pacific)', type:'Bar', desc:'Bird-themed signature cocktails with theatrical serves — also on your 29 Jun visit list.', addr:'7 Raffles Blvd, Pan Pacific L1, S039595' },
+  { area:'Marina', name:'Makansutra Gluttons Bay', type:'Hawker', desc:'Waterfront open-air hawker row — satay, CKT & sugarcane by the bay.', addr:'8 Raffles Ave, Esplanade Mall #01-15, S039802' },
+  { area:'Marina', name:'Patisserie G', type:'Bakery', desc:'Well-known patisserie at Millenia Walk — refined cakes (Poison Apple, Formosa) & coffee.', addr:'9 Raffles Blvd, Millenia Walk #01-79/80, S039596' },
+  { area:'Marina', name:'Esplanade & Bayfront promenade', type:'Spot', desc:'\'Durian\' arts centre with a free roof terrace and a waterfront walk to MBS views.', addr:'1 Esplanade Dr, S038981' },
+  { area:'Chinatown', name:'Maxwell Food Centre', type:'Hawker', desc:'Heritage hawker centre (Tian Tian chicken rice) — ~500 m; classic local-food benchmark.', addr:'1 Kadayanallur St, S069184' },
+  { area:'Chinatown', name:'Ann Siang Hill / Club Street', type:'Bar', desc:'Shophouse bar enclave — Brooklyn Bar, Madame Claude; lively, design-led nightlife.', addr:'Ann Siang Rd / Club St, S0697' },
+  { area:'Chinatown', name:'Chinatown Heritage Centre', type:'Spot', desc:'Recreated 1950s shophouse interiors telling early-immigrant stories — strong storytelling reference.', addr:'48 Pagoda St, S059207' },
+  { area:'Chinatown', name:'Hong Lim Park', type:'Spot', desc:'Green park directly facing the hotel — the landscape muse for WOHA\'s \'hotel-in-a-garden\'.', addr:'Upper Pickering St, S058' },
+  { area:'Kampong', name:'Bar Stories', type:'Bar', desc:'No-menu bespoke cocktails — describe a mood and they build it; Haji Lane institution.', addr:'55-57A Haji Ln, S189248' },
+  { area:'Kampong', name:'Black Sheep & Co', type:'Bar', desc:'Relaxed pub-style corner for happy-hour spritzes and prime Haji Lane people-watching.', addr:'26 Haji Ln, S189219' },
+  { area:'Kampong', name:'Sultan Mosque', type:'Spot', desc:'Singapore\'s grand golden-domed mosque — photogenic anchor of Kampong Glam.', addr:'3 Muscat St, S198833' },
+  { area:'Kampong', name:'Shalaby Sweets / Nirvana', type:'Dessert', desc:'Turkish baklava & kunafa (Shalaby) and fluffy soufflé pancakes & gelato (Nirvana) on Haji Lane.', addr:'54 / 37 Haji Ln' },
+  { area:'Kampong', name:'Haji Lane & Arab Street', type:'Spot', desc:'Street-art-lined shophouse lanes — vintage shops, textiles & cafés; great identity/atmosphere study.', addr:'Haji Ln / Arab St, S1892' },
+];
+
+const QUESTIONS = [
+  { group:'Design', theme:'Arrival & lobby', who:'GM / Designer', q:'What feeling do you want a guest to have in the first 30 seconds, and which design move delivers it?' },
+  { group:'Design', theme:'Lobby as social space', who:'GM / F&B', q:'How did replacing a traditional lobby with a living bar/restaurant change dwell time, spend and local capture?' },
+  { group:'Design', theme:'Identity', who:'GM / Marketing', q:'How much of your local (non-staying) trade comes from the F&B identity vs the hotel brand? How do you measure it?' },
+  { group:'Design', theme:'Use of volume', who:'Designer', q:'Which material, lighting or volume decisions give the biggest \'wow\' per dollar, and which were over-spec?' },
+  { group:'Design', theme:'Outdoor / patio', who:'F&B / Ops', q:'How do you make an outdoor patio work commercially in Singapore\'s heat and rain — shading, cooling, all-day use?' },
+  { group:'Design', theme:'Biophilic upkeep', who:'Eng / Landscape', q:'What\'s the real operating cost and effort behind the greenery, and what would you simplify if rebuilding?' },
+  { group:'F&B', theme:'Concept', who:'Chef / Owner', q:'What is the single idea the concept must protect, and where do you allow flexibility?' },
+  { group:'F&B', theme:'Open kitchen / theatre', who:'Exec Chef', q:'How does the open kitchen change kitchen design, staffing, noise and food cost vs a closed line?' },
+  { group:'F&B', theme:'Independent operator', who:'Owner', q:'What does the owner/operator (lease) model look like, and what makes an outsourced outlet succeed in a hotel?' },
+  { group:'F&B', theme:'Local capture', who:'F&B Director', q:'What share of covers are repeat locals, and what brings them back — menu, value, atmosphere or events?' },
+  { group:'F&B', theme:'Heritage / authenticity', who:'Chef / Owner', q:'How do you keep authentic local cuisine \'elevated\' without losing what makes it feel genuine?' },
+  { group:'F&B', theme:'Menu economics', who:'F&B Director', q:'What are your target food-cost %, average check and seat-turn, and how do signature dishes drive them?' },
+  { group:'Bar', theme:'Signature drink', who:'Head Bartender', q:'How was the signature/heritage drink built, and how do you train every bartender to tell its story consistently?' },
+  { group:'Bar', theme:'Narrative', who:'F&B / Marketing', q:'How do you turn a story (heritage, farm-to-bar, a place) into a menu guests actually order from?' },
+  { group:'Bar', theme:'Beverage programme', who:'Bar Manager', q:'What\'s the split of revenue across cocktails / wine / spirits, and which format drives the best margin?' },
+  { group:'Bar', theme:'Farm-to-bar', who:'Bar Manager', q:'How does sourcing botanicals in-house affect cost, consistency and the guest story?' },
+  { group:'Buffet', theme:'Destination buffet', who:'F&B Director', q:'What makes a buffet a destination vs a commodity — live stations, theatre, sourcing or pricing?' },
+  { group:'Buffet', theme:'All-day flex', who:'Ops', q:'How does one space flex from breakfast to afternoon tea to dinner without feeling tired?' },
+  { group:'Buffet', theme:'Seafood / premium', who:'Exec Chef', q:'How do you control cost and waste on a premium seafood buffet while keeping perceived value high?' },
+  { group:'Buffet', theme:'Halal certification', who:'F&B Director', q:'What did halal certification require operationally, and how did it change your addressable market?' },
+  { group:'Buffet', theme:'Local heritage', who:'Chef', q:'How do you present hawker/local dishes in a hotel setting so they feel premium but still authentic?' },
+  { group:'Club', theme:'Club lounge', who:'Club Lounge Mgr', q:'What drives club-floor uptake and upsell, and what\'s the staffing model across the day?' },
+  { group:'Club', theme:'Food & beverage cycle', who:'Ops', q:'How do you program the lounge\'s day (breakfast, all-day, evening canapés/drinks) to control cost?' },
+  { group:'Club', theme:'Guest mix', who:'GM', q:'What member/loyalty tiers use the lounge, and how do you balance exclusivity with volume?' },
+  { group:'Wellness', theme:'Members\' model', who:'Club Director', q:'How is membership structured and priced, and what proportion of revenue is membership vs walk-in/hotel guest?' },
+  { group:'Wellness', theme:'Wellness mix', who:'Spa / Wellness Dir', q:'How do you blend traditional therapies (TCM, Balinese) with science-led modalities (cryo, EMS, NuCalm) in one floor?' },
+  { group:'Wellness', theme:'Programming', who:'Lifestyle Mgr', q:'What recurring programming (classes, supper clubs, events) keeps members engaged, and what\'s the calendar rhythm?' },
+  { group:'Wellness', theme:'Wellness commercials', who:'Spa Director', q:'What are the key revenue drivers and utilisation targets for a wellness floor, and the main cost lines?' },
+  { group:'Wellness', theme:'Integration', who:'GM', q:'How does the wellness/club offer feed room rate, length of stay and the hotel\'s overall positioning?' },
+  { group:'Landscape', theme:'Landscape upkeep', who:'Landscape / Eng', q:'Headcount, frequency and tooling to maintain large vertical/sky-garden greenery, and the irrigation approach?' },
+  { group:'Landscape', theme:'Sustainability ops', who:'Eng / Ops', q:'Which green features pay back operationally (energy, water) and which are mainly for image?' },
+  { group:'Landscape', theme:'Housekeeping standards', who:'Exec Housekeeper', q:'Your room-per-attendant productivity targets, inspection process and linen/amenity standards?' },
+  { group:'Landscape', theme:'BOH integration', who:'Ops Director', q:'How do landscape, housekeeping and engineering coordinate so greenery and cleanliness never slip?' },
+  { group:'Cross', theme:'Renovation lessons', who:'GM / Owner rep', q:'If you reopened/renovated again, what are the three things you\'d do differently?' },
+  { group:'Cross', theme:'Pre-opening', who:'GM', q:'How long was the pre-opening ramp, and what were the biggest staffing/training challenges?' },
+  { group:'Cross', theme:'For SSP', who:'Any host', q:'Given what you know of Sofitel Saigon Plaza\'s positioning, what one idea here would you steal first?' },
+  { group:'Revenue', theme:'Revenue by outlet', who:'F&B Director / GM', q:'How do you set, track and review revenue targets for each F&B outlet — what\'s the KPI cadence (daily, weekly, monthly) and who owns the outlet P&L?' },
+  { group:'Revenue', theme:'RevPASH & covers', who:'F&B Director', q:'What Revenue per Available Seat Hour (RevPASH) or equivalent metric do you use to manage dining-room productivity, and how do you act when it underperforms?' },
+  { group:'Revenue', theme:'Mix & yield management', who:'F&B Director / Revenue Mgr', q:'How do you manage the revenue mix across dining, bar, events and in-room — and do you apply hotel-style yield or demand-based pricing to F&B?' },
+  { group:'Revenue', theme:'Cost control levers', who:'Exec Chef / F&B Director', q:'What are your three biggest controllable cost lines in F&B, and what systems or rituals do you use to keep them within target (e.g. daily flash, food-cost tracking, portion controls)?' },
+];
+
+const SSP_OUTLETS = ['Boudoir Lounge','Le 17 Bistro','MEZZ','ST25 by KOTO','Club Lounge 18F','Premiere Wellness','Terrasse (Level 4)','Lobby Bar'];
+
+// ─── STORAGE ─────────────────────────────────────────────────────────────────
+function load(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch(e) { return null; } }
+function save(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
+
+let notes = load('sg26_notes') || {};
+let findings = load('sg26_findings') || {};
+let qChecked = load('sg26_q') || {};
+let synthesis = load('sg26_synthesis') || {};
+
+function saveNotes() { save('sg26_notes', notes); }
+function saveFindings() { save('sg26_findings', findings); }
+function saveQ() { save('sg26_q', qChecked); }
+function saveSynthesis() {
+  synthesis.themes = [];
+  document.querySelectorAll('#themes-body tr').forEach((tr,i) => {
+    synthesis.themes = synthesis.themes || [];
+    synthesis.themes[i] = { theme: tr.cells[0].querySelector('textarea').value, evidence: tr.cells[1].querySelector('textarea').value, why: tr.cells[2].querySelector('textarea').value, priority: tr.cells[3].querySelector('select').value };
+  });
+  synthesis.outlets = [];
+  document.querySelectorAll('#outlets-body tr').forEach((tr,i) => {
+    synthesis.outlets[i] = { refs: tr.cells[1].querySelector('textarea').value, idea: tr.cells[2].querySelector('textarea').value, owner: tr.cells[3].querySelector('textarea').value };
+  });
+  synthesis.actions = [];
+  document.querySelectorAll('#actions-body tr').forEach((tr,i) => {
+    synthesis.actions[i] = { action: tr.cells[0].querySelector('textarea').value, detail: tr.cells[1].querySelector('textarea').value, owner: tr.cells[2].querySelector('input').value, due: tr.cells[3].querySelector('input').value };
+  });
+  synthesis.debrief = document.getElementById('debrief-notes').value;
+  save('sg26_synthesis', synthesis);
+}
+
+// ─── TAB ─────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('page-' + name).classList.add('active');
+}
+
+// ─── TYPE TAG ────────────────────────────────────────────────────────────────
+function typeTag(type) {
+  const map = { hotel:'tag-hotel', restaurant:'tag-resto', bar:'tag-bar', cafe:'tag-cafe', wellness:'tag-wellness', meeting:'tag-meeting' };
+  const labels = { hotel:'Hotel', restaurant:'Restaurant', bar:'Bar', cafe:'Café', wellness:'Wellness/Club', meeting:'Meeting' };
+  return `<span class="tag ${map[type]||'tag-cafe'}">${labels[type]||type}</span>`;
+}
+
+function sspTag(ssp) {
+  const s = ssp.join(', ');
+  if (!s || s === '—') return '';
+  return `<span class="tag tag-ssp">${s}</span>`;
+}
+
+function statusDot(status) {
+  const cls = status === 'Done' ? 'status-done' : status === 'Confirmed' ? 'status-confirmed' : 'status-planned';
+  return `<span class="status-dot ${cls}" title="${status}"></span>`;
+}
+
+// ─── ITINERARY ────────────────────────────────────────────────────────────────
+function renderVenues() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const ftype = document.getElementById('filter-type').value;
+  const fssp = document.getElementById('filter-ssp').value;
+  const fpart = document.getElementById('filter-part').value;
+
+  let filtered = VENUES.filter(v => {
+    if (search && !v.name.toLowerCase().includes(search) && !v.summary.toLowerCase().includes(search) && !v.address.toLowerCase().includes(search)) return false;
+    if (ftype && v.type !== ftype) return false;
+    if (fssp && !v.ssp.some(s => s.includes(fssp))) return false;
+    if (fpart && v.part != fpart) return false;
+    return true;
+  });
+
+  const groups = {};
+  filtered.forEach(v => { if (!groups[v.date]) groups[v.date] = []; groups[v.date].push(v); });
+
+  const container = document.getElementById('venue-list');
+  const part2dates = ['Mon 29 Jun','Tue 30 Jun','Wed 1 Jul','Thu 2 Jul','Fri 3 Jul'];
+
+  container.innerHTML = Object.keys(groups).map(date => {
+    const isPart2 = part2dates.includes(date);
+    const cards = groups[date].map(v => {
+      const n = notes[v.id] || {};
+      const f = findings[v.id] || {};
+      const rating = f.rating || 0;
+      const stars = [1,2,3,4,5].map(i => `<span class="star ${i<=rating?'filled':''}" onclick="setRating('${v.id}',${i})" title="${i}/5">★</span>`).join('');
+      return `
+      <div class="venue-card" id="card-${v.id}">
+        <div class="venue-row" onclick="toggleDetail('${v.id}')">
+          <div class="venue-time">${v.time}</div>
+          <div class="venue-main">
+            <div class="venue-name">${statusDot(n.status||v.status)} ${v.name} ${v.link ? `<a href="${v.link}" target="_blank" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none" title="Website">↗</a>` : ''}</div>
+            <div class="venue-meta">${typeTag(v.type)} ${sspTag(v.ssp)}</div>
+            <div class="venue-summary">${v.purpose}</div>
+            <div class="venue-addr">📍 ${v.address}${v.mrt ? ' · 🚇 ' + v.mrt : ''}</div>
+          </div>
+        </div>
+        <div class="venue-detail" id="detail-${v.id}">
+          <div class="detail-grid" style="margin-top:10px">
+            <div class="detail-item">
+              <label>Host / Contact</label><p>${v.host}</p>
+            </div>
+            <div class="detail-item">
+              <label>Travel</label><p>${v.travel||'—'}</p>
+            </div>
+          </div>
+          <div class="detail-full">
+            <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Venue Summary</label>
+            <p style="font-size:12px;line-height:1.6;margin-top:4px;color:var(--text)">${v.summary}</p>
+          </div>
+          <div class="notes-section">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+              <label style="margin:0">Status</label>
+              <select class="status-select" onchange="updateStatus('${v.id}',this.value)">
+                <option ${(n.status||v.status)==='Planned'?'selected':''}>Planned</option>
+                <option ${(n.status||v.status)==='Confirmed'?'selected':''}>Confirmed</option>
+                <option ${(n.status||v.status)==='Done'?'selected':''}>Done</option>
+              </select>
+              <div class="rating-row" style="margin:0">
+                <label>Rating</label>
+                <div class="stars">${stars}</div>
+              </div>
+              <span class="saved-badge" id="badge-${v.id}">✓ Saved</span>
+            </div>
+            <div class="notes-row">
+              <div>
+                <label>Biggest Takeaway / Lesson Learned</label>
+                <textarea placeholder="Key insight from this visit…" oninput="updateNote('${v.id}','takeaway',this.value)">${n.takeaway||''}</textarea>
+              </div>
+              <div>
+                <label>Idea to Steal for SSP</label>
+                <textarea placeholder="Specific idea to apply…" oninput="updateNote('${v.id}','idea',this.value)">${n.idea||''}</textarea>
+              </div>
+            </div>
+            <div style="margin-top:8px">
+              <label>General Notes</label>
+              <textarea rows="3" placeholder="Photos, contacts, observations, follow-ups…" oninput="updateNote('${v.id}','general',this.value)">${n.general||''}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="day-group">
+      <div class="day-label ${isPart2?'part2-label':''}">${isPart2?'Part 2 · ':'Part 1 · '}${date}</div>
+      ${cards}
+    </div>`;
+  }).join('');
+}
+
+function filterVenues() { renderVenues(); }
+
+function toggleDetail(id) {
+  const el = document.getElementById('detail-'+id);
+  el.classList.toggle('open');
+}
+
+function updateNote(id, field, value) {
+  if (!notes[id]) notes[id] = {};
+  notes[id][field] = value;
+  saveNotes();
+  flashBadge(id);
+}
+
+function updateStatus(id, value) {
+  if (!notes[id]) notes[id] = {};
+  notes[id].status = value;
+  saveNotes();
+  flashBadge(id);
+  // update dot without re-render
+  const dot = document.querySelector(`#card-${id} .status-dot`);
+  if (dot) { dot.className = 'status-dot status-' + value.toLowerCase(); dot.title = value; }
+}
+
+function setRating(id, val) {
+  if (!findings[id]) findings[id] = {};
+  findings[id].rating = val;
+  saveFindings();
+  flashBadge(id);
+  // update stars
+  const stars = document.querySelectorAll(`#detail-${id} .star`);
+  stars.forEach((s, i) => s.classList.toggle('filled', i < val));
+}
+
+let badgeTimers = {};
+function flashBadge(id) {
+  const b = document.getElementById('badge-' + id);
+  if (!b) return;
+  b.classList.add('show');
+  clearTimeout(badgeTimers[id]);
+  badgeTimers[id] = setTimeout(() => b.classList.remove('show'), 1800);
+}
+
+// ─── NEARBY ──────────────────────────────────────────────────────────────────
+function renderNearby() {
+  const search = document.getElementById('nearby-search').value.toLowerCase();
+  const area = document.getElementById('nearby-area').value;
+  const type = document.getElementById('nearby-type').value;
+
+  const areas = {};
+  NEARBY.filter(s => {
+    if (search && !s.name.toLowerCase().includes(search) && !s.desc.toLowerCase().includes(search)) return false;
+    if (area && !s.area.includes(area.split(' ')[0])) return false;
+    if (type && !s.type.toLowerCase().includes(type.toLowerCase())) return false;
+    return true;
+  }).forEach(s => { if (!areas[s.area]) areas[s.area] = []; areas[s.area].push(s); });
+
+  const areaLabels = { 'Fort Canning':'Fort Canning · near Mett / L\'Amo / Madison House', 'Tanjong Pagar':'Tanjong Pagar / Duxton · near Sofitel / Mondrian', 'Holland Village':'Holland Village · near Chip Bee Bistro', 'Dempsey':'Dempsey Hill · near Claudine / Burnt Ends / Violet Oon', 'Orchard':'Orchard Road · near Marriott / Ngee Ann / EDITION / Artyzen', 'City Hall':'City Hall / Beach Rd · near Raffles Hotel', 'Marina':'Marina Centre · near Pan Pacific Singapore / PRC Marina Bay', 'Chinatown':'Chinatown / CBD · near PRC Pickering', 'Kampong':'Kampong Glam / Beach Rd · near PARKROYAL Beach Road' };
+  const typeCls = { 'Bar':'tag-bar', 'Coffee':'tag-cafe', 'Dessert':'tag-cafe', 'Spot':'tag-hotel', 'Hawker':'tag-resto', 'Bakery':'tag-resto', 'Wine':'tag-bar', 'Chocolate':'tag-cafe' };
+
+  document.getElementById('nearby-list').innerHTML = Object.keys(areas).map(a => `
+    <div class="spot-area" style="margin-bottom:10px">
+      <div class="spot-area-header">${areaLabels[a]||a}</div>
+      ${areas[a].map(s => `
+      <div class="spot-item">
+        <span class="spot-type-badge" style="background:${getTypeColor(s.type).bg};color:${getTypeColor(s.type).t}">${s.type}</span>
+        <div class="spot-info">
+          <div class="spot-name">${s.name}</div>
+          <div class="spot-desc">${s.desc}</div>
+          <div class="spot-addr">📍 ${s.addr}</div>
+        </div>
+      </div>`).join('')}
+    </div>`).join('');
+}
+
+function getTypeColor(type) {
+  const m = { 'Bar':{bg:'#ede9fe',t:'#5b21b6'}, 'Wine':{bg:'#ede9fe',t:'#5b21b6'}, 'Coffee':{bg:'#d1fae5',t:'#065f46'}, 'Dessert':{bg:'#fce7f3',t:'#9d174d'}, 'Spot':{bg:'#dbeafe',t:'#1d4ed8'}, 'Hawker':{bg:'#fef3c7',t:'#92400e'}, 'Bakery':{bg:'#fff7ed',t:'#c2410c'}, 'Chocolate':{bg:'#fef3c7',t:'#92400e'} };
+  return m[type] || {bg:'#f1f5f9',t:'#475569'};
+}
+
+function filterNearby() { renderNearby(); }
+
+// ─── QUESTIONS ────────────────────────────────────────────────────────────────
+function renderQuestions() {
+  const search = document.getElementById('q-search').value.toLowerCase();
+  const grp = document.getElementById('q-group').value;
+
+  const groups = {};
+  QUESTIONS.filter(q => {
+    if (search && !q.q.toLowerCase().includes(search) && !q.theme.toLowerCase().includes(search)) return false;
+    if (grp && q.group !== grp) return false;
+    return true;
+  }).forEach(q => { if (!groups[q.group]) groups[q.group] = []; groups[q.group].push(q); });
+
+  const groupLabels = { 'Design':'Design, Arrival & Atmosphere', 'F&B':'F&B Concepts & Destination Dining', 'Bar':'Bars & Beverage Storytelling', 'Buffet':'Buffet & All-Day Dining', 'Club':'Club Lounge Operations', 'Wellness':'Wellness & Members\' Club', 'Landscape':'Landscape & Housekeeping', 'Cross':'Cross-Cutting (any host)', 'Revenue':'Revenue & Performance Control' };
+
+  document.getElementById('q-list').innerHTML = Object.keys(groups).map(g => `
+    <div class="q-group" id="qg-${g}">
+      <div class="q-group-header">${groupLabels[g]||g}</div>
+      ${groups[g].map((q,i) => {
+        const key = g+'_'+i;
+        const checked = qChecked[key];
+        return `<div class="q-item" style="${checked?'opacity:.5;text-decoration:line-through':''}" id="qi-${key}">
+          <input type="checkbox" class="q-check" ${checked?'checked':''} onchange="toggleQ('${key}',this.checked)">
+          <span class="q-theme">${q.theme}</span>
+          <span class="q-who">${q.who}</span>
+          <span class="q-text">${q.q}</span>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+function filterQuestions() { renderQuestions(); }
+
+function toggleQ(key, val) {
+  qChecked[key] = val;
+  saveQ();
+  const el = document.getElementById('qi-'+key);
+  if (el) { el.style.opacity = val ? '.5' : '1'; el.style.textDecoration = val ? 'line-through' : ''; }
+}
+
+// ─── KEY FINDINGS ─────────────────────────────────────────────────────────────
+function renderFindings() {
+  const grid = document.getElementById('findings-grid');
+  const filterPart = (document.getElementById('f-sort-part')||{}).value || '';
+  const sortMode  = (document.getElementById('f-sort-loc')||{}).value || 'date';
+
+  let venues = VENUES.filter(v => v.type !== 'meeting');
+  if (filterPart) venues = venues.filter(v => String(v.part) === filterPart);
+
+  if (sortMode === 'az') {
+    venues = [...venues].sort((a,b) => a.name.localeCompare(b.name));
+  } else if (sortMode === 'rating') {
+    venues = [...venues].sort((a,b) => ((findings[b.id]||{}).rating||0) - ((findings[a.id]||{}).rating||0));
+  }
+  // default: keep original date order
+
+  function mediaHtml(id) {
+    const imgs = (mediaStore[id] || []);
+    const thumbs = imgs.map((src,i) =>
+      `<div style="position:relative;display:inline-block">
+        <img src="${src}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="viewMedia('${id}',${i})" title="Tap to view">
+        <span onclick="removeMedia('${id}',${i})" style="position:absolute;top:-5px;right:-5px;background:#e53e3e;color:white;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">×</span>
+      </div>`
+    ).join('');
+    return `<div class="finding-field finding-field-full" id="media-wrap-${id}">
+      <label>📷 Photos & Files</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px" id="thumbs-${id}">${thumbs}</div>
+      <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">
+        ＋ Add Photo / File
+        <input type="file" accept="image/*,*/*" multiple style="display:none" onchange="handleMedia('${id}',this)">
+      </label>
+      <span style="font-size:10px;color:var(--muted);margin-left:6px">Images stored in browser; notes below for links/contacts</span>
+    </div>`;
+  }
+
+  function cardHtml(v) {
+    const f = findings[v.id] || {};
+    const rating = f.rating || 0;
+    const stars = [1,2,3,4,5].map(i => `<span class="star ${i<=rating?'filled':''}" onclick="setRatingF('${v.id}',${i})">★</span>`).join('');
+    const partBadge = `<span style="font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700;background:${v.part===1?'rgba(255,255,255,.15)':'rgba(180,120,255,.3)'}">Part ${v.part}</span>`;
+    return `<div class="finding-card" id="fc-${v.id}">
+      <div class="finding-header">
+        <h3>${v.name} ${partBadge}<span style="font-size:10px;font-weight:400;color:rgba(255,255,255,.65);margin-left:4px">${v.date}</span></h3>
+        <div class="finding-header-meta">
+          <div class="stars">${stars}</div>
+          <span class="saved-badge" id="fbadge-${v.id}">✓</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        ${field(v.id,'space','Space & Design','Layout, materials, lighting, volume, the "wow"')}
+        ${field(v.id,'arrival','Arrival & Flow','Arrival sequence; how guests move and dwell')}
+        ${field(v.id,'concept','F&B Concept & Menu','Core idea; signature dishes; positioning')}
+        ${field(v.id,'service','Service & Staffing','Service style, staffing model, notable')}
+        ${field(v.id,'beverage','Beverage & Storytelling','Signature drinks; how the story is told & sold')}
+        ${field(v.id,'wellness','Wellness (if any)','Modalities, facilities, membership/programming')}
+        ${field(v.id,'commercial','Commercial Model & Pricing','Operator model, price points, the customer')}
+        <div class="finding-field">
+          <label>SSP Outlet it Informs</label>
+          <p style="font-size:11px;color:var(--accent);line-height:1.6">${v.ssp.join(', ')}</p>
+        </div>
+        <div class="finding-field finding-field-full">
+          <label>Top 3 Ideas to Action</label>
+          <div class="top3-list">
+            ${[1,2,3].map(i => `<div class="top3-item"><span class="top3-num">${i}</span><input class="top3-input" type="text" placeholder="Idea ${i}…" value="${(f['top'+i])||''}" oninput="updateFinding('${v.id}','top${i}',this.value)"></div>`).join('')}
+          </div>
+        </div>
+        ${mediaHtml(v.id)}
+        <div class="finding-field">
+          <label>Notes — Links, Contacts, References</label>
+          <textarea rows="2" placeholder="Photo numbers, links, contacts…" oninput="updateFinding('${v.id}','photos',this.value)">${f.photos||''}</textarea>
+        </div>
+        <div class="finding-field">
+          <label>Follow-up & Owner</label>
+          <textarea rows="2" placeholder="Next step + who owns it…" oninput="updateFinding('${v.id}','followup',this.value)">${f.followup||''}</textarea>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function field(id, key, label, placeholder) {
+    const f = findings[id] || {};
+    return `<div class="finding-field"><label>${label}</label><textarea rows="2" placeholder="${placeholder}…" oninput="updateFinding('${id}','${key}',this.value)">${f[key]||''}</textarea></div>`;
+  }
+
+  if (!filterPart) {
+    const p1 = venues.filter(v=>v.part===1), p2 = venues.filter(v=>v.part===2);
+    grid.innerHTML = `
+      <div style="background:var(--navy);color:white;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700;letter-spacing:.5px">PART 1 — Self-Directed Immersion (24–27 Jun)</div>
+      ${p1.map(cardHtml).join('')}
+      <div style="background:var(--purple);color:white;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700;letter-spacing:.5px;margin-top:4px">PART 2 — Pan Pacific Hotels Group Learning Visit (29 Jun–3 Jul)</div>
+      ${p2.map(cardHtml).join('')}`;
+  } else {
+    grid.innerHTML = venues.map(cardHtml).join('');
+  }
+}
+
+// ─── MEDIA (photos/files stored as base64 in localStorage) ───────────────────
+let mediaStore = load('sg26_media') || {};
+
+function saveMedia() { save('sg26_media', mediaStore); }
+
+function handleMedia(id, input) {
+  const files = Array.from(input.files);
+  if (!files.length) return;
+  if (!mediaStore[id]) mediaStore[id] = [];
+  let pending = files.length;
+  files.forEach(file => {
+    if (file.type.startsWith('image/')) {
+      // Resize to max 900px before storing to keep localStorage light
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = new Image();
+        img.onload = () => {
+          const max = 900, scale = Math.min(1, max/Math.max(img.width,img.height));
+          const cv = document.createElement('canvas');
+          cv.width = img.width*scale; cv.height = img.height*scale;
+          cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+          const dataUrl = cv.toDataURL('image/jpeg', 0.82);
+          mediaStore[id].push(dataUrl);
+          if (--pending === 0) { saveMedia(); refreshThumbs(id); }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // Non-image: store filename as a text marker
+      mediaStore[id].push('__file__:' + file.name);
+      if (--pending === 0) { saveMedia(); refreshThumbs(id); }
+    }
+  });
+  input.value = '';
+}
+
+function refreshThumbs(id) {
+  const wrap = document.getElementById('thumbs-' + id);
+  if (!wrap) return;
+  const imgs = mediaStore[id] || [];
+  wrap.innerHTML = imgs.map((src,i) => {
+    if (src.startsWith('__file__:')) {
+      const name = src.slice(9);
+      return `<div style="position:relative;display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11px">
+        📎 ${name}
+        <span onclick="removeMedia('${id}',${i})" style="background:#e53e3e;color:white;border-radius:50%;width:14px;height:14px;font-size:9px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-left:2px">×</span>
+      </div>`;
+    }
+    return `<div style="position:relative;display:inline-block">
+      <img src="${src}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="viewMedia('${id}',${i})" title="Tap to view full">
+      <span onclick="removeMedia('${id}',${i})" style="position:absolute;top:-5px;right:-5px;background:#e53e3e;color:white;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">×</span>
+    </div>`;
+  }).join('');
+}
+
+function removeMedia(id, idx) {
+  if (!mediaStore[id]) return;
+  mediaStore[id].splice(idx, 1);
+  saveMedia(); refreshThumbs(id);
+}
+
+function viewMedia(id, idx) {
+  const src = (mediaStore[id]||[])[idx];
+  if (!src || src.startsWith('__file__:')) return;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';
+  ov.innerHTML = `<img src="${src}" style="max-width:95vw;max-height:90vh;border-radius:8px;object-fit:contain">
+    <span style="position:absolute;top:16px;right:20px;color:white;font-size:28px;font-weight:700;cursor:pointer">✕</span>`;
+  ov.onclick = () => document.body.removeChild(ov);
+  document.body.appendChild(ov);
+}
+
+function updateFinding(id, field, value) {
+  if (!findings[id]) findings[id] = {};
+  findings[id][field] = value;
+  saveFindings();
+  flashFBadge(id);
+}
+
+function setRatingF(id, val) {
+  if (!findings[id]) findings[id] = {};
+  findings[id].rating = val;
+  saveFindings();
+  flashFBadge(id);
+  document.querySelectorAll(`#fc-${id} .star`).forEach((s,i) => s.classList.toggle('filled', i < val));
+}
+
+let fbadgeTimers = {};
+function flashFBadge(id) {
+  const b = document.getElementById('fbadge-' + id);
+  if (!b) return;
+  b.classList.add('show');
+  clearTimeout(fbadgeTimers[id]);
+  fbadgeTimers[id] = setTimeout(() => b.classList.remove('show'), 1800);
+}
+
+function clearAllFindings() {
+  if (!confirm('Clear ALL findings notes? This cannot be undone.')) return;
+  findings = {}; notes = {};
+  saveFindings(); saveNotes();
+  renderFindings(); renderVenues();
+}
+
+// ─── SYNTHESIS ────────────────────────────────────────────────────────────────
+function renderSynthesis() {
+  // Themes table (6 rows)
+  const tbody = document.getElementById('themes-body');
+  tbody.innerHTML = Array.from({length:6},(_,i) => {
+    const d = (synthesis.themes && synthesis.themes[i]) || {};
+    return `<tr>
+      <td><textarea style="width:100%;border:none;background:transparent;resize:vertical;min-height:45px;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Theme ${i+1}…">${d.theme||''}</textarea></td>
+      <td><textarea style="width:100%;border:none;background:transparent;resize:vertical;min-height:45px;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Evidence…">${d.evidence||''}</textarea></td>
+      <td><textarea style="width:100%;border:none;background:transparent;resize:vertical;min-height:45px;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Why it matters…">${d.why||''}</textarea></td>
+      <td><select style="width:100%;border:none;background:transparent;font-size:12px;font-family:inherit" onchange="saveSynthesis()">
+        <option ${d.priority===''?'selected':''}></option>
+        <option ${d.priority==='H'?'selected':''}>H</option>
+        <option ${d.priority==='M'?'selected':''}>M</option>
+        <option ${d.priority==='L'?'selected':''}>L</option>
+      </select></td>
+    </tr>`;
+  }).join('');
+
+  // Outlets table
+  const obody = document.getElementById('outlets-body');
+  obody.innerHTML = SSP_OUTLETS.map((outlet, i) => {
+    const d = (synthesis.outlets && synthesis.outlets[i]) || {};
+    return `<tr>
+      <td style="font-weight:600;font-size:12px;white-space:nowrap">${outlet}</td>
+      <td><textarea style="width:100%;border:none;background:transparent;resize:vertical;min-height:45px;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Best references…">${d.refs||''}</textarea></td>
+      <td><textarea style="width:100%;border:none;background:transparent;resize:vertical;min-height:45px;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Specific idea to apply…">${d.idea||''}</textarea></td>
+      <td><textarea style="width:100%;border:none;background:transparent;resize:vertical;min-height:45px;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Owner / next step…">${d.owner||''}</textarea></td>
+    </tr>`;
+  }).join('');
+
+  // Actions table (7 rows)
+  const abody = document.getElementById('actions-body');
+  abody.innerHTML = Array.from({length:7},(_,i) => {
+    const d = (synthesis.actions && synthesis.actions[i]) || {};
+    return `<tr>
+      <td><textarea style="width:100%;border:none;background:transparent;resize:vertical;min-height:45px;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Action…">${d.action||''}</textarea></td>
+      <td><textarea style="width:100%;border:none;background:transparent;resize:vertical;min-height:45px;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Detail…">${d.detail||''}</textarea></td>
+      <td><input type="text" style="width:100%;border:none;background:transparent;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Owner" value="${d.owner||''}"></td>
+      <td><input type="text" style="width:100%;border:none;background:transparent;font-size:12px;font-family:inherit" oninput="saveSynthesis()" placeholder="Due date" value="${d.due||''}"></td>
+    </tr>`;
+  }).join('');
+
+  // Debrief notes
+  const dn = document.getElementById('debrief-notes');
+  if (dn) dn.value = synthesis.debrief || '';
+}
+
+// ─── OVERVIEW ─────────────────────────────────────────────────────────────────
+function renderOverview() {
+  const total = VENUES.length;
+  const p1 = VENUES.filter(v=>v.part===1).length;
+  const p2 = VENUES.filter(v=>v.part===2).length;
+  const done = Object.values(notes).filter(n=>n.status==='Done').length;
+  const types = {};
+  VENUES.forEach(v => { types[v.type] = (types[v.type]||0)+1; });
+
+  document.getElementById('stat-grid').innerHTML = `
+    <div class="stat-card"><div class="stat-num">${total}</div><div class="stat-label">Total Venues</div></div>
+    <div class="stat-card"><div class="stat-num">${p1}</div><div class="stat-label">Part 1 Self-Directed</div></div>
+    <div class="stat-card"><div class="stat-num">${p2}</div><div class="stat-label">Part 2 Pan Pacific</div></div>
+    <div class="stat-card"><div class="stat-num">${NEARBY.length}</div><div class="stat-label">Nearby Spots</div></div>
+    <div class="stat-card"><div class="stat-num">${QUESTIONS.length}</div><div class="stat-label">Questions to Ask</div></div>
+    <div class="stat-card"><div class="stat-num">${done}</div><div class="stat-label">Venues Visited ✓</div></div>
+  `;
+}
+
+// ─── EXPORTS ──────────────────────────────────────────────────────────────────
+function exportItinerary() {
+  const rows = [['Date','Time','Part','Venue','Address','MRT','Travel','Type','SSP Outlet','Purpose','Summary','Host','Status','Takeaway','Idea for SSP','Notes']];
+  VENUES.forEach(v => {
+    const n = notes[v.id] || {};
+    rows.push([v.date, v.time, v.part===1?'Part 1 Self-Directed':'Part 2 Pan Pacific', v.name, v.address, v.mrt, v.travel, v.types.join('; '), v.ssp.join('; '), v.purpose, v.summary, v.host, n.status||v.status, n.takeaway||'', n.idea||'', n.general||'']);
+  });
+  exportXLSX('SG_Itinerary', [{ name:'Itinerary', data: rows }]);
+}
+
+function exportFindings() {
+  const rows = [['Venue','Date','SSP Outlet','Rating','Space & Design','Arrival & Flow','F&B Concept','Service & Staffing','Beverage & Storytelling','Wellness','Commercial Model','Top Idea 1','Top Idea 2','Top Idea 3','Photos & References','Follow-up & Owner']];
+  VENUES.filter(v=>v.type!=='meeting').forEach(v => {
+    const f = findings[v.id] || {};
+    rows.push([v.name, v.date, v.ssp.join('; '), f.rating||'', f.space||'', f.arrival||'', f.concept||'', f.service||'', f.beverage||'', f.wellness||'', f.commercial||'', f.top1||'', f.top2||'', f.top3||'', f.photos||'', f.followup||'']);
+  });
+  exportXLSX('SG_Key_Findings', [{ name:'Key Findings', data: rows }]);
+}
+
+function exportQuestions() {
+  const rows = [['Group','Theme','Who to Ask','Question','Asked (✓)']];
+  QUESTIONS.forEach((q,i) => {
+    const key = q.group + '_' + QUESTIONS.filter((qq,ii) => qq.group === q.group && ii < i).length;
+    rows.push([q.group, q.theme, q.who, q.q, qChecked[key] ? 'Yes' : '']);
+  });
+  exportXLSX('SG_Questions', [{ name:'Questions to Ask', data: rows }]);
+}
+
+function exportSynthesis() {
+  saveSynthesis();
+  const themes = Array.from({length:6},(_,i) => {
+    const d = (synthesis.themes && synthesis.themes[i]) || {};
+    return [d.theme||'', d.evidence||'', d.why||'', d.priority||''];
+  });
+  const outlets = SSP_OUTLETS.map((o,i) => {
+    const d = (synthesis.outlets && synthesis.outlets[i]) || {};
+    return [o, d.refs||'', d.idea||'', d.owner||''];
+  });
+  const actions = Array.from({length:7},(_,i) => {
+    const d = (synthesis.actions && synthesis.actions[i]) || {};
+    return [d.action||'', d.detail||'', d.owner||'', d.due||''];
+  });
+
+  const sheets = [
+    { name:'Themes', data: [['Theme','Evidence','Why for SSP','Priority'], ...themes] },
+    { name:'Findings by Outlet', data: [['SSP Outlet','Best References Seen','Specific Idea to Apply','Owner / Next Step'], ...outlets] },
+    { name:'Actions', data: [['Action / Decision','Detail','Owner','Due'], ...actions] },
+    { name:'Debrief Notes', data: [['Notes for Ms Wee Debrief (Fri 3 Jul)'], [synthesis.debrief||'']] },
+  ];
+  exportXLSX('SG_Trip_Synthesis', sheets);
+}
+
+function exportXLSX(filename, sheets) {
+  const doExport = () => {
+    const wb = XLSX.utils.book_new();
+    sheets.forEach(s => {
+      const ws = XLSX.utils.aoa_to_sheet(s.data);
+      XLSX.utils.book_append_sheet(wb, ws, s.name);
+    });
+    XLSX.writeFile(wb, filename + '_' + new Date().toISOString().slice(0,10) + '.xlsx');
+  };
+  if (typeof XLSX !== 'undefined') { doExport(); return; }
+  const sc = document.createElement('script');
+  sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  sc.onload = doExport;
+  sc.onerror = () => alert('Could not load Excel library. Please check your internet connection and try again.');
+  document.head.appendChild(sc);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+// Reset all filters on load so iOS Safari form-state restore doesn't blank the list
+document.getElementById('filter-type').value = '';
+document.getElementById('filter-ssp').value = '';
+document.getElementById('filter-part').value = '';
+document.getElementById('search').value = '';
+document.getElementById('f-sort-part').value = '';
+document.getElementById('f-sort-loc').value = 'date';
+renderVenues();
+renderNearby();
+renderQuestions();
+renderFindings();
+renderSynthesis();
+renderOverview();
+</script>
+</body>
+</html>
