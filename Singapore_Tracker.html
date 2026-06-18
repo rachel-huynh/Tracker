@@ -707,6 +707,20 @@ function renderVenues() {
               <label>General Notes</label>
               <textarea rows="3" placeholder="Photos, contacts, observations, follow-ups…" oninput="updateNote('${v.id}','general',this.value)">${n.general||''}</textarea>
             </div>
+            <div style="margin-top:10px">
+              <label style="font-size:10px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px">📷 Photos</label>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px" class="media-thumbs" data-mid="${v.id}"></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <label class="btn btn-primary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px">
+                  📷 Camera
+                  <input type="file" accept="image/*" capture="environment" style="display:none" onchange="handleMedia('${v.id}',this)">
+                </label>
+                <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px">
+                  🖼 Library / File
+                  <input type="file" accept="image/*,*/*" multiple style="display:none" onchange="handleMedia('${v.id}',this)">
+                </label>
+              </div>
+            </div>
           </div>
         </div>
       </div>`;
@@ -724,6 +738,7 @@ function filterVenues() { renderVenues(); }
 function toggleDetail(id) {
   const el = document.getElementById('detail-'+id);
   el.classList.toggle('open');
+  if (el.classList.contains('open')) refreshThumbs(id);
 }
 
 function updateNote(id, field, value) {
@@ -866,7 +881,7 @@ function renderFindings() {
     ).join('');
     return `<div class="finding-field finding-field-full" id="media-wrap-${id}">
       <label>📷 Photos & Files</label>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px" id="thumbs-${id}">${thumbs}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px" class="media-thumbs" data-mid="${id}">${thumbs}</div>
       <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">
         ＋ Add Photo / File
         <input type="file" accept="image/*,*/*" multiple style="display:none" onchange="handleMedia('${id}',this)">
@@ -988,10 +1003,10 @@ function handleMedia(id, input) {
 }
 
 function refreshThumbs(id) {
-  const wrap = document.getElementById('thumbs-' + id);
-  if (!wrap) return;
+  const wraps = document.querySelectorAll(`.media-thumbs[data-mid="${id}"]`);
+  if (!wraps.length) return;
   const imgs = mediaStore[id] || [];
-  wrap.innerHTML = imgs.map((src,i) => {
+  const html = imgs.map((src,i) => {
     if (src.startsWith('__file__:')) {
       const name = src.slice(9);
       return `<div style="position:relative;display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11px">
@@ -1004,6 +1019,7 @@ function refreshThumbs(id) {
       <span onclick="removeMedia('${id}',${i})" style="position:absolute;top:-5px;right:-5px;background:#e53e3e;color:white;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">×</span>
     </div>`;
   }).join('');
+  wraps.forEach(w => { w.innerHTML = html; });
 }
 
 function removeMedia(id, idx) {
