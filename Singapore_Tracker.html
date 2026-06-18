@@ -225,6 +225,22 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   </div>
 </div>
 
+<!-- FLOATING SYNC BUTTON -->
+<div id="sync-fab" style="position:fixed;bottom:24px;right:16px;z-index:999;display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+  <!-- expanded panel -->
+  <div id="sync-panel" style="display:none;background:var(--navy);border-radius:12px;padding:14px;box-shadow:0 4px 24px rgba(0,0,0,.35);min-width:220px">
+    <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:10px;letter-spacing:.4px">📱↔💻 SYNC DATA</div>
+    <button class="btn btn-gold" style="width:100%;margin-bottom:8px;justify-content:center" onclick="saveDataFile()">💾 Save Data File</button>
+    <label class="btn btn-outline" style="width:100%;color:white;border-color:rgba(255,255,255,.3);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px">
+      📂 Load Data File
+      <input type="file" accept=".json" style="display:none" onchange="loadDataFile(this)">
+    </label>
+    <div id="sync-status" style="font-size:10px;color:rgba(255,255,255,.55);line-height:1.5"></div>
+  </div>
+  <!-- FAB trigger -->
+  <button onclick="toggleSyncPanel()" style="width:56px;height:56px;border-radius:50%;background:var(--gold);color:var(--navy);border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center" title="Sync data between phone & PC">💾</button>
+</div>
+
 <!-- ======= ITINERARY PAGE ======= -->
 <div class="page active" id="page-itinerary">
   <div class="filters">
@@ -1006,7 +1022,7 @@ function refreshThumbs(id) {
   const wraps = document.querySelectorAll(`.media-thumbs[data-mid="${id}"]`);
   if (!wraps.length) return;
   const imgs = mediaStore[id] || [];
-  const html = imgs.map((src,i) => {
+  const thumbHtml = imgs.map((src,i) => {
     if (src.startsWith('__file__:')) {
       const name = src.slice(9);
       return `<div style="position:relative;display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11px">
@@ -1019,6 +1035,14 @@ function refreshThumbs(id) {
       <span onclick="removeMedia('${id}',${i})" style="position:absolute;top:-5px;right:-5px;background:#e53e3e;color:white;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">×</span>
     </div>`;
   }).join('');
+
+  // inline ＋ camera button always visible in the thumb row for quick re-shooting
+  const addBtn = `<label style="width:64px;height:64px;border:2px dashed var(--accent);border-radius:6px;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);font-size:10px;font-weight:700;gap:2px;flex-shrink:0" title="Take another photo">
+    <span style="font-size:22px;line-height:1">📷</span>＋
+    <input type="file" accept="image/*" capture="environment" style="display:none" onchange="handleMedia('${id}',this)">
+  </label>`;
+
+  const html = thumbHtml + addBtn + (imgs.length ? `<span style="font-size:10px;color:var(--muted);align-self:flex-end;padding-bottom:4px">${imgs.length} photo${imgs.length>1?'s':''}</span>` : '');
   wraps.forEach(w => { w.innerHTML = html; });
 }
 
@@ -1204,6 +1228,65 @@ function exportXLSX(filename, sheets) {
   sc.onload = doExport;
   sc.onerror = () => alert('Could not load Excel library. Please check your internet connection and try again.');
   document.head.appendChild(sc);
+}
+
+// ─── CROSS-DEVICE SYNC (save/load JSON data file via OneDrive) ───────────────
+
+function saveDataFile() {
+  const payload = {
+    _version: 1,
+    _saved: new Date().toISOString(),
+    _device: navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad') ? 'mobile' : 'desktop',
+    notes,
+    findings,
+    qChecked,
+    synthesis,
+    mediaStore
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'SG_Tracker_Data.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  setSyncStatus('✓ Saved — move SG_Tracker_Data.json to your OneDrive Itinerary folder');
+}
+
+function loadDataFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const d = JSON.parse(e.target.result);
+      if (d._version !== 1) { setSyncStatus('⚠ Unrecognised file format'); return; }
+      if (d.notes)      { notes = d.notes;           save('sg26_notes', notes); }
+      if (d.findings)   { findings = d.findings;     save('sg26_findings', findings); }
+      if (d.qChecked)   { qChecked = d.qChecked;     save('sg26_q', qChecked); }
+      if (d.synthesis)  { synthesis = d.synthesis;   save('sg26_synthesis', synthesis); }
+      if (d.mediaStore) { mediaStore = d.mediaStore; save('sg26_media', mediaStore); }
+      // Re-render everything
+      renderVenues(); renderFindings(); renderQuestions(); renderSynthesis(); renderOverview();
+      const when = d._saved ? new Date(d._saved).toLocaleString() : '?';
+      const from = d._device || '?';
+      setSyncStatus(`✓ Loaded — data from ${from}, saved ${when}`);
+    } catch(err) {
+      setSyncStatus('⚠ Could not read file — make sure it\'s a SG_Tracker_Data.json');
+    }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+function toggleSyncPanel() {
+  const panel = document.getElementById('sync-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function setSyncStatus(msg) {
+  const el = document.getElementById('sync-status');
+  if (el) { el.textContent = msg; el.style.color = msg.startsWith('⚠') ? '#fca5a5' : '#86efac'; }
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
