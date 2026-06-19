@@ -228,11 +228,18 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 <!-- FLOATING SYNC BUTTON -->
 <div id="sync-fab" style="position:fixed;bottom:24px;right:16px;z-index:999;display:flex;flex-direction:column;align-items:flex-end;gap:8px">
   <!-- expanded panel -->
-  <div id="sync-panel" style="display:none;background:var(--navy);border-radius:12px;padding:14px;box-shadow:0 4px 24px rgba(0,0,0,.35);min-width:240px">
+  <div id="sync-panel" style="display:none;background:var(--navy);border-radius:12px;padding:14px;box-shadow:0 4px 24px rgba(0,0,0,.35);min-width:260px">
     <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:10px;letter-spacing:.4px">📱↔💻 CLOUD SYNC</div>
     <button class="btn btn-gold" style="width:100%;margin-bottom:8px;justify-content:center" onclick="cloudPush()">☁️ Push to Cloud</button>
-    <button class="btn btn-outline" style="width:100%;margin-bottom:10px;justify-content:center" onclick="cloudPull()">🔄 Pull from Cloud</button>
-    <div style="font-size:10px;color:rgba(255,255,255,.4);margin-bottom:6px">Auto-pulls every 60 s when open</div>
+    <button class="btn btn-outline" style="width:100%;margin-bottom:8px;justify-content:center" onclick="cloudPull()">🔄 Pull from Cloud</button>
+    <div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:4px">Bin ID (paste on other device to link):</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <input id="bin-id-input" type="text" placeholder="Paste Bin ID here…" autocomplete="off"
+        style="flex:1;font-size:10px;padding:5px 7px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:white;min-width:0"
+        oninput="saveBinId(this.value)">
+      <button onclick="copyBinId()" style="background:rgba(255,255,255,.12);border:none;border-radius:6px;color:white;padding:5px 8px;cursor:pointer;font-size:12px" title="Copy Bin ID">📋</button>
+    </div>
+    <div style="font-size:10px;color:rgba(255,255,255,.35);margin-bottom:6px">Auto-pulls every 60 s when open</div>
     <div id="sync-status" style="font-size:10px;color:rgba(255,255,255,.55);line-height:1.5"></div>
   </div>
   <!-- FAB trigger -->
@@ -1170,10 +1177,13 @@ function exportItinerary() {
 }
 
 function exportFindings() {
-  const rows = [['Venue','Date','SSP Outlet','Rating','Space & Design','Arrival & Flow','F&B Concept','Service & Staffing','Beverage & Storytelling','Wellness','Commercial Model','Top Idea 1','Top Idea 2','Top Idea 3','Photos & References','Follow-up & Owner']];
+  const rows = [['Venue','Date','SSP Outlet','Rating','Space & Design','Arrival & Flow','F&B Concept','Service & Staffing','Beverage & Storytelling','Wellness','Commercial Model','Top Idea 1','Top Idea 2','Top Idea 3','Photos & References','Follow-up & Owner','Photo Count']];
   VENUES.filter(v=>v.type!=='meeting').forEach(v => {
     const f = findings[v.id] || {};
-    rows.push([v.name, v.date, v.ssp.join('; '), f.rating||'', f.space||'', f.arrival||'', f.concept||'', f.service||'', f.beverage||'', f.wellness||'', f.commercial||'', f.top1||'', f.top2||'', f.top3||'', f.photos||'', f.followup||'']);
+    const photoCount = (mediaStore[v.id] || []).length;
+    const photoNote = photoCount > 0 ? `📷 ${photoCount} photo${photoCount>1?'s':''} (saved on device)` : '';
+    const photosCol = [f.photos||'', photoNote].filter(Boolean).join('\n');
+    rows.push([v.name, v.date, v.ssp.join('; '), f.rating||'', f.space||'', f.arrival||'', f.concept||'', f.service||'', f.beverage||'', f.wellness||'', f.commercial||'', f.top1||'', f.top2||'', f.top3||'', photosCol, f.followup||'', photoCount||'']);
   });
   exportXLSX('SG_Key_Findings', [{ name:'Key Findings', data: rows }]);
 }
@@ -1251,24 +1261,50 @@ function applyPayload(d) {
   renderVenues(); renderFindings(); renderQuestions(); renderSynthesis(); renderOverview();
 }
 
+// Find or remember the shared bin ID — auto-discovers by listing bins named SG_Tracker
+async function getBinId() {
+  const stored = localStorage.getItem('sg26_binId');
+  if (stored) return stored;
+  // Auto-discover: list all bins and find the one named SG_Tracker
+  try {
+    const res = await fetch(`${JBIN_BASE}/b`, { headers: { 'X-Master-Key': JBIN_KEY } });
+    if (res.ok) {
+      const j = await res.json();
+      const bins = Array.isArray(j) ? j : (j.result || []);
+      const match = bins.find(b => (b.snippetMeta && b.snippetMeta.name === 'SG_Tracker') || b.name === 'SG_Tracker');
+      if (match) {
+        const id = match.snippetMeta ? match.snippetMeta.id : match.id;
+        localStorage.setItem('sg26_binId', id);
+        const inp = document.getElementById('bin-id-input');
+        if (inp) inp.value = id;
+        return id;
+      }
+    }
+  } catch(e) {}
+  return null;
+}
+
 async function cloudPush() {
   setSyncStatus('⏳ Pushing to cloud…');
-  const binId = localStorage.getItem('sg26_binId');
   const body = JSON.stringify(syncPayload());
   const headers = { 'Content-Type': 'application/json', 'X-Master-Key': JBIN_KEY };
   try {
+    let binId = await getBinId();
     let res;
     if (binId) {
       res = await fetch(`${JBIN_BASE}/b/${binId}`, { method: 'PUT', headers, body });
       if (res.ok) { setSyncStatus('✓ Pushed — ' + new Date().toLocaleTimeString()); return; }
     } else {
+      // No bin yet — create it
       headers['X-Bin-Name'] = 'SG_Tracker';
       headers['X-Bin-Private'] = 'true';
       res = await fetch(`${JBIN_BASE}/b`, { method: 'POST', headers, body });
       if (res.ok) {
         const j = await res.json();
         localStorage.setItem('sg26_binId', j.metadata.id);
-        setSyncStatus('✓ Cloud bin created & synced!');
+        const inp = document.getElementById('bin-id-input');
+        if (inp) inp.value = j.metadata.id;
+        setSyncStatus('✓ Cloud bin created & synced! Other devices will auto-discover it.');
         return;
       }
     }
@@ -1280,10 +1316,10 @@ async function cloudPush() {
 }
 
 async function cloudPull() {
-  const binId = localStorage.getItem('sg26_binId');
-  if (!binId) { setSyncStatus('⚠ Push first from any device to create the cloud bin'); return; }
   setSyncStatus('⏳ Pulling from cloud…');
   try {
+    let binId = await getBinId();
+    if (!binId) { setSyncStatus('⚠ No cloud bin found — push from either device first'); return; }
     const res = await fetch(`${JBIN_BASE}/b/${binId}/latest`, {
       headers: { 'X-Master-Key': JBIN_KEY }
     });
@@ -1297,11 +1333,29 @@ async function cloudPull() {
 }
 
 // Auto-pull every 60 seconds while page is open
-setInterval(() => { if (localStorage.getItem('sg26_binId')) cloudPull(); }, 60000);
+setInterval(() => cloudPull(), 60000);
 
 function toggleSyncPanel() {
   const panel = document.getElementById('sync-panel');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? 'block' : 'none';
+  if (open) {
+    const stored = localStorage.getItem('sg26_binId') || '';
+    const inp = document.getElementById('bin-id-input');
+    if (inp) inp.value = stored;
+  }
+}
+
+function saveBinId(val) {
+  const v = val.trim();
+  if (v) localStorage.setItem('sg26_binId', v);
+  else localStorage.removeItem('sg26_binId');
+}
+
+function copyBinId() {
+  const id = localStorage.getItem('sg26_binId') || '';
+  if (!id) { setSyncStatus('⚠ No Bin ID yet — push first'); return; }
+  navigator.clipboard.writeText(id).then(() => setSyncStatus('✓ Bin ID copied — paste it on your other device'));
 }
 
 function setSyncStatus(msg) {
