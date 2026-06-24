@@ -670,13 +670,13 @@ function renderVenues() {
     if (!t) return 99;
     const s = t.toLowerCase();
     if (s === 'on arrival') return 0;
+    if (s.includes('post-dinner')) return 22;    // must check before 'dinner'
     const m = s.match(/(\d+)(?::(\d+))?\s*(am|pm)/);
     if (!m) {
       if (s.includes('morning') || s === 'am') return 8;
-      if (s.includes('lunch') || s.includes('noon')) return 12;
+      if (s.includes('lunch') || s.includes('noon')) return 12.5;
       if (s.includes('afternoon')) return 14;
       if (s.includes('evening') || s.includes('dinner')) return 19;
-      if (s.includes('post-dinner')) return 22;
       if (s.includes('night')) return 21;
       return 15;
     }
@@ -686,14 +686,21 @@ function renderVenues() {
     return h + min/60;
   };
 
+  // Sort date keys chronologically
+  const dateOrder = ['Wed 24 Jun','Thu 25 Jun','Fri 26 Jun','Sat 27 Jun','Mon 29 Jun','Tue 30 Jun','Wed 1 Jul','Thu 2 Jul','Fri 3 Jul','TBD — Singapore Visit'];
+
   const groups = {};
   filtered.forEach(v => { if (!groups[v.date]) groups[v.date] = []; groups[v.date].push(v); });
   Object.values(groups).forEach(arr => arr.sort((a,b) => timeOrder(a.time) - timeOrder(b.time)));
 
   const container = document.getElementById('venue-list');
   const part2dates = ['Mon 29 Jun','Tue 30 Jun','Wed 1 Jul','Thu 2 Jul','Fri 3 Jul'];
+  const sortedDates = Object.keys(groups).sort((a,b) => {
+    const ai = dateOrder.indexOf(a), bi = dateOrder.indexOf(b);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
 
-  container.innerHTML = Object.keys(groups).map(date => {
+  container.innerHTML = sortedDates.map(date => {
     const isPart2 = part2dates.includes(date);
     const cards = groups[date].map(v => {
       const n = notes[v.id] || {};
