@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSP Budget Tracker — Sofitel Saigon Plaza Renovation</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --navy:#16283e; --navy2:#1f3a5f; --gold:#c8a557; --gold2:#e6cf9a;
+  --bg:#f4f5f7; --card:#ffffff; --line:#e3e6ea; --txt:#20242b; --mut:#6b7280;
+  --green:#1e7f4f; --greenbg:#e5f5ec; --red:#b03030; --redbg:#fbe9e9;
+  --amber:#9a6b00; --amberbg:#fdf3d7; --blue:#2b5f8f; --bluebg:#e8f1f8;
+  --rad:10px; --shadow:0 1px 3px rgba(22,40,62,.08),0 4px 14px rgba(22,40,62,.06);
+}
+*{box-sizing:border-box} html,body{margin:0;padding:0}
+body{font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+h1,h2,h3{margin:0}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--txt)}
+input:focus,select:focus,textarea:focus{outline:2px solid rgba(200,165,87,.45);border-color:var(--gold)}
+input[type=number]{text-align:right}
+/* header */
+header{background:linear-gradient(100deg,var(--navy) 0%,var(--navy2) 70%,#2a4a73 100%);color:#fff;padding:14px 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;flex-direction:column;gap:2px;margin-right:auto}
+.brand .t1{font-size:19px;font-weight:600;letter-spacing:.06em}
+.brand .t1 b{color:var(--gold2);font-weight:700}
+.brand .t2{font-size:11.5px;opacity:.75;letter-spacing:.14em;text-transform:uppercase}
+.hpill{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:20px;padding:5px 14px;font-size:12px;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg{display:flex;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:8px;overflow:hidden}
+.seg button{background:transparent;border:0;color:#fff;padding:6px 13px;font-size:12.5px;opacity:.75}
+.seg button.on{background:var(--gold);color:var(--navy);opacity:1;font-weight:600}
+/* nav */
+nav{display:flex;gap:2px;background:#fff;border-bottom:1px solid var(--line);padding:0 14px;overflow-x:auto;position:sticky;top:0;z-index:40}
+nav button{background:none;border:0;border-bottom:3px solid transparent;padding:12px 15px;font-size:13.5px;color:var(--mut);white-space:nowrap;font-weight:500}
+nav button.on{color:var(--navy2);border-bottom-color:var(--gold);font-weight:600}
+nav button:hover{color:var(--navy2)}
+main{padding:18px 22px 60px;max-width:1500px;margin:0 auto}
+.tab{display:none} .tab.on{display:block}
+/* cards & layout */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);box-shadow:var(--shadow);padding:14px 16px}
+.card .lbl{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.card .val{font-size:21px;font-weight:700;color:var(--navy2);line-height:1.2}
+.card .sub{font-size:12px;color:var(--mut);margin-top:4px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:16px}
+.panel h3{font-size:14.5px;color:var(--navy2);margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.areagrid{display:grid;grid-template-columns:3fr 2fr;gap:16px;align-items:start}
+@media(max-width:980px){.grid2,.areagrid{grid-template-columns:1fr}}
+.chartbox{position:relative;height:300px}
+/* tables */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f1f3f6;color:#3d4a5c;text-align:left;padding:8px 9px;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;position:sticky;top:0}
+td{padding:7px 9px;border-bottom:1px solid #eef0f3;vertical-align:top}
+tr:hover td{background:#fafbfd}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.sect td{background:#eef2f7;font-weight:600;color:var(--navy2)}
+tr.grp td{background:#f7f2e4;font-weight:600;color:#6b5518}
+tr.total td{background:#16283e0d;font-weight:700;border-top:2px solid var(--navy2)}
+.tblwrap{overflow:auto;max-height:64vh;border:1px solid var(--line);border-radius:8px}
+/* chips & badges */
+.chip{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11.5px;font-weight:600}
+.chip.g{background:var(--greenbg);color:var(--green)} .chip.r{background:var(--redbg);color:var(--red)}
+.chip.a{background:var(--amberbg);color:var(--amber)} .chip.b{background:var(--bluebg);color:var(--blue)}
+.chip.n{background:#eceef1;color:#4b5563}
+.pos{color:var(--red);font-weight:600} .neg{color:var(--green);font-weight:600} .zero{color:var(--mut)}
+.refcode{color:var(--blue);cursor:pointer;text-decoration:underline dotted;font-weight:600}
+/* buttons */
+.btn{background:var(--navy2);color:#fff;border:0;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:500}
+.btn:hover{background:var(--navy)}
+.btn.gold{background:var(--gold);color:var(--navy);font-weight:600}
+.btn.ghost{background:#fff;color:var(--navy2);border:1px solid var(--line)}
+.btn.ghost:hover{background:#f4f6f9}
+.btn.danger{background:#fff;color:var(--red);border:1px solid #ecc}
+.btn.danger:hover{background:var(--redbg)}
+.btn.sm{padding:4px 10px;font-size:12px;border-radius:6px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.toolbar .sp{margin-left:auto}
+/* dropzone */
+.drop{border:2px dashed #c4ccd6;border-radius:var(--rad);padding:34px;text-align:center;color:var(--mut);background:#fff;transition:.15s}
+.drop.over{border-color:var(--gold);background:#fdf9ef}
+/* hero */
+.hero{background:linear-gradient(120deg,var(--navy),#2a4a73);border-radius:14px;color:#fff;padding:34px 36px;margin-bottom:18px}
+.hero h2{font-size:22px;margin-bottom:8px}
+.hero p{opacity:.85;max-width:760px;line-height:1.55;margin:0 0 16px}
+/* modal */
+.modalbg{position:fixed;inset:0;background:rgba(20,30,45,.55);display:none;align-items:flex-start;justify-content:center;z-index:100;padding:5vh 16px;overflow:auto}
+.modalbg.on{display:flex}
+.modal{background:#fff;border-radius:12px;max-width:680px;width:100%;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h3{font-size:16px;color:var(--navy2);margin-bottom:14px}
+/* toast */
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:200;box-shadow:var(--shadow)}
+#toast.on{opacity:1}
+/* VE option cards */
+.opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+.opt{background:#fff;border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:10px;padding:14px;box-shadow:var(--shadow)}
+.opt .row{display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap}
+.opt label{font-size:11px;color:var(--mut);display:block;margin-bottom:2px}
+.opt .fld{flex:1;min-width:90px}
+.opt input,.opt textarea{width:100%}
+.opt .res{background:#f6f7f9;border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12.5px;margin-top:6px}
+.opt .res b{font-variant-numeric:tabular-nums}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.thumbs img{width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer}
+.thumbs .fdoc{width:64px;height:64px;border-radius:6px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;text-align:center;padding:3px;background:#f6f7f9;cursor:pointer;word-break:break-all;overflow:hidden}
+/* attachments grid */
+.atts{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.att{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.att .prev{height:130px;background:#f0f2f5;display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:30px;color:#9aa4b1}
+.att .prev img{width:100%;height:100%;object-fit:cover;cursor:pointer}
+.att .meta{padding:9px 11px;font-size:12px}
+.att .nm{font-weight:600;color:var(--navy2);word-break:break-all}
+.att .row2{display:flex;gap:6px;margin-top:7px;align-items:center}
+/* misc */
+.help{font-size:12.5px;color:var(--mut);line-height:1.55}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px}
+.kv b{font-variant-numeric:tabular-nums}
+.warnbox{background:var(--amberbg);border:1px solid #ecd9a0;color:#6b4f00;border-radius:8px;padding:10px 13px;font-size:12.5px;margin:10px 0}
+.okbox{background:var(--greenbg);border:1px solid #bfe3cf;color:#155c3b;border-radius:8px;padding:10px 13px;font-size:12.5px;margin:10px 0}
+.setrow{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f0f1f4;flex-wrap:wrap}
+.setrow .sl{width:280px;font-weight:500}
+.setrow .sd{font-size:12px;color:var(--mut);flex-basis:100%;margin-top:-4px}
+.bar{height:9px;background:#e7eaee;border-radius:6px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;border-radius:6px}
+.sticky-tot{position:sticky;bottom:0;background:var(--navy);color:#fff;border-radius:10px;padding:12px 18px;display:flex;gap:26px;flex-wrap:wrap;margin-top:12px;box-shadow:0 -4px 18px rgba(0,0,0,.15);z-index:30}
+.sticky-tot .it{font-size:12px;opacity:.8}
+.sticky-tot .iv{font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums}
+@media print{ header .seg, nav, .toolbar, .btn, .noprint{display:none!important} body{background:#fff} .panel,.card{box-shadow:none} main{padding:0} .tab{display:none}.tab.on{display:block} }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="t1">SSP <b>BUDGET TRACKER</b></div>
+    <div class="t2" id="hSub">Sofitel Saigon Plaza Renovation — PIP Cost Control</div>
+  </div>
+  <div class="hpill" id="hVer">—</div>
+  <div class="seg" id="curSeg">
+    <button data-cur="VND">VND</button><button data-cur="USD">USD</button>
+  </div>
+  <div class="seg" id="langSeg">
+    <button data-lang="en">EN</button><button data-lang="vi">VI</button>
+  </div>
+</header>
+<nav id="nav"></nav>
+<main>
+  <section class="tab" id="tab-dash"></section>
+  <section class="tab" id="tab-versions"></section>
+  <section class="tab" id="tab-compare"></section>
+  <section class="tab" id="tab-estimate"></section>
+  <section class="tab" id="tab-ve"></section>
+  <section class="tab" id="tab-materials"></section>
+  <section class="tab" id="tab-atts"></section>
+  <section class="tab" id="tab-settings"></section>
+</main>
+<input type="file" id="fileXlsx" accept=".xlsx,.xlsm,.xls" style="display:none">
+<input type="file" id="fileAtt" multiple style="display:none">
+<input type="file" id="fileOptImg" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none">
+<input type="file" id="fileImport" accept=".json" style="display:none">
+<div class="modalbg" id="modalbg"><div class="modal" id="modal"></div></div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ============================== i18n ============================== */
+const I18N = {
+en:{
+ dash:'Dashboard', versions:'Versions', compare:'Compare', estimate:'Estimate', ve:'VE Studio', materials:'Materials', atts:'Attachments', settings:'Settings',
+ sub:'Sofitel Saigon Plaza Renovation — PIP Cost Control',
+ noVer:'No version loaded', upload:'Upload Excel version', uploadHint:'Drop the QS estimate .xlsx here or click to browse. Every upload is kept as a separate version for comparison.',
+ welcomeT:'Welcome to the SSP Budget Tracker', welcomeP:'Upload any version of the QS cost estimate (.xlsx) and the tracker will parse the summary, the detailed BOQ, the material specifications and the room schedule. Compare versions line by line, simulate adding/removing items, run VE (value engineering) studies with photos, and share everything with the committee via a single backup file.',
+ orTry:'…or go straight to the VE Studio to test prices without any file.',
+ grandTotal:'Total project cost', nett:'Nett construction cost', perKeyGR:'Per key — guestrooms', perKeySU:'Per key — suites', costM2:'Cost / m² (GFA)', vsBudget:'vs budget target', vsPrev:'vs previous budget (in file)', target:'Budget target',
+ noTarget:'No target set — add one in Settings', overrun:'OVERRUN', saving:'SAVING', onBudget:'ON BUDGET',
+ chartComp:'Budget composition', chartRooms:'Cost by room category / area', chartKeys:'Cost per key (USD) by room type', chartTrend:'Total by version',
+ advisor:'Savings advisor', advTop:'Top cost drivers (Pareto)', advTip:'Items covering ~80% of cost are your best VE candidates — a small % saving here moves the total.', rank:'#', item:'Item', sheet:'Sheet', share:'Share', cum:'Cumul.', veCand:'VE candidate',
+ advVar:'Rate variance across room types', advVarTip:'These summary lines show a big cost/m² spread between room types — worth checking whether specs can be aligned.',
+ forecast:'Forecast', base:'Base (uploaded)', estDelta:'Estimate changes', veDelta:'VE options (incl.)', forecastTotal:'Forecast total', inclPrelims:'incl. prelims',
+ verList:'Version history', vName:'Version name', vFile:'File', vDate:'Date', vTotal:'Total project cost', vDelta:'Δ vs previous', vNote:'Note', vActive:'Active', vBase:'Baseline', del:'Delete', added:'added',
+ confirmDelVer:'Delete this version? Its estimate edits are lost.',
+ parsed:'Parse result', pSections:'Summary sections', pItems:'BOQ line items', pMats:'Materials', pRooms:'Room types', pWarn:'Warnings', addVer:'Add version', cancel:'Cancel',
+ cmpA:'Version A (before)', cmpB:'Version B (after)', level:'Level', lvlSection:'Sections', lvlRoom:'Room types', lvlItem:'Line items', scope:'Room scope', overall:'Overall',
+ onlyChanged:'Only changed', search:'Search…', section:'Section', all:'All', name:'Name', diff:'Δ (B−A)', diffPct:'Δ %', selSum:'Selected', selCount:'items selected', movers:'Biggest movers (top 12)', addedItems:'New in B', removedItems:'Removed in B', qty:'Qty', rate:'Rate', unit:'Unit', total:'Total', amount:'Amount',
+ needTwo:'Upload at least two versions to compare.', needOne:'Upload a version first.',
+ estT:'Interactive estimate — add / remove / reprice items', estTip:'Untick a line to remove it from the estimate, edit qty or rate, or add new lines. Nothing touches the original upload — reset anytime.', inc:'In', addItem:'+ Add item', resetOv:'Reset changes', origTotal:'Original nett (items)', adjTotal:'Adjusted nett', delta:'Δ change', adjProject:'Adjusted project total', modified:'modified',
+ newItemT:'Add new item', desc:'Description', category:'Category / sheet', save:'Save',
+ veT:'VE Studio — quick option testing (no file needed)', veTip:'Type a unit price and quantity to instantly see the difference, variation and %. Save as an option card, attach photos/spec sheets, group options into a study and tick “include” to roll them into the forecast.',
+ qcalc:'Quick calculator', curRate:'Current unit rate', newRate:'Proposed unit rate', unitDiff:'Unit diff', variation:'Total variation', curTotal:'Current total', newTotal:'Proposed total', saveOpt:'Save as option', linkItem:'Link BOQ item (optional)', pickItem:'— type to search items —',
+ study:'Study / group', optTitle:'Option title', notes:'Notes / spec reference', include:'Include in forecast', attach:'+ Files', noOpts:'No options yet — use the quick calculator above.', bestOpt:'Lowest cost in study', optCompare:'Options side-by-side',
+ matT:'Material / specification reference', matTip:'Loaded from the “Updated material” sheet of the active version. Click a REF code anywhere in the app to jump here.', ref:'Ref', area:'Area', spec:'Specification', supplier:'Supplier', veAlt:'VE alternative', remarks:'Remarks', noMats:'No materials found — upload a version whose file has an “Updated material” sheet.',
+ attT:'Attachment library', attTip:'Store drawings, quotes, photos and PDFs. Everything lives in this browser and can be included in the backup file for sharing.', attAdd:'+ Add files', attLink:'Linked to', general:'General', download:'Download', size:'Size', date:'Date', note:'Note', noAtts:'No attachments yet.',
+ setT:'Settings & data', fx:'Exchange rate (VND / USD)', prelims:'Preliminaries %', cont:'Contingency %', targetLbl:'Budget target (VND)', targetHint:'The dashboard shows overrun / saving against this figure.',
+ exportT:'Export backup (.json)', exportD:'One file with all versions, options, notes and (optionally) attachments. Put it on OneDrive to share with the committee — anyone can import it here.', exportBtn:'Export', incAtts:'Include attachments (bigger file)',
+ importT:'Import backup', importD:'Replaces everything currently in this browser with the backup content.', importBtn:'Import', confirmImport:'Import will REPLACE all current data in this browser. Continue?',
+ wipeT:'Clear all data', wipeD:'Removes every version, option and attachment from this browser.', wipeBtn:'Clear', confirmWipe:'Really delete ALL local data? Export a backup first if unsure.',
+ helpT:'How to use', help1:'1. Upload each QS estimate version in “Versions” — the file is parsed automatically (summary, BOQ items, materials, rooms).',
+ help2:'2. “Compare” shows the differences between any two versions at section, room-type or line-item level — tick lines to total up only your selection.',
+ help3:'3. “Estimate” lets you switch lines off/on, reprice or add items — the project total updates instantly including preliminaries.',
+ help4:'4. “VE Studio” is a sandbox: test unit prices with photos and specs even without any file, and roll accepted options into the forecast.',
+ help5:'5. “Settings → Export” creates one backup file for OneDrive; the committee imports it to see exactly the same picture.',
+ loaded:'loaded', saved:'Saved', imgview:'Click image to open full size',
+ dropHint:'Drop .xlsx here', libFail:'Excel parser library could not load (no internet?). Upload/parsing disabled; VE Studio still works.',
+ sumBase:'Summary basis', room:'Room', keys:'keys', gfa:'GFA', prevBudget:'Previous budget (from file)', addOns:'Below-the-line items', grand:'TOTAL PROJECT',
+ confirm:'Confirm', vsBaseline:'vs baseline',
+ areasT:'Main areas', chartAreas:'Cost by main area',
+ areaGuest:'Guestrooms', areaGuestSub:'Rooms, suites + corridor (main package)',
+ areaPublic:'Public areas', areaPublicSub:'Lobby, Club Lounge',
+ areaFnb:'F&B outlets', areaFnbSub:'Not in the estimate file — enter budget lines below',
+ areaProj:'Project-wide', areaProjSub:'Professional fees etc.',
+ fromFile:'From estimate file', manualCol:'Manual lines', areaTotal:'Area total',
+ addLine:'+ Add budget line', allAreas:'ALL AREAS TOTAL',
+ areaHint:'Amounts in “From estimate file” come from the active version automatically. Add manual budget lines for scopes without a QS file yet (e.g. F&B outlets) or committee-approved allowances — they are saved with your data and included in the all-areas total.'
+},
+vi:{
+ dash:'Tổng quan', versions:'Phiên bản', compare:'So sánh', estimate:'Dự toán', ve:'VE Studio', materials:'Vật liệu', atts:'Đính kèm', settings:'Cài đặt',
+ sub:'Cải tạo Sofitel Saigon Plaza — Kiểm soát chi phí PIP',
+ noVer:'Chưa có phiên bản', upload:'Tải lên file Excel', uploadHint:'Kéo thả file dự toán .xlsx vào đây hoặc bấm để chọn. Mỗi lần tải lên được lưu thành một phiên bản riêng để so sánh.',
+ welcomeT:'Chào mừng đến với SSP Budget Tracker', welcomeP:'Tải lên bất kỳ phiên bản dự toán QS nào (.xlsx) — hệ thống sẽ tự đọc bảng tổng hợp, BOQ chi tiết, thông số vật liệu và bảng phòng. So sánh các phiên bản theo từng dòng, thử thêm/bớt hạng mục, lập phương án VE kèm hình ảnh và chia sẻ với ban dự án qua một file sao lưu duy nhất.',
+ orTry:'…hoặc vào ngay VE Studio để thử đơn giá mà không cần file.',
+ grandTotal:'Tổng chi phí dự án', nett:'Chi phí xây dựng thuần', perKeyGR:'Chi phí / phòng — guestrooms', perKeySU:'Chi phí / phòng — suites', costM2:'Chi phí / m² (GFA)', vsBudget:'so với ngân sách mục tiêu', vsPrev:'so với ngân sách trước (trong file)', target:'Ngân sách mục tiêu',
+ noTarget:'Chưa đặt mục tiêu — thêm trong Cài đặt', overrun:'VƯỢT NGÂN SÁCH', saving:'TIẾT KIỆM', onBudget:'ĐÚNG NGÂN SÁCH',
+ chartComp:'Cơ cấu ngân sách', chartRooms:'Chi phí theo loại phòng / khu vực', chartKeys:'Chi phí mỗi phòng (USD) theo loại', chartTrend:'Tổng chi phí theo phiên bản',
+ advisor:'Gợi ý tiết kiệm', advTop:'Hạng mục chi phí lớn nhất (Pareto)', advTip:'Các hạng mục chiếm ~80% chi phí là ứng viên VE tốt nhất — tiết kiệm vài % ở đây sẽ thay đổi tổng đáng kể.', rank:'#', item:'Hạng mục', sheet:'Sheet', share:'Tỷ trọng', cum:'Lũy kế', veCand:'Ứng viên VE',
+ advVar:'Chênh lệch đơn giá giữa các loại phòng', advVarTip:'Các dòng này có chi phí/m² chênh lệch lớn giữa các loại phòng — nên kiểm tra xem có thể đồng bộ spec không.',
+ forecast:'Dự báo', base:'Gốc (file tải lên)', estDelta:'Điều chỉnh dự toán', veDelta:'Phương án VE (đã chọn)', forecastTotal:'Tổng dự báo', inclPrelims:'gồm prelims',
+ verList:'Lịch sử phiên bản', vName:'Tên phiên bản', vFile:'File', vDate:'Ngày', vTotal:'Tổng chi phí dự án', vDelta:'Δ so với bản trước', vNote:'Ghi chú', vActive:'Đang dùng', vBase:'Bản gốc', del:'Xóa', added:'đã thêm',
+ confirmDelVer:'Xóa phiên bản này? Các chỉnh sửa dự toán của nó sẽ mất.',
+ parsed:'Kết quả đọc file', pSections:'Mục tổng hợp', pItems:'Dòng BOQ', pMats:'Vật liệu', pRooms:'Loại phòng', pWarn:'Cảnh báo', addVer:'Thêm phiên bản', cancel:'Hủy',
+ cmpA:'Phiên bản A (trước)', cmpB:'Phiên bản B (sau)', level:'Cấp độ', lvlSection:'Theo mục', lvlRoom:'Theo loại phòng', lvlItem:'Theo dòng chi tiết', scope:'Phạm vi phòng', overall:'Toàn bộ',
+ onlyChanged:'Chỉ dòng thay đổi', search:'Tìm kiếm…', section:'Mục', all:'Tất cả', name:'Tên', diff:'Δ (B−A)', diffPct:'Δ %', selSum:'Đã chọn', selCount:'dòng được chọn', movers:'Thay đổi lớn nhất (top 12)', addedItems:'Mới ở B', removedItems:'Bị bỏ ở B', qty:'KL', rate:'Đơn giá', unit:'ĐV', total:'Thành tiền', amount:'Giá trị',
+ needTwo:'Cần ít nhất hai phiên bản để so sánh.', needOne:'Hãy tải lên một phiên bản trước.',
+ estT:'Dự toán tương tác — thêm / bớt / đổi giá hạng mục', estTip:'Bỏ tick để loại một dòng khỏi dự toán, sửa khối lượng hoặc đơn giá, hoặc thêm dòng mới. File gốc không bị thay đổi — có thể reset bất cứ lúc nào.', inc:'Tính', addItem:'+ Thêm hạng mục', resetOv:'Reset chỉnh sửa', origTotal:'Nett gốc (theo BOQ)', adjTotal:'Nett điều chỉnh', delta:'Δ thay đổi', adjProject:'Tổng dự án điều chỉnh', modified:'đã sửa',
+ newItemT:'Thêm hạng mục mới', desc:'Mô tả', category:'Hạng mục / sheet', save:'Lưu',
+ veT:'VE Studio — thử phương án nhanh (không cần file)', veTip:'Nhập đơn giá và khối lượng để thấy ngay chênh lệch, biến động và %. Lưu thành thẻ phương án, đính kèm hình/spec, nhóm thành nghiên cứu và tick “đưa vào dự báo”.',
+ qcalc:'Tính nhanh', curRate:'Đơn giá hiện tại', newRate:'Đơn giá đề xuất', unitDiff:'Chênh lệch đơn giá', variation:'Biến động tổng', curTotal:'Tổng hiện tại', newTotal:'Tổng đề xuất', saveOpt:'Lưu thành phương án', linkItem:'Liên kết dòng BOQ (tùy chọn)', pickItem:'— gõ để tìm hạng mục —',
+ study:'Nghiên cứu / nhóm', optTitle:'Tên phương án', notes:'Ghi chú / spec tham chiếu', include:'Đưa vào dự báo', attach:'+ Tệp', noOpts:'Chưa có phương án — dùng ô tính nhanh phía trên.', bestOpt:'Chi phí thấp nhất trong nhóm', optCompare:'So sánh các phương án',
+ matT:'Tra cứu vật liệu / thông số kỹ thuật', matTip:'Đọc từ sheet “Updated material” của phiên bản đang dùng. Bấm vào mã REF ở bất kỳ đâu để nhảy đến đây.', ref:'Mã', area:'Khu vực', spec:'Thông số', supplier:'Nhà cung cấp', veAlt:'Phương án VE', remarks:'Ghi chú', noMats:'Không có dữ liệu vật liệu — hãy tải phiên bản có sheet “Updated material”.',
+ attT:'Thư viện đính kèm', attTip:'Lưu bản vẽ, báo giá, hình ảnh và PDF. Tất cả nằm trong trình duyệt này và có thể gói vào file sao lưu để chia sẻ.', attAdd:'+ Thêm tệp', attLink:'Liên kết với', general:'Chung', download:'Tải về', size:'Dung lượng', date:'Ngày', note:'Ghi chú', noAtts:'Chưa có tệp đính kèm.',
+ setT:'Cài đặt & dữ liệu', fx:'Tỷ giá (VND / USD)', prelims:'Preliminaries %', cont:'Dự phòng %', targetLbl:'Ngân sách mục tiêu (VND)', targetHint:'Trang Tổng quan sẽ hiển thị vượt/tiết kiệm so với con số này.',
+ exportT:'Xuất file sao lưu (.json)', exportD:'Một file chứa toàn bộ phiên bản, phương án, ghi chú và (tùy chọn) tệp đính kèm. Đặt lên OneDrive để chia sẻ — ai cũng có thể nhập lại tại đây.', exportBtn:'Xuất', incAtts:'Kèm tệp đính kèm (file lớn hơn)',
+ importT:'Nhập file sao lưu', importD:'Thay thế toàn bộ dữ liệu hiện tại trong trình duyệt bằng nội dung file sao lưu.', importBtn:'Nhập', confirmImport:'Nhập sẽ THAY THẾ toàn bộ dữ liệu hiện tại. Tiếp tục?',
+ wipeT:'Xóa toàn bộ dữ liệu', wipeD:'Xóa mọi phiên bản, phương án và tệp đính kèm khỏi trình duyệt này.', wipeBtn:'Xóa hết', confirmWipe:'Chắc chắn xóa TẤT CẢ dữ liệu? Nên xuất file sao lưu trước.',
+ helpT:'Hướng dẫn sử dụng', help1:'1. Tải từng phiên bản dự toán QS ở mục “Phiên bản” — file được đọc tự động (tổng hợp, BOQ, vật liệu, bảng phòng).',
+ help2:'2. “So sánh” cho thấy khác biệt giữa hai phiên bản bất kỳ theo mục, loại phòng hoặc từng dòng — tick để cộng riêng các dòng bạn chọn.',
+ help3:'3. “Dự toán” cho phép bật/tắt, đổi giá hoặc thêm hạng mục — tổng dự án cập nhật ngay lập tức kèm preliminaries.',
+ help4:'4. “VE Studio” là sandbox: thử đơn giá kèm hình ảnh và spec kể cả khi chưa có file, và đưa phương án được duyệt vào dự báo.',
+ help5:'5. “Cài đặt → Xuất” tạo một file sao lưu cho OneDrive; ban dự án nhập lại để thấy đúng bức tranh đó.',
+ loaded:'đã tải', saved:'Đã lưu', imgview:'Bấm vào hình để xem lớn',
+ dropHint:'Thả file .xlsx vào đây', libFail:'Không tải được thư viện đọc Excel (mất mạng?). Tạm không upload được; VE Studio vẫn dùng bình thường.',
+ sumBase:'Cơ sở tổng hợp', room:'Phòng', keys:'phòng', gfa:'GFA', prevBudget:'Ngân sách trước (trong file)', addOns:'Các khoản ngoài xây dựng', grand:'TỔNG DỰ ÁN',
+ confirm:'Xác nhận', vsBaseline:'so với bản gốc',
+ areasT:'Khu vực chính', chartAreas:'Chi phí theo khu vực chính',
+ areaGuest:'Khối phòng', areaGuestSub:'Phòng, suite + hành lang (gói chính)',
+ areaPublic:'Khu công cộng', areaPublicSub:'Sảnh, Club Lounge',
+ areaFnb:'Khối F&B', areaFnbSub:'Chưa có trong file dự toán — nhập ngân sách bên dưới',
+ areaProj:'Toàn dự án', areaProjSub:'Phí tư vấn v.v.',
+ fromFile:'Từ file dự toán', manualCol:'Nhập tay', areaTotal:'Tổng khu vực',
+ addLine:'+ Thêm dòng ngân sách', allAreas:'TỔNG TẤT CẢ KHU VỰC',
+ areaHint:'Cột “Từ file dự toán” lấy tự động từ phiên bản đang dùng. Thêm dòng nhập tay cho các phạm vi chưa có file QS (ví dụ khối F&B) hoặc các khoản đã được duyệt — dữ liệu được lưu lại và tính vào tổng tất cả khu vực.'
+}};
+function t(k){ return (I18N[state.lang]||I18N.en)[k] || I18N.en[k] || k; }
+
+/* ============================== utils ============================== */
+const $ = s=>document.querySelector(s);
+const uid = ()=> (crypto.randomUUID ? crypto.randomUUID() : 'id'+Date.now()+Math.random().toString(16).slice(2));
+function n(v){ if(typeof v==='number'&&isFinite(v)) return v; if(v==null) return null; const p=parseFloat(String(v).replace(/,/g,'')); return isFinite(p)?p:null; }
+function s(v){ return v==null?'':String(v).trim(); }
+function esc(x){ return s(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function norm(x){ return s(x).toLowerCase().replace(/\s+/g,' '); }
+function money(v,cur){ cur=cur||state.currency; if(v==null||!isFinite(v)) return '—';
+  if(cur==='USD'){ const u=v/ (state.fx||26450); return '$'+Math.round(u).toLocaleString('en-US'); }
+  return Math.round(v).toLocaleString('en-US'); }
+function moneyU(u){ if(u==null||!isFinite(u)) return '—'; return '$'+Math.round(u).toLocaleString('en-US'); }
+function compact(v){ if(v==null) return '—'; const a=Math.abs(v);
+  if(state.currency==='USD'){ const u=v/(state.fx||26450); const au=Math.abs(u); if(au>=1e6) return '$'+(u/1e6).toFixed(2)+'M'; if(au>=1e3) return '$'+(u/1e3).toFixed(0)+'K'; return '$'+u.toFixed(0); }
+  if(a>=1e9) return (v/1e9).toFixed(1)+' bn'; if(a>=1e6) return (v/1e6).toFixed(0)+' m'; return Math.round(v).toLocaleString(); }
+function pct(v){ return (v==null||!isFinite(v))?'—':(v*100).toFixed(1)+'%'; }
+function cls(d){ return d>0.5?'pos':(d<-0.5?'neg':'zero'); }
+function sign(v){ return v>0?'+':''; }
+function fsize(b){ return b>1048576?(b/1048576).toFixed(1)+' MB':(b/1024).toFixed(0)+' KB'; }
+function toast(m){ const el=$('#toast'); el.textContent=m; el.classList.add('on'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('on'),2200); }
+function modal(html){ $('#modal').innerHTML=html; $('#modalbg').classList.add('on'); }
+function closeModal(){ $('#modalbg').classList.remove('on'); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+$('#modalbg').addEventListener('click',e=>{ if(e.target.id==='modalbg') closeModal(); });
+
+/* ============================== storage (IndexedDB) ============================== */
+let db=null;
+function idbOpen(){ return new Promise((res,rej)=>{ const rq=indexedDB.open('ssp-budget-tracker',1);
+  rq.onupgradeneeded=e=>{ const d=e.target.result; if(!d.objectStoreNames.contains('kv')) d.createObjectStore('kv'); if(!d.objectStoreNames.contains('files')) d.createObjectStore('files',{keyPath:'id'}); };
+  rq.onsuccess=e=>res(e.target.result); rq.onerror=e=>rej(e); }); }
+function kvSet(k,v){ return new Promise((res,rej)=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=res; tx.onerror=rej; }); }
+function kvGet(k){ return new Promise((res,rej)=>{ const tx=db.transaction('kv','readonly'); const rq=tx.objectStore('kv').get(k); rq.onsuccess=()=>res(rq.result); rq.onerror=rej; }); }
+function fPut(f){ return new Promise((res,rej)=>{ const tx=db.transaction('files','readwrite'); tx.objectStore('files').put(f); tx.oncomplete=res; tx.onerror=rej; }); }
+function fAll(){ return new Promise((res,rej)=>{ const tx=db.transaction('files','readonly'); const rq=tx.objectStore('files').getAll(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=rej; }); }
+function fGet(id){ return new Promise((res,rej)=>{ const tx=db.transaction('files','readonly'); const rq=tx.objectStore('files').get(id); rq.onsuccess=()=>res(rq.result); rq.onerror=rej; }); }
+function fDel(id){ return new Promise((res,rej)=>{ const tx=db.transaction('files','readwrite'); tx.objectStore('files').delete(id); tx.oncomplete=res; tx.onerror=rej; }); }
+function fClear(){ return new Promise((res,rej)=>{ const tx=db.transaction('files','readwrite'); tx.objectStore('files').clear(); tx.oncomplete=res; tx.onerror=rej; }); }
+
+/* ============================== state ============================== */
+let state = { lang:'en', currency:'VND', fx:26450, prelimsPct:7, contPct:0, budgetTarget:null,
+  versions:[], activeId:null, baseId:null, options:[], manualAreas:[], tab:'dash' };
+let attCache=[]; // metadata cache of files store
+let saveT=null;
+function save(){ clearTimeout(saveT); saveT=setTimeout(()=>{ kvSet('state',JSON.parse(JSON.stringify(state))).catch(()=>{ try{localStorage.setItem('ssp_bt',JSON.stringify(state));}catch(e){} }); },350); }
+function ver(id){ return state.versions.find(v=>v.id===(id||state.activeId)); }
+function activeVer(){ return ver(state.activeId) || state.versions[state.versions.length-1] || null; }
+
+/* ============================== parser ============================== */
+function sheetRows(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
+function findHeaderRow(rows,words,maxR){ maxR=maxR||20;
+  for(let r=0;r<Math.min(rows.length,maxR);r++){ const row=rows[r]||[]; let hit=0;
+    for(const w of words){ if(row.some(c=>norm(c)===norm(w)||norm(c).startsWith(norm(w)))) hit++; }
+    if(hit>=words.length) return r; } return -1; }
+function colOf(row,pred){ for(let c=0;c<row.length;c++){ if(pred(row[c],c)) return c; } return -1; }
+
+function parseSummary(rows){
+  const out={sections:[],addOns:[],roomBlocks:[],perKey:[],gfa:null,nett:null,grandTotal:null,grandUSD:null,prevBudget:null,fx:null,warnings:[]};
+  let hr=-1;
+  for(let r=0;r<25;r++){ const row=rows[r]||[]; if(row.some(c=>norm(c)==='item')&&row.some(c=>norm(c)==='description')){hr=r;break;} }
+  if(hr<0){ out.warnings.push('Summary header not found'); return null; }
+  const H=rows[hr];
+  // fx
+  for(let r=0;r<8;r++){ const row=rows[r]||[]; for(let c=0;c<row.length;c++){ if(/usd\s*\/\s*vnd/i.test(s(row[c]))){ for(let c2=c+1;c2<row.length;c2++){ const f=n(row[c2]); if(f&&f>1000){out.fx=f;break;} } } } }
+  const colDesc=colOf(H,c=>norm(c)==='description');
+  let colTotal=-1,colUSD=-1;
+  for(let c=colDesc+1;c<H.length;c++){ const h=norm(H[c]); if(colTotal<0&&h.startsWith('total (vnd')) colTotal=c; if(colUSD<0&&h.startsWith('total (usd')) colUSD=c; }
+  if(colTotal<0){ out.warnings.push('TOTAL (VND) column not found'); return null; }
+  // room blocks: header row has '%', codes row above has label
+  const codesRow=rows[hr-1]||[];
+  const blocks=[];
+  for(let c=colUSD>0?colUSD+1:colTotal+1;c<H.length;c++){
+    if(norm(H[c])==='%'&&s(codesRow[c])){ blocks.push({code:s(codesRow[c]),cPct:c,cM2:c+1,cTot:c+2}); } }
+  // previous budget block (label in row hr-2)
+  const r6=rows[hr-2]||[];
+  for(let c=0;c<r6.length;c++){ if(/previous budget/i.test(s(r6[c]))){ for(let c2=c;c2<c+4;c2++){ if(norm(H[c2]||'').startsWith('total')){ out.prevBudget={label:s(r6[c]),col:c2,grandTotal:null}; break; } } } }
+  // gfa row
+  let gfaRow=-1;
+  for(let r=hr+1;r<hr+8;r++){ const row=rows[r]||[]; if(row.some(c=>/gfa/i.test(s(c)))){ gfaRow=r; break; } }
+  if(gfaRow>0){ out.gfa=n(rows[gfaRow][colTotal]); for(const b of blocks){ b.gfa=n(rows[gfaRow][b.cTot]); } }
+  out.roomBlocks=blocks.map(b=>({code:b.code,gfa:b.gfa||null,total:null,nett:null}));
+  // walk rows
+  let cur=null, afterNett=false, grandRow=-1;
+  for(let r=(gfaRow>0?gfaRow+1:hr+1);r<rows.length;r++){
+    const row=rows[r]||[];
+    if(grandRow>0 && r>grandRow){ // per-key summary rows: label sits in cost/m2 column
+      const lbl=s(row[colTotal-1]); const g=n(row[colTotal]);
+      if(lbl&&g!=null&&!/^\d/.test(lbl)){ out.perKey.push({name:lbl,totalVND:g,perKeyUSD:colUSD>0?n(row[colUSD]):null}); }
+      continue;
+    }
+    const d=s(row[colDesc]); if(!d) continue;
+    const tot=n(row[colTotal]);
+    if(/^section no/i.test(d)){ cur={name:d.replace(/^Section No\.?\s*\d+\s*-\s*/i,''),items:[],subtotal:null}; out.sections.push(cur); continue; }
+    if(/^sub-?total/i.test(d)){ if(cur){cur.subtotal=tot;} cur=null; continue; }
+    if(/^nett construction/i.test(d)){ out.nett=tot; afterNett=true; cur=null;
+      blocks.forEach((b,i)=>{ out.roomBlocks[i].nett=n(row[b.cTot]); }); continue; }
+    if(/^total project construction/i.test(d)){ out.grandTotal=tot; grandRow=r;
+      if(colUSD>0) out.grandUSD=n(row[colUSD]);
+      if(out.prevBudget) out.prevBudget.grandTotal=n(row[out.prevBudget.col]);
+      blocks.forEach((b,i)=>{ out.roomBlocks[i].total=n(row[b.cTot]); }); continue; }
+    if(afterNett && out.grandTotal==null){ // add-ons between nett and grand
+      let m=d.match(/at\s+([\d.]+)\s*%/i); out.addOns.push({name:d,total:tot,pct:m?parseFloat(m[1]):null}); continue; }
+    if(cur && tot!=null){ const it={desc:d,total:tot,costM2:n(row[colTotal-1]),pct:n(row[colTotal-2]),perRoom:{}};
+      if(out.prevBudget){ it.prev=n(row[out.prevBudget.col]); }
+      for(const b of blocks){ const bt=n(row[b.cTot]); if(bt!=null) it.perRoom[b.code]={t:bt,m2:n(row[b.cM2])}; }
+      cur.items.push(it); continue; }
+  }
+  return out;
+}
+
+function parseDetail(name,rows){
+  let hr=-1;
+  for(let r=0;r<15;r++){ const row=rows[r]||[]; if(norm(row[0])==='item'&&row.some(c=>norm(c)==='description')) {hr=r;break;} }
+  if(hr<0) return null;
+  const H=rows[hr], S=rows[hr+1]||[];
+  const colDesc=colOf(H,c=>norm(c)==='description');
+  let colQty=colOf(H,c=>norm(c).startsWith('total quantity')); if(colQty<0) colQty=colOf(H,c=>norm(c)==='quantity');
+  const colUnit=colOf(H,c=>norm(c)==='unit');
+  const colSup=colOf(S,c=>norm(c)==='supply');
+  const colIns=colOf(S,c=>norm(c)==='install');
+  const colRate=colOf(S,c=>norm(c)==='total rate');
+  let colAmt=colOf(H,c=>norm(c).startsWith('total amount'));
+  if(colAmt<0) colAmt=colOf(H,c=>norm(c).startsWith('amount'));
+  if(colAmt<0) return null;
+  const items=[]; let group='',category='';
+  for(let r=hr+2;r<rows.length;r++){
+    const row=rows[r]||[]; const a=row[0];
+    const dD=s(row[3])||s(row[4]); const dB=s(row[1]), dC=s(row[2]);
+    const amt=n(row[colAmt]);
+    const isNo = (typeof a==='number') || (/^\d+(\.\d+)?$/.test(s(a)));
+    if(!isNo){
+      if(dB&&!dD){ group=dB; category=dB; continue; }
+      if(dC&&!dD){ category=dC; continue; }
+      continue;
+    }
+    const desc=dD||dC||dB; if(!desc) continue;
+    if(/^(the contractor|notwithstanding)/i.test(desc)) continue;
+    const qty=colQty>=0?n(row[colQty]):null;
+    const rate=colRate>=0?n(row[colRate]):null;
+    const sup=colSup>=0?n(row[colSup]):null, ins=colIns>=0?n(row[colIns]):null;
+    const inclFlag = amt==null && /incl/i.test(s(row[colAmt])||s(row[colRate>=0?colRate:0]));
+    let total=amt; if(total==null&&qty!=null&&rate!=null) total=qty*rate;
+    if(total==null&&!inclFlag&&rate==null) continue;
+    items.push({ id:name.replace(/[^A-Za-z0-9]/g,'')+'-r'+r, sheet:name, group, category,
+      no:s(a), desc, qty, unit:s(row[colUnit]), supply:sup, install:ins, rate, total:total||0, incl:inclFlag||undefined });
+  }
+  return items.length?items:null;
+}
+
+function parseMaterials(rows){
+  let hr=-1;
+  for(let r=0;r<8;r++){ const row=rows[r]||[]; if(row.some(c=>/ref\s*code/i.test(s(c)))){hr=r;break;} }
+  if(hr<0) return [];
+  const H=rows[hr];
+  const cRef=colOf(H,c=>/ref\s*code/i.test(s(c))), cItem=colOf(H,c=>norm(c)==='item'), cArea=colOf(H,c=>norm(c)==='area'),
+        cDesc=colOf(H,c=>norm(c)==='description'), cSup=colOf(H,c=>norm(c)==='supplier'), cVe=colOf(H,c=>norm(c)==='ve'), cRem=colOf(H,c=>norm(c).startsWith('remark'));
+  const mats=[]; let cat='';
+  for(let r=hr+1;r<rows.length;r++){ const row=rows[r]||[];
+    const ref=s(row[cRef]);
+    if(!ref){ const a=s(row[0]); if(a&&!n(a)) cat=a; continue; }
+    mats.push({ref,category:cat,item:s(row[cItem]),area:s(row[cArea]),desc:s(row[cDesc]),supplier:s(row[cSup]),ve:cVe>=0?s(row[cVe]):'',remarks:cRem>=0?s(row[cRem]):''});
+  }
+  return mats;
+}
+
+function parseRooms(rows){
+  let hr=-1;
+  for(let r=0;r<15;r++){ const row=rows[r]||[]; if(row.some(c=>/room type/i.test(s(c)))){hr=r;break;} }
+  if(hr<0) return [];
+  const out=[];
+  for(let r=hr+1;r<rows.length;r++){ const row=rows[r]||[];
+    const name=s(row[1]); if(!name) continue;
+    if(/out of sow/i.test(s(row[5]))) continue;
+    const code=s(row[2]); const keys=n(row[3]); const gfa=n(row[4]);
+    if(keys==null&&gfa==null) continue;
+    out.push({name,code,keys,gfa,totalGfa:n(row[5])});
+  }
+  return out;
+}
+
+function parseWorkbook(wb,fileName){
+  const hidden={}; ((wb.Workbook||{}).Sheets||[]).forEach(sh=>{ if(sh.Hidden) hidden[sh.name]=true; });
+  const names=wb.SheetNames.filter(nm=>!hidden[nm]);
+  const warnings=[];
+  // summary
+  let summary=null;
+  const sumNames=names.filter(nm=>/summary/i.test(nm)&&!/per key/i.test(nm)).concat(names.filter(nm=>/per key/i.test(nm)));
+  for(const nm of sumNames){ try{ const r=parseSummary(sheetRows(wb.Sheets[nm])); if(r&&r.grandTotal){ summary=r; summary.sheetName=nm; break; } }catch(e){ warnings.push(nm+': '+e.message); } }
+  if(!summary) warnings.push('No summary sheet parsed — dashboard totals limited.');
+  // details
+  let items=[]; const parsedSheets=[];
+  for(const nm of names){ if(/summary|per key|cover|room schedule|material|explaination|explanation|drawing|cmt|notes|sheet\d/i.test(nm)) continue;
+    try{ const its=parseDetail(nm,sheetRows(wb.Sheets[nm])); if(its){ items=items.concat(its); parsedSheets.push(nm); } }catch(e){ warnings.push(nm+': '+e.message); } }
+  if(!items.length) warnings.push('No detail BOQ sheets parsed — item-level features limited.');
+  // materials + rooms
+  let materials=[],rooms=[];
+  for(const nm of names){ if(/material/i.test(nm)){ try{ materials=parseMaterials(sheetRows(wb.Sheets[nm])); }catch(e){} } }
+  for(const nm of names){ if(/room schedule/i.test(nm)){ try{ rooms=parseRooms(sheetRows(wb.Sheets[nm])); }catch(e){} } }
+  // version date guess from filename e.g. 260701 (yymmdd)
+  let date=new Date().toISOString().slice(0,10);
+  const m=(fileName||'').match(/(\d{2})(\d{2})(\d{2})/g);
+  if(m){ const last=m[m.length-1]; const y=+last.slice(0,2),mo=+last.slice(2,4),da=+last.slice(4,6);
+    if(mo>=1&&mo<=12&&da>=1&&da<=31) date=`20${last.slice(0,2)}-${last.slice(2,4)}-${last.slice(4,6)}`; }
+  return { id:uid(), name:(fileName||'Version').replace(/\.(xlsx|xlsm|xls)$/i,''), fileName:fileName||'', date, note:'',
+    fx:(summary&&summary.fx)||state.fx, summary, items, materials, rooms, ov:{}, newItems:[], warnings, parsedSheets, createdAt:Date.now() };
+}
+
+/* ============================== computed ============================== */
+function itemEff(v,it){ const o=(v.ov||{})[it.id]||{};
+  const inc=o.inc!==undefined?o.inc:true;
+  const qty=o.qty!==undefined?o.qty:it.qty;
+  const rate=o.rate!==undefined?o.rate:it.rate;
+  let total; if((o.qty!==undefined||o.rate!==undefined)&&qty!=null&&rate!=null) total=qty*rate; else total=it.total;
+  return {inc,qty,rate,total:inc?total:0,changed:o.qty!==undefined||o.rate!==undefined||o.inc===false};
+}
+function estDelta(v){ if(!v) return 0; let d=0;
+  for(const it of (v.items||[])){ const e=itemEff(v,it); d+= e.total - it.total; }
+  for(const ni of (v.newItems||[])){ if(ni.inc!==false) d += (n(ni.qty)||0)*(n(ni.rate)||0); }
+  return d; }
+function veDelta(){ let d=0; for(const o of state.options){ if(o.include){ const q=n(o.qty)||0; d+=((n(o.newRate)||0)-(n(o.baseRate)||0))*q; } } return d; }
+function grandOf(v){ return v&&v.summary?v.summary.grandTotal:null; }
+function adjustedGrand(v){ const g=grandOf(v); if(g==null) return null; return g + estDelta(v)*(1+state.prelimsPct/100); }
+function forecastGrand(v){ const a=adjustedGrand(v); if(a==null) return null; return a + veDelta()*(1+state.prelimsPct/100); }
+/* main-area classification: guest = main package (rooms/suites/corridor incl. prelims),
+   public = Lobby + Club Lounge add-ons, proj = professional fees, fnb = manual only */
+const AREAS=[
+  {id:'guest', k:'areaGuest', sub:'areaGuestSub', color:'#1f3a5f'},
+  {id:'public',k:'areaPublic',sub:'areaPublicSub',color:'#c8a557'},
+  {id:'fnb',  k:'areaFnb',  sub:'areaFnbSub',  color:'#3e7c8f'},
+  {id:'proj', k:'areaProj', sub:'areaProjSub', color:'#9aa4b1'}];
+function areaBreakdown(v){
+  const res={guest:{file:0,manual:0},public:{file:0,manual:0},fnb:{file:0,manual:0},proj:{file:0,manual:0}};
+  if(v&&v.summary){ const su=v.summary; res.guest.file+=su.nett||0;
+    for(const a of su.addOns){ const nm=norm(a.name);
+      if(/lobby|club/.test(nm)) res.public.file+=a.total||0;
+      else if(/fee/.test(nm)) res.proj.file+=a.total||0;
+      else res.guest.file+=a.total||0; } }
+  for(const m of (state.manualAreas||[])){ if(res[m.area]) res[m.area].manual+=n(m.amount)||0; }
+  return res;
+}
+function roomKeys(v,code){ if(!v||!v.rooms) return null;
+  const base=code.split(/[\s(]/)[0];
+  const blk=(v.summary&&v.summary.roomBlocks||[]).find(b=>b.code===code);
+  const room=v.rooms.find(r=>r.code===base)||v.rooms.find(r=>r.code&&code.startsWith(r.code));
+  if(room&&room.gfa&&blk&&blk.gfa) return Math.round(blk.gfa/room.gfa);
+  return null; }
+
+/* ============================== charts ============================== */
+const charts={};
+function mkChart(id,cfg){ const cv=document.getElementById(id); if(!cv||typeof Chart==='undefined') return;
+  if(charts[id]) charts[id].destroy(); charts[id]=new Chart(cv.getContext('2d'),cfg); }
+const PAL=['#1f3a5f','#c8a557','#3e7c8f','#7d5a8c','#b05c50','#5b8c5a','#8a8f5a','#5a6f8c','#a5744f','#4f7ea5','#6b5a8c','#8c5a6b','#4a8c7a','#8c7a4a'];
+
+/* ============================== render: shell ============================== */
+const TABS=[['dash','dash'],['versions','versions'],['compare','compare'],['estimate','estimate'],['ve','ve'],['materials','materials'],['atts','atts'],['settings','settings']];
+function renderNav(){
+  $('#nav').innerHTML=TABS.map(([id,k])=>`<button class="${state.tab===id?'on':''}" onclick="App.go('${id}')">${t(k)}</button>`).join('');
+  document.querySelectorAll('#curSeg button').forEach(b=>b.classList.toggle('on',b.dataset.cur===state.currency));
+  document.querySelectorAll('#langSeg button').forEach(b=>b.classList.toggle('on',b.dataset.lang===state.lang));
+  $('#hSub').textContent=t('sub');
+  const v=activeVer(); $('#hVer').textContent=v?('📄 '+v.name):t('noVer');
+  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('on'));
+  const el=$('#tab-'+state.tab); if(el) el.classList.add('on');
+}
+function renderAll(){ renderNav();
+  ({dash:renderDash,versions:renderVersions,compare:renderCompare,estimate:renderEstimate,ve:renderVE,materials:renderMaterials,atts:renderAtts,settings:renderSettings})[state.tab]();
+}
+
+/* ============================== render: dashboard ============================== */
+function renderDash(){
+  const el=$('#tab-dash'); const v=activeVer();
+  if(!v){ el.innerHTML=`
+    <div class="hero"><h2>${t('welcomeT')}</h2><p>${t('welcomeP')}</p>
+      <button class="btn gold" onclick="App.pickXlsx()">⬆ ${t('upload')}</button>
+      <button class="btn ghost" style="margin-left:8px" onclick="App.go('ve')">${t('ve')} →</button>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.75">${t('orTry')}</p></div>
+    <div class="drop" id="dropzone">${t('uploadHint')}</div>`;
+    wireDrop(); return; }
+  const su=v.summary; const grand=grandOf(v); const adj=adjustedGrand(v); const fc=forecastGrand(v);
+  const eDelta=estDelta(v)*(1+state.prelimsPct/100), vDelta=veDelta()*(1+state.prelimsPct/100);
+  const gr=(su&&su.perKey.find(p=>/guestroom/i.test(p.name)))||null;
+  const suK=(su&&su.perKey.find(p=>/suite/i.test(p.name)))||null;
+  const tgt=state.budgetTarget;
+  let tgtHtml=`<div class="sub">${t('noTarget')}</div>`;
+  if(tgt&&fc!=null){ const d=fc-tgt; const p=d/tgt;
+    tgtHtml=`<div class="val ${d>0?'pos':'neg'}" style="font-size:18px">${sign(d)}${money(d)} <span style="font-size:12px">(${sign(d)}${pct(p)})</span></div>
+      <div class="sub"><span class="chip ${d>0?'r':'g'}">${d>0?t('overrun'):t('saving')}</span></div>
+      <div class="bar"><i style="width:${Math.min(100,fc/tgt*100).toFixed(1)}%;background:${d>0?'var(--red)':'var(--green)'}"></i></div>`; }
+  let prevHtml='';
+  if(su&&su.prevBudget&&su.prevBudget.grandTotal){ const d=grand-su.prevBudget.grandTotal;
+    prevHtml=`<div class="card"><div class="lbl">${t('vsPrev')}</div><div class="val ${cls(d)}" style="font-size:18px">${sign(d)}${money(d)}</div><div class="sub">${esc(su.prevBudget.label)}</div></div>`; }
+  el.innerHTML=`
+  <div class="cards">
+    <div class="card"><div class="lbl">${t('grandTotal')}</div><div class="val">${money(grand)}</div>
+      <div class="sub">${state.currency==='VND'?moneyU(grand/(v.fx||state.fx)):Math.round(grand).toLocaleString()+' VND'} · ${esc(v.name)}</div></div>
+    <div class="card"><div class="lbl">${t('nett')}</div><div class="val">${money(su?su.nett:null)}</div>
+      <div class="sub">${t('costM2')}: ${su&&su.gfa?money((su.nett||0)/su.gfa):'—'}</div></div>
+    <div class="card"><div class="lbl">${t('perKeyGR')}</div><div class="val">${gr?moneyU(gr.perKeyUSD):'—'}</div>
+      <div class="sub">${gr?money(gr.totalVND,'VND')+' VND':''}</div></div>
+    <div class="card"><div class="lbl">${t('perKeySU')}</div><div class="val">${suK?moneyU(suK.perKeyUSD):'—'}</div>
+      <div class="sub">${suK?money(suK.totalVND,'VND')+' VND':''}</div></div>
+    <div class="card"><div class="lbl">${t('target')} ${tgt?'('+compact(tgt)+')':''}</div>${tgtHtml}</div>
+    ${prevHtml}
+  </div>
+  <div class="panel"><h3>📈 ${t('forecast')} <span class="chip n">${t('inclPrelims')} ${state.prelimsPct}%</span></h3>
+    <div class="cards" style="margin-bottom:0">
+      <div class="card"><div class="lbl">${t('base')}</div><div class="val" style="font-size:17px">${money(grand)}</div></div>
+      <div class="card"><div class="lbl">${t('estDelta')}</div><div class="val ${cls(eDelta)}" style="font-size:17px">${sign(eDelta)}${money(eDelta)}</div></div>
+      <div class="card"><div class="lbl">${t('veDelta')}</div><div class="val ${cls(vDelta)}" style="font-size:17px">${sign(vDelta)}${money(vDelta)}</div></div>
+      <div class="card" style="border-left:4px solid var(--gold)"><div class="lbl">${t('forecastTotal')}</div><div class="val" style="font-size:17px">${money(fc)}</div>
+        <div class="sub">${moneyU((fc||0)/(v.fx||state.fx))}</div></div>
+    </div></div>
+  ${areasHtml(v)}
+  <div class="grid2">
+    <div class="panel"><h3>🍩 ${t('chartComp')}</h3><div class="chartbox"><canvas id="chComp"></canvas></div></div>
+    <div class="panel"><h3>🏨 ${t('chartRooms')}</h3><div class="chartbox"><canvas id="chRooms"></canvas></div></div>
+    <div class="panel"><h3>🔑 ${t('chartKeys')}</h3><div class="chartbox"><canvas id="chKeys"></canvas></div></div>
+    <div class="panel"><h3>📊 ${t('chartTrend')}</h3><div class="chartbox"><canvas id="chTrend"></canvas></div></div>
+  </div>
+  <div class="panel"><h3>💡 ${t('advisor')}</h3>${advisorHtml(v)}</div>`;
+  drawDashCharts(v);
+}
+function areasHtml(v){
+  const br=areaBreakdown(v);
+  const grandAll=AREAS.reduce((s2,a)=>s2+br[a.id].file+br[a.id].manual,0)||1;
+  let rows='';
+  for(const a of AREAS){
+    const b=br[a.id]; const tot=b.file+b.manual;
+    rows+=`<tr class="sect"><td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${a.color};margin-right:7px"></span><b>${t(a.k)}</b>
+        <div style="font-size:11px;color:var(--mut);font-weight:400">${t(a.sub)}</div></td>
+      <td class="num">${b.file?money(b.file):'—'}</td>
+      <td class="num">${b.manual?money(b.manual):'—'}</td>
+      <td class="num"><b>${money(tot)}</b></td>
+      <td class="num">${pct(tot/grandAll)}</td>
+      <td><button class="btn sm ghost noprint" onclick="App.areaAdd('${a.id}')">${t('addLine')}</button></td></tr>`;
+    for(const m of (state.manualAreas||[]).filter(x=>x.area===a.id)){
+      rows+=`<tr><td style="padding-left:28px"><input value="${esc(m.name)}" placeholder="${t('desc')}…" style="width:95%" onchange="App.areaEdit('${m.id}','name',this.value)"></td>
+        <td></td>
+        <td class="num"><input type="number" step="any" value="${m.amount||''}" style="width:140px" onchange="App.areaEdit('${m.id}','amount',this.value)"></td>
+        <td class="num">${money(n(m.amount)||0)}</td><td></td>
+        <td><button class="btn sm danger" onclick="App.areaDel('${m.id}')">✕</button></td></tr>`;
+    }
+  }
+  const allTot=AREAS.reduce((s2,a)=>s2+br[a.id].file+br[a.id].manual,0);
+  return `<div class="panel"><h3>🗺 ${t('areasT')}</h3><div class="help" style="margin-bottom:10px">${t('areaHint')}</div>
+  <div class="areagrid">
+   <div class="tblwrap" style="max-height:none;overflow:visible"><table>
+    <thead><tr><th>${t('name')}</th><th class="num">${t('fromFile')}</th><th class="num">${t('manualCol')}</th><th class="num">${t('areaTotal')}</th><th class="num">${t('share')}</th><th></th></tr></thead>
+    <tbody>${rows}
+    <tr class="total"><td>${t('allAreas')}</td><td class="num">${money(AREAS.reduce((s2,a)=>s2+br[a.id].file,0))}</td>
+      <td class="num">${money(AREAS.reduce((s2,a)=>s2+br[a.id].manual,0))}</td>
+      <td class="num">${money(allTot)}</td><td class="num">100%</td><td></td></tr></tbody></table></div>
+   <div class="chartbox" style="height:260px"><canvas id="chAreas"></canvas></div>
+  </div></div>`;
+}
+function advisorHtml(v){
+  const items=(v.items||[]).slice().sort((a,b)=>b.total-a.total);
+  const tot=items.reduce((s2,i)=>s2+i.total,0)||1;
+  let cum=0; const rowsH=items.slice(0,12).map((it,i)=>{ const sh=it.total/tot; cum+=sh;
+    return `<tr><td>${i+1}</td><td>${esc(it.desc)}<div style="font-size:11px;color:var(--mut)">${esc(it.category||it.group||'')}</div></td>
+      <td>${esc(it.sheet)}</td><td class="num">${money(it.total)}</td><td class="num">${pct(sh)}</td><td class="num">${pct(cum)}</td>
+      <td>${cum<=0.82?`<span class="chip a">${t('veCand')}</span>`:''}</td></tr>`; }).join('');
+  // rate variance suggestions from summary
+  let varH='';
+  if(v.summary){ const sugg=[];
+    for(const sec of v.summary.sections){ for(const it of sec.items){ const ms=Object.values(it.perRoom||{}).map(x=>x.m2).filter(x=>x>0);
+      if(ms.length>=4&&it.total>1e9){ const mx=Math.max(...ms),mn=Math.min(...ms); if(mn>0&&mx/mn>1.8) sugg.push({d:it.desc,mx,mn,tot:it.total}); } } }
+    if(sugg.length){ varH=`<h3 style="margin-top:18px">⚖ ${t('advVar')}</h3><div class="help" style="margin-bottom:8px">${t('advVarTip')}</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px">`+sugg.slice(0,6).map(x=>`<li><b>${esc(x.d)}</b> — ${money(x.mn)}–${money(x.mx)} /m² (${(x.mx/x.mn).toFixed(1)}×), ${compact(x.tot)}</li>`).join('')+`</ul>`; } }
+  if(!items.length&&!varH) return `<div class="help">${t('needOne')}</div>`;
+  return `<div class="help" style="margin-bottom:8px">${t('advTip')}</div>
+  <div class="tblwrap" style="max-height:420px"><table><thead><tr><th>${t('rank')}</th><th>${t('item')}</th><th>${t('sheet')}</th><th class="num">${t('total')}</th><th class="num">${t('share')}</th><th class="num">${t('cum')}</th><th></th></tr></thead><tbody>${rowsH}</tbody></table></div>${varH}`;
+}
+function drawDashCharts(v){
+  if(document.getElementById('chAreas')){
+    const br=areaBreakdown(v);
+    const list=AREAS.map(a=>({l:t(a.k),v:br[a.id].file+br[a.id].manual,c:a.color})).filter(x=>x.v>0);
+    const sum=list.reduce((s2,x)=>s2+x.v,0)||1;
+    mkChart('chAreas',{type:'doughnut',data:{labels:list.map(x=>x.l),datasets:[{data:list.map(x=>x.v),backgroundColor:list.map(x=>x.c),borderWidth:1}]},
+      options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:c=>` ${c.label}: ${compact(c.raw)} (${pct(c.raw/sum)})`}}}}});
+  }
+  const su=v.summary; if(!su) return;
+  const parts=su.sections.map(sc=>({l:sc.name,v:sc.subtotal||sc.items.reduce((a,b)=>a+b.total,0)}))
+    .concat(su.addOns.filter(a=>a.total).map(a=>({l:a.name.replace(/\s*\(as SSP.s budget\)/i,''),v:a.total})));
+  mkChart('chComp',{type:'doughnut',data:{labels:parts.map(p=>p.l),datasets:[{data:parts.map(p=>p.v),backgroundColor:PAL,borderWidth:1}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}},
+      tooltip:{callbacks:{label:c=>` ${c.label}: ${compact(c.raw)} (${pct(c.raw/parts.reduce((a,b)=>a+b.v,0))})`}}}}});
+  const rb=su.roomBlocks.filter(b=>b.total);
+  mkChart('chRooms',{type:'bar',data:{labels:rb.map(b=>b.code),datasets:[{label:t('total'),data:rb.map(b=>b.total),backgroundColor:'#1f3a5f'}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+compact(c.raw)}}},
+      scales:{y:{ticks:{callback:x=>compact(x)}},x:{ticks:{font:{size:10}}}}}});
+  const keyed=rb.map(b=>({code:b.code,k:roomKeys(v,b.code),t:b.total})).filter(x=>x.k>0);
+  mkChart('chKeys',{type:'bar',data:{labels:keyed.map(x=>x.code+' ('+x.k+')'),datasets:[{label:'USD/key',data:keyed.map(x=>Math.round(x.t/x.k/(v.fx||state.fx))),backgroundColor:'#c8a557'}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' $'+Math.round(c.raw).toLocaleString()+' /key'}}},
+      scales:{y:{ticks:{callback:x=>'$'+(x/1000)+'K'}},x:{ticks:{font:{size:10}}}}}});
+  const vs=state.versions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  mkChart('chTrend',{type:'line',data:{labels:vs.map(x=>x.date+' · '+x.name.slice(0,18)),datasets:[{label:t('grandTotal'),data:vs.map(x=>grandOf(x)),borderColor:'#1f3a5f',backgroundColor:'rgba(200,165,87,.25)',fill:true,tension:.25,pointRadius:5,pointBackgroundColor:'#c8a557'}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+compact(c.raw)}}},scales:{y:{ticks:{callback:x=>compact(x)}},x:{ticks:{font:{size:10}}}}}});
+}
+
+/* ============================== render: versions ============================== */
+function renderVersions(){
+  const el=$('#tab-versions');
+  const vs=state.versions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const rowsH=vs.map((v,i)=>{ const g=grandOf(v); const prev=i>0?grandOf(vs[i-1]):null; const d=(g!=null&&prev!=null)?g-prev:null;
+    return `<tr>
+      <td><input type="radio" name="vact" ${state.activeId===v.id?'checked':''} onchange="App.setActive('${v.id}')"></td>
+      <td><input type="radio" name="vbase" ${state.baseId===v.id?'checked':''} onchange="App.setBase('${v.id}')"></td>
+      <td><input value="${esc(v.name)}" style="width:210px" onchange="App.renameVer('${v.id}',this.value)"><div style="font-size:11px;color:var(--mut)">${esc(v.fileName)}</div></td>
+      <td><input type="date" value="${esc(v.date)}" onchange="App.dateVer('${v.id}',this.value)"></td>
+      <td class="num"><b>${money(g)}</b><div style="font-size:11px;color:var(--mut)">${moneyU((g||0)/(v.fx||state.fx))}</div></td>
+      <td class="num ${d==null?'':cls(d)}">${d==null?'—':sign(d)+money(d)}</td>
+      <td><input value="${esc(v.note)}" style="width:160px" placeholder="…" onchange="App.noteVer('${v.id}',this.value)"></td>
+      <td style="font-size:11.5px;color:var(--mut)">${(v.items||[]).length} items · ${(v.materials||[]).length} mats</td>
+      <td><button class="btn sm danger" onclick="App.delVer('${v.id}')">✕</button></td></tr>`; }).join('');
+  el.innerHTML=`
+  <div class="toolbar"><button class="btn gold" onclick="App.pickXlsx()">⬆ ${t('upload')}</button><span class="help">${t('uploadHint')}</span></div>
+  <div class="drop" id="dropzone" style="margin-bottom:16px">${t('dropHint')}</div>
+  <div class="panel"><h3>🗂 ${t('verList')}</h3>
+  ${vs.length?`<div class="tblwrap"><table><thead><tr><th>${t('vActive')}</th><th>${t('vBase')}</th><th>${t('vName')}</th><th>${t('vDate')}</th><th class="num">${t('vTotal')}</th><th class="num">${t('vDelta')}</th><th>${t('vNote')}</th><th></th><th></th></tr></thead><tbody>${rowsH}</tbody></table></div>`:`<div class="help">${t('needOne')}</div>`}
+  </div>`;
+  wireDrop();
+}
+function wireDrop(){ const dz=$('#dropzone'); if(!dz) return;
+  dz.onclick=()=>App.pickXlsx();
+  dz.ondragover=e=>{e.preventDefault();dz.classList.add('over');};
+  dz.ondragleave=()=>dz.classList.remove('over');
+  dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over'); const f=e.dataTransfer.files[0]; if(f) App.readXlsxFile(f); };
+}
+
+/* ============================== render: compare ============================== */
+let cmpSel=new Set(), cmpState={a:null,b:null,level:'item',scope:'__all',onlyChanged:true,q:'',sect:'__all'};
+function renderCompare(){
+  const el=$('#tab-compare');
+  if(state.versions.length<2){ el.innerHTML=`<div class="panel"><h3>🔀 ${t('compare')}</h3><div class="help">${t('needTwo')}</div>
+    <div style="margin-top:10px"><button class="btn gold" onclick="App.pickXlsx()">⬆ ${t('upload')}</button></div></div>`; return; }
+  const vs=state.versions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  if(!cmpState.a||!ver(cmpState.a)) cmpState.a=(state.baseId&&ver(state.baseId))?state.baseId:vs[0].id;
+  if(!cmpState.b||!ver(cmpState.b)) cmpState.b=vs[vs.length-1].id;
+  const A=ver(cmpState.a),B=ver(cmpState.b);
+  const opts=id=>vs.map(v=>`<option value="${v.id}" ${v.id===id?'selected':''}>${esc(v.name)} (${v.date})</option>`).join('');
+  const codes=[...new Set([...(A.summary?A.summary.roomBlocks.map(b=>b.code):[]),...(B.summary?B.summary.roomBlocks.map(b=>b.code):[])])];
+  const sects=[...new Set([...(A.items||[]).map(i=>i.sheet),...(B.items||[]).map(i=>i.sheet)])];
+  el.innerHTML=`
+  <div class="panel"><div class="toolbar" style="margin-bottom:0">
+    <div><label style="font-size:11px;color:var(--mut)">${t('cmpA')}</label><br><select onchange="App.cmpSet('a',this.value)">${opts(cmpState.a)}</select></div>
+    <div style="font-size:20px;color:var(--gold);align-self:end">→</div>
+    <div><label style="font-size:11px;color:var(--mut)">${t('cmpB')}</label><br><select onchange="App.cmpSet('b',this.value)">${opts(cmpState.b)}</select></div>
+    <div><label style="font-size:11px;color:var(--mut)">${t('level')}</label><br>
+      <select onchange="App.cmpSet('level',this.value)">
+        <option value="section" ${cmpState.level==='section'?'selected':''}>${t('lvlSection')}</option>
+        <option value="room" ${cmpState.level==='room'?'selected':''}>${t('lvlRoom')}</option>
+        <option value="item" ${cmpState.level==='item'?'selected':''}>${t('lvlItem')}</option></select></div>
+    ${cmpState.level==='section'?`<div><label style="font-size:11px;color:var(--mut)">${t('scope')}</label><br>
+      <select onchange="App.cmpSet('scope',this.value)"><option value="__all">${t('overall')}</option>${codes.map(c=>`<option ${cmpState.scope===c?'selected':''}>${c}</option>`).join('')}</select></div>`:''}
+    ${cmpState.level==='item'?`<div><label style="font-size:11px;color:var(--mut)">${t('sheet')}</label><br>
+      <select onchange="App.cmpSet('sect',this.value)"><option value="__all">${t('all')}</option>${sects.map(c=>`<option ${cmpState.sect===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>`:''}
+    <div style="align-self:end"><label style="font-size:12px"><input type="checkbox" ${cmpState.onlyChanged?'checked':''} onchange="App.cmpSet('onlyChanged',this.checked)"> ${t('onlyChanged')}</label></div>
+    <input placeholder="${t('search')}" value="${esc(cmpState.q)}" oninput="App.cmpSet('q',this.value)" style="align-self:end;width:200px">
+  </div></div>
+  <div id="cmpBody"></div>`;
+  renderCompareBody();
+}
+function cmpRows(){
+  const A=ver(cmpState.a),B=ver(cmpState.b); const rows=[];
+  if(cmpState.level==='item'){
+    // occurrence-indexed key: survives QS renumbering, disambiguates repeated descriptions
+    const keyed=list=>{ const c={}; const m=new Map();
+      for(const i of (list||[])){ const b=norm(i.sheet)+'||'+norm(i.category||i.group)+'||'+norm(i.desc); c[b]=(c[b]||0)+1; m.set(b+'#'+c[b],i); } return m; };
+    const mA=keyed(A.items), mB=keyed(B.items);
+    const all=new Set([...mA.keys(),...mB.keys()]);
+    for(const k of all){ const a=mA.get(k),b=mB.get(k); const src=b||a;
+      if(cmpState.sect!=='__all'&&src.sheet!==cmpState.sect) continue;
+      rows.push({k,name:src.desc,sub:src.category||src.group||'',sheet:src.sheet,
+        aQty:a?a.qty:null,bQty:b?b.qty:null,aRate:a?a.rate:null,bRate:b?b.rate:null,
+        a:a?a.total:null,b:b?b.total:null,status:!a?'added':(!b?'removed':'')}); }
+  } else if(cmpState.level==='room'){
+    const gA=Object.fromEntries((A.summary?A.summary.roomBlocks:[]).map(b=>[b.code,b.total]));
+    const gB=Object.fromEntries((B.summary?B.summary.roomBlocks:[]).map(b=>[b.code,b.total]));
+    for(const c of new Set([...Object.keys(gA),...Object.keys(gB)])) rows.push({k:'r'+c,name:c,sub:'',sheet:'',a:gA[c]??null,b:gB[c]??null,status:''});
+  } else { // sections
+    const get=(V)=>{ const out=[]; if(!V.summary) return out;
+      for(const sc of V.summary.sections){ let val=sc.subtotal;
+        if(cmpState.scope!=='__all'){ val=sc.items.reduce((s2,i)=>s2+((i.perRoom[cmpState.scope]||{}).t||0),0); }
+        out.push({name:'▸ '+sc.name,val,isSec:true});
+        for(const i of sc.items){ out.push({name:i.desc,val:cmpState.scope==='__all'?i.total:((i.perRoom[cmpState.scope]||{}).t||0),sec:sc.name}); } }
+      if(cmpState.scope==='__all'){ for(const a of V.summary.addOns) out.push({name:a.name,val:a.total,sec:t('addOns')});
+        out.push({name:t('grand'),val:V.summary.grandTotal,isGrand:true}); }
+      return out; };
+    const la=get(A),lb=get(B); const mA=new Map(la.map(x=>[norm(x.name),x])),mB=new Map(lb.map(x=>[norm(x.name),x]));
+    for(const k2 of new Set([...mA.keys(),...mB.keys()])){ const a=mA.get(k2),b=mB.get(k2); const src=b||a;
+      rows.push({k:'s'+k2,name:src.name,sub:src.sec||'',sheet:'',a:a?a.val:null,b:b?b.val:null,isSec:src.isSec,isGrand:src.isGrand,status:''}); }
+  }
+  for(const r of rows){ r.d=(r.b||0)-(r.a||0); r.dp=(r.a&&r.a!==0)?r.d/Math.abs(r.a):null; }
+  let out=rows;
+  if(cmpState.q) out=out.filter(r=>norm(r.name+' '+r.sub).includes(norm(cmpState.q)));
+  if(cmpState.onlyChanged) out=out.filter(r=>Math.abs(r.d)>1||r.isGrand);
+  out.sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
+  return out;
+}
+function renderCompareBody(){
+  const el=$('#cmpBody'); if(!el) return;
+  const rows=cmpRows(); const isItem=cmpState.level==='item';
+  let selA=0,selB=0,selN=0;
+  rows.forEach(r=>{ if(cmpSel.has(r.k)){selA+=r.a||0;selB+=r.b||0;selN++;} });
+  const rowsH=rows.slice(0,600).map(r=>`
+   <tr class="${r.isSec?'sect':''}${r.isGrand?'total':''}">
+    <td><input type="checkbox" ${cmpSel.has(r.k)?'checked':''} onchange="App.cmpTick('${esc(r.k).replace(/'/g,"\\'")}',this.checked)"></td>
+    <td>${esc(r.name)}${r.sub?`<div style="font-size:11px;color:var(--mut)">${esc(r.sub)}${r.sheet?' · '+esc(r.sheet):''}</div>`:''}
+      ${r.status==='added'?` <span class="chip b">${t('addedItems')}</span>`:''}${r.status==='removed'?` <span class="chip r">${t('removedItems')}</span>`:''}</td>
+    ${isItem?`<td class="num">${r.aQty==null?'—':(+r.aQty).toLocaleString()}${r.bQty!=null&&r.bQty!==r.aQty?' → <b>'+(+r.bQty).toLocaleString()+'</b>':''}</td>
+    <td class="num">${r.aRate==null?'—':money(r.aRate)}${r.bRate!=null&&r.bRate!==r.aRate?' → <b>'+money(r.bRate)+'</b>':''}</td>`:''}
+    <td class="num">${r.a==null?'—':money(r.a)}</td><td class="num">${r.b==null?'—':money(r.b)}</td>
+    <td class="num ${cls(r.d)}">${sign(r.d)}${money(r.d)}</td>
+    <td class="num ${cls(r.d)}">${r.dp==null?'—':sign(r.d)+pct(r.dp)}</td></tr>`).join('');
+  const movers=rows.filter(r=>!r.isSec&&!r.isGrand&&Math.abs(r.d)>1).slice(0,12);
+  el.innerHTML=`
+  ${selN?`<div class="panel" style="border-left:4px solid var(--gold)"><b>${t('selSum')}:</b> ${selN} ${t('selCount')} —
+    A: <b>${money(selA)}</b> → B: <b>${money(selB)}</b> · Δ <b class="${cls(selB-selA)}">${sign(selB-selA)}${money(selB-selA)}</b>
+    <button class="btn sm ghost" style="margin-left:10px" onclick="App.cmpClear()">✕</button></div>`:''}
+  <div class="panel"><div class="tblwrap"><table><thead><tr><th></th><th>${t('name')}</th>
+    ${isItem?`<th class="num">${t('qty')}</th><th class="num">${t('rate')}</th>`:''}
+    <th class="num">A</th><th class="num">B</th><th class="num">${t('diff')}</th><th class="num">${t('diffPct')}</th></tr></thead>
+    <tbody>${rowsH||'<tr><td colspan="8" style="text-align:center;color:var(--mut);padding:20px">—</td></tr>'}</tbody></table></div></div>
+  ${movers.length?`<div class="panel"><h3>🏁 ${t('movers')}</h3><div class="chartbox" style="height:${Math.max(220,movers.length*30)}px"><canvas id="chMovers"></canvas></div></div>`:''}`;
+  if(movers.length){ mkChart('chMovers',{type:'bar',data:{labels:movers.map(m=>m.name.length>48?m.name.slice(0,48)+'…':m.name),
+    datasets:[{data:movers.map(m=>m.d),backgroundColor:movers.map(m=>m.d>0?'#b03030':'#1e7f4f')}]},
+    options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+sign(c.raw)+compact(c.raw)}}},
+      scales:{x:{ticks:{callback:x=>compact(x)}},y:{ticks:{font:{size:10.5}}}}}}); }
+}
+
+/* ============================== render: estimate ============================== */
+let estState={q:'',sect:'__all'};
+function renderEstimate(){
+  const el=$('#tab-estimate'); const v=activeVer();
+  if(!v||!(v.items||[]).length){ el.innerHTML=`<div class="panel"><h3>🧮 ${t('estimate')}</h3><div class="help">${t('needOne')}</div>
+    <div style="margin-top:10px"><button class="btn gold" onclick="App.pickXlsx()">⬆ ${t('upload')}</button></div></div>`; return; }
+  const sheets=[...new Set(v.items.map(i=>i.sheet))];
+  let baseN=0,adjN=0,nMod=0;
+  v.items.forEach(it=>{ const e=itemEff(v,it); baseN+=it.total; adjN+=e.total; if(e.changed) nMod++; });
+  (v.newItems||[]).forEach(ni=>{ if(ni.inc!==false) adjN+=(n(ni.qty)||0)*(n(ni.rate)||0); });
+  const delta=adjN-baseN; const adjP=adjustedGrand(v);
+  const list=v.items.filter(it=>{
+    if(estState.sect!=='__all'&&it.sheet!==estState.sect) return false;
+    if(estState.q&&!norm(it.desc+' '+it.category+' '+it.group).includes(norm(estState.q))) return false; return true; });
+  let html='',lastSheet='',lastCat='';
+  for(const it of list.slice(0,800)){
+    if(it.sheet!==lastSheet){ html+=`<tr class="grp"><td colspan="8">📄 ${esc(it.sheet)}</td></tr>`; lastSheet=it.sheet; lastCat=''; }
+    if((it.category||it.group)!==lastCat){ lastCat=it.category||it.group; if(lastCat) html+=`<tr class="sect"><td colspan="8">${esc(lastCat)}</td></tr>`; }
+    const e=itemEff(v,it);
+    html+=`<tr style="${e.inc?'':'opacity:.45'}">
+      <td><input type="checkbox" ${e.inc?'checked':''} onchange="App.ovInc('${it.id}',this.checked)"></td>
+      <td>${refLinkify(it.desc)}${it.incl?' <span class="chip n">Incl.</span>':''}${e.changed?` <span class="chip a">${t('modified')}</span>`:''}</td>
+      <td class="num"><input type="number" step="any" value="${e.qty==null?'':e.qty}" style="width:90px" onchange="App.ovQty('${it.id}',this.value)"></td>
+      <td>${esc(it.unit)}</td>
+      <td class="num"><input type="number" step="any" value="${e.rate==null?'':e.rate}" style="width:120px" onchange="App.ovRate('${it.id}',this.value)"></td>
+      <td class="num">${money(e.total)}</td>
+      <td class="num ${cls(e.total-it.total)}">${e.total-it.total?sign(e.total-it.total)+money(e.total-it.total):''}</td><td></td></tr>`;
+  }
+  for(const ni of (v.newItems||[])){
+    const tot=(n(ni.qty)||0)*(n(ni.rate)||0);
+    html+=`<tr style="background:#f4fbf6">
+      <td><input type="checkbox" ${ni.inc!==false?'checked':''} onchange="App.niInc('${ni.id}',this.checked)"></td>
+      <td><b>${esc(ni.desc)}</b> <span class="chip g">${t('added')}</span><div style="font-size:11px;color:var(--mut)">${esc(ni.category||'')}</div></td>
+      <td class="num"><input type="number" step="any" value="${ni.qty}" style="width:90px" onchange="App.niEdit('${ni.id}','qty',this.value)"></td>
+      <td>${esc(ni.unit)}</td>
+      <td class="num"><input type="number" step="any" value="${ni.rate}" style="width:120px" onchange="App.niEdit('${ni.id}','rate',this.value)"></td>
+      <td class="num">${money(tot)}</td><td class="num pos">+${money(tot)}</td>
+      <td><button class="btn sm danger" onclick="App.niDel('${ni.id}')">✕</button></td></tr>`;
+  }
+  el.innerHTML=`
+  <div class="panel"><h3>🧮 ${t('estT')}</h3><div class="help">${t('estTip')}</div>
+  <div class="toolbar" style="margin-top:10px">
+    <select onchange="App.estSet('sect',this.value)"><option value="__all">${t('all')}</option>${sheets.map(sh=>`<option ${estState.sect===sh?'selected':''}>${esc(sh)}</option>`).join('')}</select>
+    <input id="estQ" placeholder="${t('search')}" value="${esc(estState.q)}" oninput="App.estSet('q',this.value)" style="width:220px">
+    <span class="sp"></span>
+    <button class="btn" onclick="App.newItemModal()">${t('addItem')}</button>
+    <button class="btn ghost" onclick="App.resetOv()">${t('resetOv')}</button>
+  </div>
+  <div class="tblwrap"><table><thead><tr><th>${t('inc')}</th><th style="min-width:280px">${t('desc')}</th><th class="num">${t('qty')}</th><th>${t('unit')}</th><th class="num">${t('rate')}</th><th class="num">${t('total')}</th><th class="num">Δ</th><th></th></tr></thead><tbody>${html}</tbody></table></div>
+  </div>
+  <div class="sticky-tot">
+    <div><div class="it">${t('origTotal')}</div><div class="iv">${money(baseN)}</div></div>
+    <div><div class="it">${t('adjTotal')}</div><div class="iv">${money(adjN)}</div></div>
+    <div><div class="it">${t('delta')} (${nMod+(v.newItems||[]).length})</div><div class="iv" style="color:${delta>0?'#ff9d9d':delta<0?'#8fe3b0':'#fff'}">${sign(delta)}${money(delta)}</div></div>
+    <div><div class="it">${t('delta')} ${t('inclPrelims')} ${state.prelimsPct}%</div><div class="iv" style="color:${delta>0?'#ff9d9d':delta<0?'#8fe3b0':'#fff'}">${sign(delta)}${money(delta*(1+state.prelimsPct/100))}</div></div>
+    <div><div class="it">${t('adjProject')}</div><div class="iv" style="color:var(--gold2)">${money(adjP)}</div></div>
+  </div>`;
+}
+function refLinkify(txt){ return esc(txt).replace(/\b([A-Z]{2,3}-\d{2}[A-Z]?)\b/g,(m0,c)=>`<span class="refcode" onclick="App.goMaterial('${c}')">${c}</span>`); }
+
+/* ============================== render: VE studio ============================== */
+let qc={desc:'',qty:1,unit:'',baseRate:'',newRate:'',link:''};
+function veCalc(base,nw,q){ base=n(base)||0;nw=n(nw)||0;q=n(q)||0;
+  return {ud:nw-base,cur:base*q,prop:nw*q,vari:(nw-base)*q,p:base?(nw-base)/base:null}; }
+function veBadge(x){ return x>0.5?`<span class="chip r">${t('overrun')}</span>`:(x<-0.5?`<span class="chip g">${t('saving')}</span>`:`<span class="chip n">${t('onBudget')}</span>`); }
+function qcResHtml(){ const c=veCalc(qc.baseRate,qc.newRate,qc.qty);
+  return `<div>${t('unitDiff')}<br><b class="${cls(c.ud)}" style="font-size:16px">${sign(c.ud)}${money(c.ud)}</b> <span class="${cls(c.ud)}">${c.p==null?'':'('+sign(c.ud)+pct(c.p)+')'}</span></div>
+      <div>${t('curTotal')}<br><b style="font-size:16px">${money(c.cur)}</b></div>
+      <div>${t('newTotal')}<br><b style="font-size:16px">${money(c.prop)}</b></div>
+      <div>${t('variation')}<br><b class="${cls(c.vari)}" style="font-size:16px">${sign(c.vari)}${money(c.vari)}</b> ${veBadge(c.vari)}</div>`; }
+/* re-render helpers that don't steal keyboard focus while typing */
+function keepFocus(fn){ const ae=document.activeElement; const id=ae?ae.id:null; const pos=(ae&&ae.selectionStart!=null)?ae.selectionStart:null;
+  fn(); if(id){ const el=document.getElementById(id); if(el){ el.focus(); if(pos!=null){ try{ el.setSelectionRange(pos,pos); }catch(e){} } } } }
+let __searchT=null;
+function debounceRender(fn){ clearTimeout(__searchT); __searchT=setTimeout(()=>keepFocus(fn),250); }
+function renderVE(){
+  const el=$('#tab-ve'); const v=activeVer();
+  const items=(v&&v.items)||[];
+  const badge=veBadge;
+  const studies=[...new Set(state.options.map(o=>o.study||''))];
+  const optsH=state.options.map(o=>{ const r=veCalc(o.baseRate,o.newRate,o.qty);
+    const files=(o.files||[]).map(fid=>{ const f=attCache.find(a=>a.id===fid); if(!f) return '';
+      return f.mime&&f.mime.startsWith('image')?`<img src="${f.dataUrl}" title="${esc(f.name)}" onclick="App.viewAtt('${f.id}')">`:`<div class="fdoc" onclick="App.viewAtt('${f.id}')">${esc(f.name.slice(0,26))}</div>`; }).join('');
+    return `<div class="opt" style="border-left-color:${r.vari>0?'var(--red)':r.vari<0?'var(--green)':'var(--gold)'}">
+    <div class="row"><div class="fld" style="flex:2"><label>${t('optTitle')}</label><input value="${esc(o.title)}" onchange="App.optEdit('${o.id}','title',this.value)"></div>
+      <div class="fld"><label>${t('study')}</label><input value="${esc(o.study||'')}" list="dlStudies" onchange="App.optEdit('${o.id}','study',this.value)"></div></div>
+    <div class="row"><div class="fld"><label>${t('qty')}</label><input type="number" step="any" value="${o.qty}" onchange="App.optEdit('${o.id}','qty',this.value)"></div>
+      <div class="fld"><label>${t('unit')}</label><input value="${esc(o.unit||'')}" onchange="App.optEdit('${o.id}','unit',this.value)"></div>
+      <div class="fld"><label>${t('curRate')}</label><input type="number" step="any" value="${o.baseRate}" onchange="App.optEdit('${o.id}','baseRate',this.value)"></div>
+      <div class="fld"><label>${t('newRate')}</label><input type="number" step="any" value="${o.newRate}" onchange="App.optEdit('${o.id}','newRate',this.value)"></div></div>
+    <div class="row"><div class="fld"><label>${t('notes')}</label><textarea rows="2" onchange="App.optEdit('${o.id}','notes',this.value)">${esc(o.notes||'')}</textarea></div></div>
+    <div class="res">
+      <div>${t('unitDiff')}: <b class="${cls(r.ud)}">${sign(r.ud)}${money(r.ud)}</b></div>
+      <div>Δ%: <b class="${cls(r.ud)}">${r.p==null?'—':sign(r.ud)+pct(r.p)}</b></div>
+      <div>${t('curTotal')}: <b>${money(r.cur)}</b></div>
+      <div>${t('newTotal')}: <b>${money(r.prop)}</b></div>
+      <div style="grid-column:1/-1">${t('variation')}: <b class="${cls(r.vari)}" style="font-size:14px">${sign(r.vari)}${money(r.vari)}</b> ${badge(r.vari)}</div>
+    </div>
+    <div class="thumbs">${files}</div>
+    <div class="row" style="margin-top:9px;justify-content:space-between">
+      <label style="font-size:12.5px"><input type="checkbox" ${o.include?'checked':''} onchange="App.optEdit('${o.id}','include',this.checked)"> <b>${t('include')}</b></label>
+      <span><button class="btn sm ghost" onclick="App.optFiles('${o.id}')">${t('attach')}</button>
+      <button class="btn sm danger" onclick="App.optDel('${o.id}')">✕</button></span>
+    </div></div>`; }).join('');
+  // studies comparison
+  let cmpH='';
+  for(const st of studies){ const os=state.options.filter(o=>(o.study||'')===st); if(os.length<2) continue;
+    const best=Math.min(...os.map(o=>veCalc(o.baseRate,o.newRate,o.qty).prop));
+    cmpH+=`<h3 style="margin-top:14px">🆚 ${t('optCompare')}: ${esc(st)||'—'}</h3><div class="tblwrap"><table>
+      <thead><tr><th>${t('optTitle')}</th><th class="num">${t('qty')}</th><th class="num">${t('curRate')}</th><th class="num">${t('newRate')}</th><th class="num">${t('newTotal')}</th><th class="num">${t('variation')}</th><th></th></tr></thead><tbody>
+      ${os.map(o=>{const r=veCalc(o.baseRate,o.newRate,o.qty); return `<tr ${r.prop===best?'style="background:var(--greenbg)"':''}>
+        <td>${esc(o.title)}</td><td class="num">${o.qty}</td><td class="num">${money(n(o.baseRate))}</td><td class="num">${money(n(o.newRate))}</td>
+        <td class="num"><b>${money(r.prop)}</b></td><td class="num ${cls(r.vari)}">${sign(r.vari)}${money(r.vari)}</td>
+        <td>${r.prop===best?`<span class="chip g">★ ${t('bestOpt')}</span>`:''}</td></tr>`;}).join('')}</tbody></table></div>`; }
+  el.innerHTML=`
+  <div class="panel"><h3>⚡ ${t('veT')}</h3><div class="help">${t('veTip')}</div></div>
+  <div class="panel" style="border-left:4px solid var(--gold)"><h3>🧮 ${t('qcalc')}</h3>
+    <div class="row" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:2;min-width:200px"><label style="font-size:11px;color:var(--mut)">${t('linkItem')}</label><br>
+        <input list="dlItems" placeholder="${t('pickItem')}" value="${esc(qc.link)}" style="width:100%" onchange="App.qcLink(this.value)"></div>
+      <div style="flex:2;min-width:180px"><label style="font-size:11px;color:var(--mut)">${t('desc')}</label><br><input id="qcDesc" value="${esc(qc.desc)}" style="width:100%" oninput="qc.desc=this.value"></div>
+      <div><label style="font-size:11px;color:var(--mut)">${t('qty')}</label><br><input type="number" step="any" value="${qc.qty}" style="width:90px" oninput="App.qcSet('qty',this.value)"></div>
+      <div><label style="font-size:11px;color:var(--mut)">${t('unit')}</label><br><input value="${esc(qc.unit)}" style="width:70px" oninput="qc.unit=this.value"></div>
+      <div><label style="font-size:11px;color:var(--mut)">${t('curRate')}</label><br><input type="number" step="any" value="${qc.baseRate}" style="width:130px" oninput="App.qcSet('baseRate',this.value)"></div>
+      <div><label style="font-size:11px;color:var(--mut)">${t('newRate')}</label><br><input type="number" step="any" value="${qc.newRate}" style="width:130px" oninput="App.qcSet('newRate',this.value)"></div>
+      <button class="btn gold" onclick="App.qcSave()">${t('saveOpt')}</button>
+    </div>
+    <datalist id="dlItems">${items.slice(0,900).map(i=>`<option value="${esc(i.desc.slice(0,80))}">`).join('')}</datalist>
+    <datalist id="dlStudies">${studies.filter(Boolean).map(s2=>`<option value="${esc(s2)}">`).join('')}</datalist>
+    <div class="res" id="qcRes" style="background:#f6f7f9;border-radius:8px;padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px;font-size:13px">${qcResHtml()}</div>
+  </div>
+  ${cmpH}
+  <h3 style="margin:16px 0 10px;color:var(--navy2)">🗃 ${t('ve')} (${state.options.length})</h3>
+  ${state.options.length?`<div class="opts">${optsH}</div>`:`<div class="help">${t('noOpts')}</div>`}`;
+}
+
+/* ============================== render: materials ============================== */
+let matQ='';
+function renderMaterials(){
+  const el=$('#tab-materials'); const v=activeVer(); const mats=(v&&v.materials)||[];
+  const list=mats.filter(m=>!matQ||norm(m.ref+' '+m.item+' '+m.desc+' '+m.supplier+' '+m.area+' '+m.category).includes(norm(matQ)));
+  let html='',lastCat='';
+  for(const m of list){ if(m.category!==lastCat){ lastCat=m.category; if(lastCat) html+=`<tr class="sect"><td colspan="7">${esc(lastCat)}</td></tr>`; }
+    html+=`<tr id="mat-${esc(m.ref)}"><td><b>${esc(m.ref)}</b></td><td>${esc(m.item)}</td><td>${esc(m.area).replace(/\n/g,'<br>')}</td>
+    <td style="white-space:pre-line">${esc(m.desc)}</td><td style="white-space:pre-line;font-size:12px">${esc(m.supplier)}</td>
+    <td>${m.ve?`<span class="chip ${norm(m.ve)!==norm((m.supplier||'').split('\n')[0])?'a':'n'}">${esc(m.ve)}</span>`:''}</td>
+    <td style="font-size:12px">${esc(m.remarks)}</td></tr>`; }
+  el.innerHTML=`
+  <div class="panel"><h3>🧱 ${t('matT')} <span class="chip n">${mats.length}</span></h3><div class="help">${t('matTip')}</div>
+  <div class="toolbar" style="margin-top:10px"><input id="matQ" placeholder="${t('search')}" value="${esc(matQ)}" oninput="App.matSearch(this.value)" style="width:280px"></div>
+  ${mats.length?`<div class="tblwrap" style="max-height:70vh"><table><thead><tr><th>${t('ref')}</th><th>${t('item')}</th><th>${t('area')}</th><th style="min-width:220px">${t('spec')}</th><th>${t('supplier')}</th><th>${t('veAlt')}</th><th>${t('remarks')}</th></tr></thead><tbody>${html}</tbody></table></div>`:`<div class="help">${t('noMats')}</div>`}
+  </div>`;
+}
+
+/* ============================== render: attachments ============================== */
+function renderAtts(){
+  const el=$('#tab-atts');
+  const links=[{v:'',l:t('general')}].concat(state.options.map(o=>({v:o.id,l:'VE: '+o.title})));
+  const cards=attCache.slice().sort((a,b)=>b.date-a.date).map(f=>`
+   <div class="att"><div class="prev">${f.mime&&f.mime.startsWith('image')?`<img src="${f.dataUrl}" onclick="App.viewAtt('${f.id}')">`:'📄'}</div>
+    <div class="meta"><div class="nm">${esc(f.name)}</div>
+    <div style="color:var(--mut);margin-top:2px">${fsize(f.size)} · ${new Date(f.date).toLocaleDateString()}</div>
+    <div class="row2"><select style="flex:1;font-size:11.5px" onchange="App.attLink('${f.id}',this.value)">
+      ${links.map(L=>`<option value="${L.v}" ${(f.link||'')===L.v?'selected':''}>${esc(L.l)}</option>`).join('')}</select></div>
+    <div class="row2"><input placeholder="${t('note')}…" value="${esc(f.note||'')}" style="flex:1;font-size:11.5px" onchange="App.attNote('${f.id}',this.value)"></div>
+    <div class="row2"><button class="btn sm ghost" onclick="App.downloadAtt('${f.id}')">⬇ ${t('download')}</button>
+    <button class="btn sm danger" onclick="App.delAtt('${f.id}')">✕</button></div>
+   </div></div>`).join('');
+  el.innerHTML=`
+  <div class="panel"><h3>📎 ${t('attT')} <span class="chip n">${attCache.length}</span></h3><div class="help">${t('attTip')}</div>
+  <div class="toolbar" style="margin-top:10px"><button class="btn gold" onclick="$('#fileAtt').click()">${t('attAdd')}</button></div>
+  ${attCache.length?`<div class="atts">${cards}</div>`:`<div class="help">${t('noAtts')}</div>`}</div>`;
+}
+
+/* ============================== render: settings ============================== */
+function renderSettings(){
+  const el=$('#tab-settings');
+  el.innerHTML=`
+  <div class="panel"><h3>⚙ ${t('setT')}</h3>
+    <div class="setrow"><div class="sl">${t('fx')}</div><input type="number" value="${state.fx}" style="width:130px" onchange="App.set('fx',parseFloat(this.value)||26450)"></div>
+    <div class="setrow"><div class="sl">${t('prelims')}</div><input type="number" step="0.5" value="${state.prelimsPct}" style="width:90px" onchange="App.set('prelimsPct',parseFloat(this.value)||0)"></div>
+    <div class="setrow"><div class="sl">${t('cont')}</div><input type="number" step="0.5" value="${state.contPct}" style="width:90px" onchange="App.set('contPct',parseFloat(this.value)||0)"></div>
+    <div class="setrow"><div class="sl">${t('targetLbl')}</div><input type="number" value="${state.budgetTarget||''}" style="width:220px" onchange="App.set('budgetTarget',parseFloat(this.value)||null)">
+      <div class="sd">${t('targetHint')}</div></div>
+  </div>
+  <div class="panel"><h3>💾 ${t('exportT')}</h3><div class="help">${t('exportD')}</div>
+    <div class="toolbar" style="margin-top:10px"><label style="font-size:12.5px"><input type="checkbox" id="expAtts" checked> ${t('incAtts')}</label>
+    <button class="btn gold" onclick="App.exportJson()">⬇ ${t('exportBtn')}</button></div></div>
+  <div class="panel"><h3>📥 ${t('importT')}</h3><div class="help">${t('importD')}</div>
+    <div class="toolbar" style="margin-top:10px"><button class="btn" onclick="$('#fileImport').click()">${t('importBtn')}</button></div></div>
+  <div class="panel"><h3>🗑 ${t('wipeT')}</h3><div class="help">${t('wipeD')}</div>
+    <div class="toolbar" style="margin-top:10px"><button class="btn danger" onclick="App.wipe()">${t('wipeBtn')}</button></div></div>
+  <div class="panel"><h3>❓ ${t('helpT')}</h3><div class="help">${t('help1')}<br>${t('help2')}<br>${t('help3')}<br>${t('help4')}<br>${t('help5')}</div></div>`;
+}
+
+/* ============================== App actions ============================== */
+const App={
+ go(tab){ state.tab=tab; save(); renderAll(); },
+ set(k,v2){ state[k]=v2; save(); renderAll(); },
+ setActive(id){ state.activeId=id; save(); renderAll(); },
+ setBase(id){ state.baseId=id; save(); renderAll(); },
+ renameVer(id,v2){ const V=ver(id); if(V){V.name=v2; save(); renderNav();} },
+ dateVer(id,v2){ const V=ver(id); if(V){V.date=v2; save();} },
+ noteVer(id,v2){ const V=ver(id); if(V){V.note=v2; save();} },
+ delVer(id){ if(!confirm(t('confirmDelVer'))) return;
+   state.versions=state.versions.filter(v2=>v2.id!==id);
+   if(state.activeId===id) state.activeId=state.versions.length?state.versions[state.versions.length-1].id:null;
+   if(state.baseId===id) state.baseId=null; save(); renderAll(); },
+ pickXlsx(){ if(typeof XLSX==='undefined'){toast(t('libFail'));return;} $('#fileXlsx').click(); },
+ readXlsxFile(file){ if(typeof XLSX==='undefined'){toast(t('libFail'));return;}
+   const rd=new FileReader();
+   rd.onload=e=>{ try{ const wb=XLSX.read(e.target.result,{type:'array'}); App.reviewVersion(parseWorkbook(wb,file.name)); }
+     catch(err){ toast('Parse error: '+err.message); } };
+   rd.readAsArrayBuffer(file); },
+ reviewVersion(v){
+   window.__pendingVer=v;
+   const su=v.summary;
+   modal(`<h3>📄 ${t('parsed')}: ${esc(v.fileName)}</h3>
+   <div class="kv" style="margin-bottom:12px">
+     <span>${t('vName')}</span><input id="pvName" value="${esc(v.name)}" style="width:100%">
+     <span>${t('vDate')}</span><input id="pvDate" type="date" value="${esc(v.date)}">
+     <span>${t('grandTotal')}</span><b>${su?money(su.grandTotal,'VND')+' VND · '+moneyU(su.grandTotal/(v.fx||state.fx)):'—'}</b>
+     <span>${t('nett')}</span><b>${su?money(su.nett,'VND'):'—'}</b>
+     <span>${t('pSections')}</span><b>${su?su.sections.length+' ('+su.sections.map(s2=>s2.items.length).reduce((a,b)=>a+b,0)+' lines)':'0'}</b>
+     <span>${t('pItems')}</span><b>${v.items.length} — ${v.parsedSheets.join(', ')||'—'}</b>
+     <span>${t('pMats')}</span><b>${v.materials.length}</b>
+     <span>${t('pRooms')}</span><b>${v.rooms.length}</b>
+     <span>FX</span><b>${v.fx}</b></div>
+   ${v.warnings.length?`<div class="warnbox"><b>${t('pWarn')}:</b><br>${v.warnings.map(esc).join('<br>')}</div>`:`<div class="okbox">✓ OK</div>`}
+   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+     <button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>
+     <button class="btn gold" onclick="App.confirmVersion()">${t('addVer')}</button></div>`); },
+ confirmVersion(){ const v=window.__pendingVer; if(!v) return;
+   v.name=$('#pvName').value||v.name; v.date=$('#pvDate').value||v.date;
+   state.versions.push(v); state.activeId=v.id; if(!state.baseId) state.baseId=v.id;
+   if(v.fx) state.fx=v.fx;
+   window.__pendingVer=null; closeModal(); save(); toast('✓ '+v.name+' '+t('loaded')); App.go('dash'); },
+ // compare
+ cmpSet(k,v2){ cmpState[k]=v2; if(k==='level'){cmpSel.clear();} if(k==='q'){ renderCompareBody(); } else renderCompare(); },
+ cmpTick(k,on){ if(on)cmpSel.add(k); else cmpSel.delete(k); renderCompareBody(); },
+ cmpClear(){ cmpSel.clear(); renderCompareBody(); },
+ // estimate
+ estSet(k,v2){ estState[k]=v2; if(k==='q'){ debounceRender(renderEstimate); } else renderEstimate(); },
+ ovInc(id,on){ const v=activeVer(); v.ov[id]=v.ov[id]||{}; v.ov[id].inc=on; save(); renderEstimate(); },
+ ovQty(id,val){ const v=activeVer(); v.ov[id]=v.ov[id]||{}; if(val===''){delete v.ov[id].qty;}else v.ov[id].qty=parseFloat(val); save(); renderEstimate(); },
+ ovRate(id,val){ const v=activeVer(); v.ov[id]=v.ov[id]||{}; if(val===''){delete v.ov[id].rate;}else v.ov[id].rate=parseFloat(val); save(); renderEstimate(); },
+ resetOv(){ const v=activeVer(); v.ov={}; v.newItems=[]; save(); renderEstimate(); toast('✓'); },
+ newItemModal(){ const v=activeVer(); const sheets=[...new Set(v.items.map(i=>i.sheet))];
+   modal(`<h3>${t('newItemT')}</h3>
+   <div class="kv">
+    <span>${t('desc')}</span><input id="niDesc" style="width:100%">
+    <span>${t('category')}</span><select id="niCat">${sheets.map(s2=>`<option>${esc(s2)}</option>`).join('')}</select>
+    <span>${t('qty')}</span><input id="niQty" type="number" step="any" value="1">
+    <span>${t('unit')}</span><input id="niUnit" value="sum">
+    <span>${t('rate')}</span><input id="niRate" type="number" step="any" value="0"></div>
+   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>
+    <button class="btn gold" onclick="App.niAdd()">${t('save')}</button></div>`); },
+ niAdd(){ const v=activeVer(); v.newItems=v.newItems||[];
+   v.newItems.push({id:uid(),desc:$('#niDesc').value||'New item',category:$('#niCat').value,qty:parseFloat($('#niQty').value)||0,unit:$('#niUnit').value,rate:parseFloat($('#niRate').value)||0,inc:true});
+   closeModal(); save(); renderEstimate(); },
+ niEdit(id,k,val){ const v=activeVer(); const ni=(v.newItems||[]).find(x=>x.id===id); if(ni){ni[k]=parseFloat(val)||0; save(); renderEstimate();} },
+ niInc(id,on){ const v=activeVer(); const ni=(v.newItems||[]).find(x=>x.id===id); if(ni){ni.inc=on; save(); renderEstimate();} },
+ niDel(id){ const v=activeVer(); v.newItems=(v.newItems||[]).filter(x=>x.id!==id); save(); renderEstimate(); },
+ // VE
+ qcSet(k,v2){ qc[k]=v2; const el=document.getElementById('qcRes'); if(el) el.innerHTML=qcResHtml(); else renderVE(); },
+ qcLink(val){ qc.link=val; const v=activeVer(); if(!v) {renderVE();return;}
+   const it=(v.items||[]).find(i=>i.desc.slice(0,80)===val||norm(i.desc)===norm(val));
+   if(it){ qc.desc=it.desc; qc.qty=it.qty!=null?it.qty:1; qc.unit=it.unit||''; qc.baseRate=it.rate!=null?it.rate:''; }
+   renderVE(); },
+ qcSave(){ if(!qc.desc&&!qc.link){ toast(t('desc')+'?'); return; }
+   state.options.unshift({id:uid(),title:qc.desc||qc.link,study:'',qty:n(qc.qty)||1,unit:qc.unit,baseRate:n(qc.baseRate)||0,newRate:n(qc.newRate)||0,notes:'',include:false,files:[]});
+   Object.assign(qc,{desc:'',qty:1,unit:'',baseRate:'',newRate:'',link:''}); save(); renderVE(); toast('✓ '+t('saved')); },
+ optEdit(id,k,v2){ const o=state.options.find(x=>x.id===id); if(!o) return;
+   if(['qty','baseRate','newRate'].includes(k)) o[k]=parseFloat(v2)||0; else o[k]=v2;
+   save(); if(k!=='title'&&k!=='notes'&&k!=='study') renderVE(); },
+ optDel(id){ state.options=state.options.filter(o=>o.id!==id); save(); renderVE(); },
+ optFiles(id){ window.__optTarget=id; $('#fileOptImg').click(); },
+ // main areas (manual budget lines)
+ areaAdd(area){ state.manualAreas=state.manualAreas||[]; state.manualAreas.push({id:uid(),area,name:'',amount:0}); save(); renderDash(); },
+ areaEdit(id,k,val){ const m=(state.manualAreas||[]).find(x=>x.id===id); if(!m) return;
+   m[k]=k==='amount'?(parseFloat(val)||0):val; save(); renderDash(); },
+ areaDel(id){ state.manualAreas=(state.manualAreas||[]).filter(x=>x.id!==id); save(); renderDash(); },
+ // materials
+ goMaterial(code){ matQ=code; App.go('materials');
+   setTimeout(()=>{ const r=document.getElementById('mat-'+code); if(r){ r.scrollIntoView({block:'center'}); r.style.background='var(--amberbg)'; } },60); },
+ matSearch(v2){ matQ=v2; debounceRender(renderMaterials); },
+ // attachments
+ async addAttFiles(files,linkId){
+   for(const f of Array.from(files)){
+     if(f.size>8*1048576){ toast(f.name+' > 8MB — skipped'); continue; }
+     const dataUrl=await new Promise(res=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.readAsDataURL(f); });
+     const rec={id:uid(),name:f.name,mime:f.type,size:f.size,date:Date.now(),link:linkId||'',note:'',dataUrl};
+     await fPut(rec); attCache.push(rec);
+     if(linkId){ const o=state.options.find(x=>x.id===linkId); if(o){ o.files=o.files||[]; o.files.push(rec.id); } } }
+   save(); renderAll(); toast('✓ '+t('saved')); },
+ attLink(id,v2){ const f=attCache.find(a=>a.id===id); if(f){f.link=v2; fPut(f);} },
+ attNote(id,v2){ const f=attCache.find(a=>a.id===id); if(f){f.note=v2; fPut(f);} },
+ async delAtt(id){ await fDel(id); attCache=attCache.filter(a=>a.id!==id);
+   state.options.forEach(o=>{ o.files=(o.files||[]).filter(x=>x!==id); }); save(); renderAll(); },
+ viewAtt(id){ const f=attCache.find(a=>a.id===id); if(!f) return;
+   if(f.mime&&f.mime.startsWith('image')) modal(`<h3>${esc(f.name)}</h3><img src="${f.dataUrl}" style="max-width:100%;border-radius:8px"><div class="help" style="margin-top:8px">${esc(f.note||'')}</div>`);
+   else App.downloadAtt(id); },
+ downloadAtt(id){ const f=attCache.find(a=>a.id===id); if(!f) return;
+   const a=document.createElement('a'); a.href=f.dataUrl; a.download=f.name; a.click(); },
+ // export / import / wipe
+ async exportJson(){
+   const inc=$('#expAtts')?$('#expAtts').checked:true;
+   const payload={app:'ssp-budget-tracker',v:1,exportedAt:new Date().toISOString(),state:JSON.parse(JSON.stringify(state)),attachments:inc?await fAll():[]};
+   const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
+   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+   a.download='SSP-BudgetTracker-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'.json'; a.click();
+   setTimeout(()=>URL.revokeObjectURL(a.href),4000); toast('✓ '+t('exportBtn')); },
+ async importJson(file){
+   const txt=await file.text(); let p;
+   try{ p=JSON.parse(txt); }catch(e){ toast('Invalid JSON'); return; }
+   if(!p||p.app!=='ssp-budget-tracker'||!p.state){ toast('Not a tracker backup'); return; }
+   if(!confirm(t('confirmImport'))) return;
+   state=Object.assign({lang:'en',currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],tab:'dash'},p.state);
+   await fClear(); attCache=[];
+   for(const f of (p.attachments||[])){ await fPut(f); attCache.push(f); }
+   save(); renderAll(); toast('✓ '+t('importBtn')); },
+ async wipe(){ if(!confirm(t('confirmWipe'))) return;
+   state={lang:state.lang,currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],tab:'dash'};
+   await fClear(); attCache=[]; save(); renderAll(); }
+};
+window.App=App; window.closeModal=closeModal; window.qc=qc; window.$=$; window.__state=()=>state;
+
+/* ============================== wiring ============================== */
+$('#fileXlsx').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; if(f) App.readXlsxFile(f); });
+$('#fileAtt').addEventListener('change',e=>{ App.addAttFiles(e.target.files,''); e.target.value=''; });
+$('#fileOptImg').addEventListener('change',e=>{ App.addAttFiles(e.target.files,window.__optTarget); e.target.value=''; });
+$('#fileImport').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; if(f) App.importJson(f); });
+$('#curSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ state.currency=b.dataset.cur; save(); renderAll(); } });
+$('#langSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ state.lang=b.dataset.lang; save(); renderAll(); } });
+
+/* test hook: load workbook from URL (used for automated verification) */
+window.__loadXlsxFromUrl=async function(url,name){
+  const buf=await (await fetch(url)).arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  const v=parseWorkbook(wb,name||url.split('/').pop());
+  state.versions.push(v); state.activeId=v.id; if(!state.baseId) state.baseId=v.id; if(v.fx) state.fx=v.fx;
+  save(); renderAll(); return {grand:grandOf(v),nett:v.summary?v.summary.nett:null,items:v.items.length,mats:v.materials.length,rooms:v.rooms.length,sections:v.summary?v.summary.sections.length:0,warnings:v.warnings,perKey:v.summary?v.summary.perKey:[],blocks:v.summary?v.summary.roomBlocks.length:0};
+};
+
+/* ============================== boot ============================== */
+(async function(){
+  try{ db=await idbOpen();
+    const saved=await kvGet('state');
+    if(saved) state=Object.assign(state,saved);
+    attCache=await fAll();
+  }catch(e){ try{ const ls=localStorage.getItem('ssp_bt'); if(ls) state=Object.assign(state,JSON.parse(ls)); }catch(e2){} }
+  if(typeof XLSX==='undefined'){ setTimeout(()=>toast(t('libFail')),800); }
+  state.tab=state.tab||'dash';
+  renderAll();
+})();
+</script>
+</body>
+</html>
