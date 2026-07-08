@@ -159,6 +159,7 @@ tr.total td{background:#16283e0d;font-weight:700;border-top:2px solid var(--navy
   <section class="tab" id="tab-estimate"></section>
   <section class="tab" id="tab-ve"></section>
   <section class="tab" id="tab-materials"></section>
+  <section class="tab" id="tab-pay"></section>
   <section class="tab" id="tab-atts"></section>
   <section class="tab" id="tab-settings"></section>
 </main>
@@ -167,6 +168,8 @@ tr.total td{background:#16283e0d;font-weight:700;border-top:2px solid var(--navy
 <input type="file" id="fileOptImg" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none">
 <input type="file" id="fileImport" accept=".json" style="display:none">
 <input type="file" id="fileLink" multiple style="display:none">
+<input type="file" id="fileLedger" accept=".xlsx,.xls" style="display:none">
+<input type="file" id="fileContracts" accept=".xlsx,.xls" style="display:none">
 <div class="modalbg" id="modalbg"><div class="modal" id="modal"></div></div>
 <div id="printReport"></div>
 <div id="toast"></div>
@@ -231,7 +234,20 @@ en:{
  linkFiles:'🔗 Link files from folder', linked:'linked', embeddedF:'embedded', fileMissing:'File not found — copy it into the Attachments folder',
  linkHint:'Copy files into the Attachments folder on OneDrive first, then pick them here — only the link is stored (tiny) and it syncs via cloud; the file itself syncs via OneDrive.',
  reportXlsx:'⬇ Excel report', reportPdf:'🖨 PDF report',
- repTitle:'BUDGET REPORT', repGenerated:'Generated', repVersion:'Version', repSections:'Cost summary', repPerKey:'Per key', repVeInc:'VE options included in forecast', repDrivers:'Top cost drivers', repForecast:'Forecast'
+ repTitle:'BUDGET REPORT', repGenerated:'Generated', repVersion:'Version', repSections:'Cost summary', repPerKey:'Per key', repVeInc:'VE options included in forecast', repDrivers:'Top cost drivers', repForecast:'Forecast',
+ pay:'Payments', payT:'Payment tracking — from the accounting ledger', payTip:'Import the newest “Sổ chi tiết các tài khoản” export — payments are read ONLY from the cash & bank accounts (1111, 11212), so debit/credit mirror rows in other accounts are never double-counted. Each import replaces the dataset (the ledger is cumulative).',
+ impLedger:'⬆ Import ledger', impContracts:'⬆ Import contracts', ledgerHint:'Keep ledger exports in: …\\05. PIP_Finance\\Payment\\So chi tiet cac tai khoan',
+ asOf:'Ledger period', importedOn:'imported', paidTotal:'Total paid (cash out)', paidNet:'Net cost paid (excl. VAT)', vatPaid:'VAT paid (recoverable)', internalTotal:'Internal / PIP admin', unmatchedTotal:'Unclassified',
+ showInternal:'👁 Show internal expenses', hideInternal:'🙈 Hide internal expenses', internalNote:'Internal expenses (airfare, F&B, committee allowance…) are currently hidden — all figures on this tab exclude them.',
+ contractsT:'Contract tracking (amounts net of VAT)', payDetailT:'Payment details', monthChart:'Paid by month',
+ contractVal:'Contract value', paidToDate:'Paid to date', remaining:'Remaining', progress:'Progress', company:'Company', contract:'Contract', kw:'Match keywords', kwHint:'Comma-separated words matched against payment descriptions (e.g. contract code “LD07755”). Edit to improve matching — unmatched payments fall into “Unclassified”.',
+ voucher:'Voucher', contraAcc:'Contra acc.', catCol:'Category', assign:'Assign…', vatCat:'VAT', internalCat:'Internal / PIP admin', otherCat:'Unclassified', contractCat:'Contract',
+ noLedger:'No ledger imported yet.', payRows:'payments', internalHiddenChip:'internal hidden', allCats:'All categories',
+ keysCol:'Keys', perKeyCol:'Cost / key (USD)', roomsSub:'Rooms', suitesSub:'Suites', corrSub:'Corridors & lift lobbies',
+ compT:'Budget composition', vsRef:'Δ vs', refAuto:'auto (baseline / previous)', chartLabels:'Labels', labelCode:'Code', labelName:'Name',
+ comboChart:'Cost by room category — total & per key',
+ cloudEnable:'Use cloud sync', cloudEnableHint:'When off, the Push/Pull buttons are hidden on all tabs (settings here stay).',
+ exportTab:'⬇ Excel', printTab:'🖨 PDF'
 },
 vi:{
  dash:'Tổng quan', versions:'Phiên bản', compare:'So sánh', estimate:'Dự toán', ve:'VE Studio', materials:'Vật liệu', atts:'Đính kèm', settings:'Cài đặt',
@@ -289,7 +305,20 @@ vi:{
  linkFiles:'🔗 Liên kết tệp từ thư mục', linked:'liên kết', embeddedF:'nhúng', fileMissing:'Không thấy tệp — hãy chép vào thư mục Attachments',
  linkHint:'Chép tệp vào thư mục Attachments trên OneDrive trước, rồi chọn tại đây — chỉ lưu liên kết (rất nhẹ) và đồng bộ qua cloud; tệp thật đồng bộ qua OneDrive.',
  reportXlsx:'⬇ Báo cáo Excel', reportPdf:'🖨 Báo cáo PDF',
- repTitle:'BÁO CÁO NGÂN SÁCH', repGenerated:'Xuất lúc', repVersion:'Phiên bản', repSections:'Tổng hợp chi phí', repPerKey:'Chi phí mỗi phòng', repVeInc:'Phương án VE trong dự báo', repDrivers:'Hạng mục chi phí lớn nhất', repForecast:'Dự báo'
+ repTitle:'BÁO CÁO NGÂN SÁCH', repGenerated:'Xuất lúc', repVersion:'Phiên bản', repSections:'Tổng hợp chi phí', repPerKey:'Chi phí mỗi phòng', repVeInc:'Phương án VE trong dự báo', repDrivers:'Hạng mục chi phí lớn nhất', repForecast:'Dự báo',
+ pay:'Thanh toán', payT:'Theo dõi thanh toán — từ sổ kế toán', payTip:'Nhập file “Sổ chi tiết các tài khoản” mới nhất — dữ liệu chỉ đọc từ tài khoản tiền mặt & ngân hàng (1111, 11212) nên các dòng đối ứng Nợ/Có ở tài khoản khác không bao giờ bị cộng trùng. Mỗi lần nhập sẽ thay thế toàn bộ (sổ là lũy kế).',
+ impLedger:'⬆ Nhập sổ kế toán', impContracts:'⬆ Nhập hợp đồng', ledgerHint:'Lưu file sổ tại: …\\05. PIP_Finance\\Payment\\So chi tiet cac tai khoan',
+ asOf:'Kỳ sổ', importedOn:'nhập lúc', paidTotal:'Tổng đã chi (tiền ra)', paidNet:'Chi phí thuần (chưa gồm VAT)', vatPaid:'VAT đã trả (được khấu trừ)', internalTotal:'Chi phí nội bộ / PIP admin', unmatchedTotal:'Chưa phân loại',
+ showInternal:'👁 Hiện chi phí nội bộ', hideInternal:'🙈 Ẩn chi phí nội bộ', internalNote:'Chi phí nội bộ (vé máy bay, tiếp khách, phụ cấp ban dự án…) đang được ẩn — mọi số liệu trên thẻ này không bao gồm chúng.',
+ contractsT:'Theo dõi hợp đồng (giá trị chưa gồm VAT)', payDetailT:'Chi tiết thanh toán', monthChart:'Đã chi theo tháng',
+ contractVal:'Giá trị hợp đồng', paidToDate:'Đã thanh toán', remaining:'Còn lại', progress:'Tiến độ', company:'Công ty', contract:'Hợp đồng', kw:'Từ khóa nhận diện', kwHint:'Các từ (phân cách bằng dấu phẩy) để khớp với diễn giải thanh toán (ví dụ mã hợp đồng “LD07755”). Sửa để khớp tốt hơn — khoản không khớp sẽ vào “Chưa phân loại”.',
+ voucher:'Chứng từ', contraAcc:'TK đối ứng', catCol:'Phân loại', assign:'Gán…', vatCat:'VAT', internalCat:'Nội bộ / PIP admin', otherCat:'Chưa phân loại', contractCat:'Hợp đồng',
+ noLedger:'Chưa nhập sổ kế toán.', payRows:'khoản chi', internalHiddenChip:'đang ẩn nội bộ', allCats:'Tất cả phân loại',
+ keysCol:'Số phòng', perKeyCol:'Chi phí / phòng (USD)', roomsSub:'Phòng thường', suitesSub:'Suites', corrSub:'Hành lang & sảnh thang',
+ compT:'Cơ cấu ngân sách', vsRef:'Δ so với', refAuto:'tự động (bản gốc / bản trước)', chartLabels:'Nhãn', labelCode:'Mã', labelName:'Tên phòng',
+ comboChart:'Chi phí theo loại phòng — tổng & mỗi phòng',
+ cloudEnable:'Dùng đồng bộ cloud', cloudEnableHint:'Khi tắt, nút Đẩy/Tải sẽ ẩn trên mọi thẻ (phần cài đặt này vẫn hiện).',
+ exportTab:'⬇ Excel', printTab:'🖨 PDF'
 }};
 function t(k){ return (I18N[state.lang]||I18N.en)[k] || I18N.en[k] || k; }
 
@@ -331,9 +360,11 @@ function fDel(id){ return new Promise((res,rej)=>{ const tx=db.transaction('file
 function fClear(){ return new Promise((res,rej)=>{ const tx=db.transaction('files','readwrite'); tx.objectStore('files').clear(); tx.oncomplete=res; tx.onerror=rej; }); }
 
 /* ============================== state ============================== */
+const PAY_KW_DEFAULT='airfare, air ticket, sidecheck, side check, dinner, lunch, entertainment, giao tế, công tác phí, allowance, phụ cấp, per diem, taxi, visa fee, accommodation, accomodation for, market research, khảo sát thị trường';
 let state = { lang:'en', currency:'VND', fx:26450, prelimsPct:7, contPct:0, budgetTarget:null,
   versions:[], activeId:null, baseId:null, options:[], manualAreas:[], attDir:'Attachments',
-  cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null}, tab:'dash' };
+  cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null}, cloudEnabled:true, roomLabel:'code', compRef:'auto',
+  payments:null, contracts:[], payKeywords:PAY_KW_DEFAULT, payOverrides:{}, showInternal:false, tab:'dash' };
 let attCache=[]; // metadata cache of files store
 let saveT=null;
 function save(){ clearTimeout(saveT); saveT=setTimeout(()=>{ kvSet('state',JSON.parse(JSON.stringify(state))).catch(()=>{ try{localStorage.setItem('ssp_bt',JSON.stringify(state));}catch(e){} }); },350); }
@@ -539,6 +570,95 @@ function roomKeys(v,code){ if(!v||!v.rooms) return null;
   if(room&&room.gfa&&blk&&blk.gfa) return Math.round(blk.gfa/room.gfa);
   return null; }
 
+/* ============================== payments (accounting ledger) ============================== */
+const ACC_NAMES={'1111':'Cash','11212':'Bank','1331':'VAT deductible','2412':'CIP — Construction','2413':'CIP — Major repair','2414':'CIP — Upgrade/renovation','3311':'Payables (suppliers)','33518':'Other accruals','33888':'Other payable','3341':'Employee payable','3386':'Unemployment ins.','3383':'Social ins.','3384':'Health ins.','64217':'Travel expenses','64276':'Entertainment','64282':'Non-capitalized PIP costs','64288':'Other cash costs','64273':'Post & telecom','64278':'Other services','6421':'Employee cost'};
+function accName(code){ return ACC_NAMES[code]?code+' · '+ACC_NAMES[code]:code; }
+function xlDate(v){ if(typeof v!=='number') return ''; return new Date(Date.UTC(1899,11,30)+v*86400000).toISOString().slice(0,10); }
+function parseLedger(wb,fileName){
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:null});
+  let period='';
+  for(let i=0;i<5;i++){ const m=String((rows[i]||[])[0]||'').match(/Từ ngày\s+([\d/]+)\s+đến ngày\s+([\d/]+)/i); if(m){ period=m[1]+' → '+m[2]; break; } }
+  let hr=-1;
+  for(let i=0;i<12;i++){ if(String((rows[i]||[])[0]||'').trim()==='Ngày chứng từ'){ hr=i; break; } }
+  if(hr<0) return null;
+  // collect account block codes, then keep only LEAF cash/bank accounts (11xx) to avoid
+  // double counting: parent blocks (111, 112, 1121) repeat the same transactions
+  const accSet=new Set();
+  for(const r of rows){ const a=String((r||[])[0]||''); if(a.startsWith('Tài khoản:')) accSet.add(a.replace('Tài khoản:','').trim()); }
+  const accs=[...accSet];
+  const leafCash=accs.filter(x=>x.startsWith('11')&&!accs.some(y=>y!==x&&y.startsWith(x)));
+  const out=[]; let acc='';
+  for(let i=hr+1;i<rows.length;i++){ const r=rows[i]||[]; const a=String(r[0]||'');
+    if(a.startsWith('Tài khoản:')){ acc=a.replace('Tài khoản:','').trim(); continue; }
+    if(!leafCash.includes(acc)) continue;
+    const desc=s(r[4]); const credit=n(r[9])||0;
+    if(!desc||credit<=0) continue;
+    out.push({date:xlDate(r[0]),voucher:s(r[1]),desc,code:s(r[5]),flag:s(r[6]),contra:s(r[7]),amt:credit,acc});
+  }
+  return {rows:out,period,accounts:leafCash,file:fileName||'',importedAt:new Date().toISOString()};
+}
+function kwSuggest(c){
+  const cat=norm(c.category), comp=norm(c.company), con=norm(c.contract);
+  const kws=[];
+  if(cat.includes('interior design')) kws.push('interior design services','ld07755');
+  if(cat.includes('project management')) kws.push('project management','quản lý dự án và giám sát');
+  if(cat.includes('quantity surveyor')) kws.push('qs consultancy','cost estimate','hoàn thành dự toán');
+  if(cat.includes('mep')) kws.push('mep design','thiết kế cơ điện');
+  if(cat.includes('lighting')) kws.push('lighting consultant','lighting design');
+  if(cat.includes('art')) kws.push('art consultancy','artwork');
+  if(cat.includes('fire')||con.includes('fire')) kws.push('fire safety','smoke extraction','pccc');
+  if(cat.includes('mur')&&comp.includes('kv')) kws.push('king room & corridor','mur1');
+  if(cat.includes('mur')&&comp.includes('boho')) kws.push('twin room','mur2');
+  if(cat.includes('club lounge')) kws.push('club lounge');
+  if(cat.includes('operator')||comp.includes('accor')) kws.push('accor');
+  if(!kws.length){ const w=(c.company||'').split(/[\s,.]+/).filter(x=>x.length>3); if(w[0]) kws.push(w[0]); }
+  return kws.join(', ');
+}
+function parseContracts(wb){
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:null});
+  let hr=-1;
+  for(let i=0;i<12;i++){ const r=rows[i]||[]; if(norm(r[0])==='no.'&&norm(r[2]).includes('company')){ hr=i; break; } }
+  if(hr<0) return null;
+  const out=[]; let lastComp='',lastCat='';
+  for(let i=hr+1;i<rows.length;i++){ const r=rows[i]||[];
+    const contract=s(r[3]); const val=n(r[5]);
+    if(!contract&&!val) continue;
+    const cat=s(r[1])||lastCat, comp=s(r[2])||lastComp;
+    lastCat=cat; lastComp=comp;
+    const c={id:uid(),category:cat,company:comp,contract,date:xlDate(r[4]),value:val||0,usd:n(r[7])||null,group:s(r[8])||'Other',progress:s(r[6]),kw:''};
+    c.kw=kwSuggest(c); out.push(c);
+  }
+  return out;
+}
+function payKey(r){ return r.voucher+'|'+r.amt+'|'+norm(r.desc).slice(0,30); }
+/* classification: override → VAT (contra 133x) → 642x admin accounts → internal keywords → contract keyword match → other */
+function payCat(r){
+  const ov=(state.payOverrides||{})[payKey(r)]; if(ov) return ov;
+  if((r.contra||'').startsWith('133')) return 'vat';
+  if((r.contra||'').startsWith('642')) return 'internal';
+  const d=norm(r.desc);
+  for(const k of s(state.payKeywords).split(',')){ const kk=norm(k); if(kk.length>=3&&d.includes(kk)) return 'internal'; }
+  let best=null,len=0;
+  for(const c of (state.contracts||[])){
+    for(const k of s(c.kw).split(',')){ const kk=norm(k); if(kk.length>=3&&d.includes(kk)&&kk.length>len){ best=c.id; len=kk.length; } } }
+  return best||'other';
+}
+function payData(){ // classified rows honouring the internal-visibility toggle
+  const all=((state.payments||{}).rows||[]).map(r=>({...r,cat:payCat(r)}));
+  const visible=state.showInternal?all:all.filter(r=>r.cat!=='internal');
+  const sum=list=>list.reduce((x,r)=>x+r.amt,0);
+  const vat=visible.filter(r=>r.cat==='vat');
+  const internal=all.filter(r=>r.cat==='internal');
+  const byContract={};
+  for(const r of visible){ if(r.cat!=='vat'&&r.cat!=='internal'&&r.cat!=='other') byContract[r.cat]=(byContract[r.cat]||0)+r.amt; }
+  return { all, visible, total:sum(visible), vat:sum(vat), net:sum(visible)-sum(vat),
+    internal:sum(internal), internalCount:internal.length,
+    other:sum(visible.filter(r=>r.cat==='other')), otherCount:visible.filter(r=>r.cat==='other').length,
+    byContract };
+}
+function catLabel(cat){ if(cat==='vat') return t('vatCat'); if(cat==='internal') return t('internalCat'); if(cat==='other') return t('otherCat');
+  const c=(state.contracts||[]).find(x=>x.id===cat); return c?(c.category||c.company):t('otherCat'); }
+
 /* ============================== cloud sync (JSONBin.io) ============================== */
 async function gzipB64(str){ const cs=new CompressionStream('gzip');
   const ab=await new Response(new Blob([str]).stream().pipeThrough(cs)).arrayBuffer();
@@ -563,7 +683,7 @@ function mkChart(id,cfg){ const cv=document.getElementById(id); if(!cv||typeof C
 const PAL=['#1f3a5f','#c8a557','#3e7c8f','#7d5a8c','#b05c50','#5b8c5a','#8a8f5a','#5a6f8c','#a5744f','#4f7ea5','#6b5a8c','#8c5a6b','#4a8c7a','#8c7a4a'];
 
 /* ============================== render: shell ============================== */
-const TABS=[['dash','dash'],['versions','versions'],['compare','compare'],['estimate','estimate'],['ve','ve'],['materials','materials'],['atts','atts'],['settings','settings']];
+const TABS=[['dash','dash'],['versions','versions'],['compare','compare'],['estimate','estimate'],['ve','ve'],['materials','materials'],['pay','pay'],['atts','atts'],['settings','settings']];
 function renderNav(){
   $('#nav').innerHTML=TABS.map(([id,k])=>`<button class="${state.tab===id?'on':''}" onclick="App.go('${id}')">${t(k)}</button>`).join('');
   document.querySelectorAll('#curSeg button').forEach(b=>b.classList.toggle('on',b.dataset.cur===state.currency));
@@ -574,7 +694,7 @@ function renderNav(){
   const el=$('#tab-'+state.tab); if(el) el.classList.add('on');
 }
 function renderAll(){ renderNav();
-  ({dash:renderDash,versions:renderVersions,compare:renderCompare,estimate:renderEstimate,ve:renderVE,materials:renderMaterials,atts:renderAtts,settings:renderSettings})[state.tab]();
+  ({dash:renderDash,versions:renderVersions,compare:renderCompare,estimate:renderEstimate,ve:renderVE,materials:renderMaterials,pay:renderPay,atts:renderAtts,settings:renderSettings})[state.tab]();
 }
 
 /* ============================== render: dashboard ============================== */
@@ -605,8 +725,8 @@ function renderDash(){
     <button class="btn ghost" onclick="App.reportXlsx()">${t('reportXlsx')}</button>
     <button class="btn ghost" onclick="App.reportPdf()">${t('reportPdf')}</button>
     <span class="sp"></span>
-    <button class="btn ghost" onclick="App.cloudPush()">☁⬆ ${t('push')}</button>
-    <button class="btn ghost" onclick="App.cloudPull()">☁⬇ ${t('pull')}</button>
+    ${state.cloudEnabled?`<button class="btn ghost" onclick="App.cloudPush()">☁⬆ ${t('push')}</button>
+    <button class="btn ghost" onclick="App.cloudPull()">☁⬇ ${t('pull')}</button>`:''}
   </div>
   <div class="cards">
     <div class="card"><div class="lbl">${t('grandTotal')}</div><div class="val">${money(grand)}</div>
@@ -629,11 +749,14 @@ function renderDash(){
         <div class="sub">${moneyU((fc||0)/(v.fx||state.fx))}</div></div>
     </div></div>
   ${areasHtml(v)}
+  ${compTableHtml(v)}
   <div class="grid2">
-    <div class="panel"><h3>🍩 ${t('chartComp')}</h3><div class="chartbox"><canvas id="chComp"></canvas></div></div>
-    <div class="panel"><h3>🏨 ${t('chartRooms')}</h3><div class="chartbox"><canvas id="chRooms"></canvas></div></div>
-    <div class="panel"><h3>🔑 ${t('chartKeys')}</h3><div class="chartbox"><canvas id="chKeys"></canvas></div></div>
-    <div class="panel"><h3>📊 ${t('chartTrend')}</h3><div class="chartbox"><canvas id="chTrend"></canvas></div></div>
+    <div class="panel"><h3>🏨 ${t('comboChart')}
+      <span style="margin-left:auto" class="noprint">
+        <button class="btn sm ${state.roomLabel!=='name'?'':'ghost'}" onclick="App.setRoomLabel('code')">${t('labelCode')}</button>
+        <button class="btn sm ${state.roomLabel==='name'?'':'ghost'}" onclick="App.setRoomLabel('name')">${t('labelName')}</button></span></h3>
+      <div class="chartbox" style="height:330px"><canvas id="chCombo"></canvas></div></div>
+    <div class="panel"><h3>📊 ${t('chartTrend')}</h3><div class="chartbox" style="height:330px"><canvas id="chTrend"></canvas></div></div>
   </div>
   <div class="panel"><h3>💡 ${t('advisor')}</h3>${advisorHtml(v)}</div>`;
   drawDashCharts(v);
@@ -672,38 +795,111 @@ function buildReportHtml(v){
     h+='</table>'; }
   return h;
 }
+function buildTabPrintHtml(){ if(state.tab==='dash') return null;
+  const el=document.getElementById('tab-'+state.tab); if(!el||!el.innerHTML.trim()) return null;
+  const clone=el.cloneNode(true);
+  clone.querySelectorAll('.noprint,.toolbar,button,canvas,.chartbox').forEach(x=>x.remove());
+  clone.querySelectorAll('input[type=checkbox]').forEach(x=>{ const sp=document.createElement('span'); sp.textContent=x.checked?'✓':'—'; x.replaceWith(sp); });
+  clone.querySelectorAll('input,select,textarea').forEach(x=>{ const sp=document.createElement('span');
+    sp.textContent=(x.tagName==='SELECT'&&x.selectedOptions&&x.selectedOptions[0])?x.selectedOptions[0].textContent:(x.value||''); x.replaceWith(sp); });
+  clone.querySelectorAll('.tblwrap').forEach(x=>{ x.style.maxHeight='none'; x.style.overflow='visible'; });
+  const v=activeVer();
+  return `<h1>SOFITEL SAIGON PLAZA RENOVATION — ${esc(t(state.tab))}</h1>
+  <div style="color:#6b7280;margin-bottom:10px">${v?t('repVersion')+': '+esc(v.name)+' · ':''}${t('repGenerated')}: ${new Date().toLocaleString()}</div>`+clone.innerHTML;
+}
+function roomName(v,code){ if(!v||!v.rooms||!v.rooms.length) return code;
+  const base=code.split(/[\s(]/)[0];
+  const room=v.rooms.find(r=>r.code===base);
+  if(room){ const extra=code.slice(base.length).trim(); return room.name+(extra?' '+extra:''); }
+  const c=code.toLowerCase(); return c.charAt(0).toUpperCase()+c.slice(1); }
+function roomLbl(v,code){ return state.roomLabel==='name'?roomName(v,code):code; }
+function perKeyRow(v,re){ return (((v||{}).summary||{}).perKey||[]).find(p=>re.test(p.name)); }
+function guestSubRows(v){ // Rooms / Suites / Corridors+lift lobbies from the summary per-key block
+  const fx=(v&&v.fx)||state.fx; const out=[];
+  const rooms=perKeyRow(v,/^guestrooms?$/i), suites=perKeyRow(v,/^suites?$/i);
+  const corrParts=['corridors','lift lobbies','lift cars'].map(nm=>perKeyRow(v,new RegExp('^'+nm+'$','i'))).filter(Boolean);
+  if(rooms&&rooms.perKeyUSD) out.push({label:t('roomsSub'),total:rooms.totalVND,keys:Math.round(rooms.totalVND/(rooms.perKeyUSD*fx)),perKey:rooms.perKeyUSD});
+  if(suites&&suites.perKeyUSD) out.push({label:t('suitesSub'),total:suites.totalVND,keys:Math.round(suites.totalVND/(suites.perKeyUSD*fx)),perKey:suites.perKeyUSD});
+  if(corrParts.length) out.push({label:t('corrSub'),total:corrParts.reduce((x,p)=>x+(p.totalVND||0),0),keys:null,perKey:null});
+  return out;
+}
 function areasHtml(v){
-  const br=areaBreakdown(v);
+  const br=areaBreakdown(v); const fx=(v&&v.fx)||state.fx;
   const grandAll=AREAS.reduce((s2,a)=>s2+br[a.id].file+br[a.id].manual,0)||1;
+  const subs=guestSubRows(v);
+  const guestKeys=subs.filter(x=>x.keys).reduce((x,r)=>x+r.keys,0)||null;
   let rows='';
   for(const a of AREAS){
     const b=br[a.id]; const tot=b.file+b.manual;
+    const keys=a.id==='guest'?guestKeys:null;
     rows+=`<tr class="sect"><td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${a.color};margin-right:7px"></span><b>${t(a.k)}</b>
         <div style="font-size:11px;color:var(--mut);font-weight:400">${t(a.sub)}</div></td>
       <td class="num">${b.file?money(b.file):'—'}</td>
       <td class="num">${b.manual?money(b.manual):'—'}</td>
       <td class="num"><b>${money(tot)}</b></td>
+      <td class="num">${keys||'—'}</td>
+      <td class="num">${keys?'$'+Math.round(tot/keys/fx).toLocaleString():'—'}</td>
       <td class="num">${pct(tot/grandAll)}</td>
       <td><button class="btn sm ghost noprint" onclick="App.areaAdd('${a.id}')">${t('addLine')}</button></td></tr>`;
+    if(a.id==='guest'){ for(const sr of subs){
+      rows+=`<tr><td style="padding-left:28px;color:var(--mut)">↳ ${esc(sr.label)}</td>
+        <td class="num">${money(sr.total)}</td><td></td><td class="num">${money(sr.total)}</td>
+        <td class="num">${sr.keys||'—'}</td>
+        <td class="num">${sr.perKey?'$'+Math.round(sr.perKey).toLocaleString():'—'}</td>
+        <td class="num" style="color:var(--mut)">${pct(sr.total/grandAll)}</td><td></td></tr>`; } }
     for(const m of (state.manualAreas||[]).filter(x=>x.area===a.id)){
       rows+=`<tr><td style="padding-left:28px"><input value="${esc(m.name)}" placeholder="${t('desc')}…" style="width:95%" onchange="App.areaEdit('${m.id}','name',this.value)"></td>
         <td></td>
         <td class="num"><input type="number" step="any" value="${m.amount||''}" style="width:140px" onchange="App.areaEdit('${m.id}','amount',this.value)"></td>
-        <td class="num">${money(n(m.amount)||0)}</td><td></td>
+        <td class="num">${money(n(m.amount)||0)}</td><td></td><td></td><td></td>
         <td><button class="btn sm danger" onclick="App.areaDel('${m.id}')">✕</button></td></tr>`;
     }
   }
-  const allTot=AREAS.reduce((s2,a)=>s2+br[a.id].file+br[a.id].manual,0);
   return `<div class="panel"><h3>🗺 ${t('areasT')}</h3><div class="help" style="margin-bottom:10px">${t('areaHint')}</div>
-  <div class="areagrid">
-   <div class="tblwrap" style="max-height:none;overflow:visible"><table>
-    <thead><tr><th>${t('name')}</th><th class="num">${t('fromFile')}</th><th class="num">${t('manualCol')}</th><th class="num">${t('areaTotal')}</th><th class="num">${t('share')}</th><th></th></tr></thead>
+   <div class="tblwrap" style="max-height:none;overflow:auto"><table>
+    <thead><tr><th>${t('name')}</th><th class="num">${t('fromFile')}</th><th class="num">${t('manualCol')}</th><th class="num">${t('areaTotal')}</th><th class="num">${t('keysCol')}</th><th class="num">${t('perKeyCol')}</th><th class="num">${t('share')}</th><th></th></tr></thead>
     <tbody>${rows}
     <tr class="total"><td>${t('allAreas')}</td><td class="num">${money(AREAS.reduce((s2,a)=>s2+br[a.id].file,0))}</td>
       <td class="num">${money(AREAS.reduce((s2,a)=>s2+br[a.id].manual,0))}</td>
-      <td class="num">${money(allTot)}</td><td class="num">100%</td><td></td></tr></tbody></table></div>
-   <div class="chartbox" style="height:260px"><canvas id="chAreas"></canvas></div>
-  </div></div>`;
+      <td class="num">${money(grandAll)}</td><td></td><td></td><td class="num">100%</td><td></td></tr></tbody></table></div>
+  </div>`;
+}
+function compRefVer(v){
+  if(state.compRef&&state.compRef!=='auto'){ const r=ver(state.compRef); if(r&&r.id!==v.id) return r; }
+  if(state.baseId&&state.baseId!==v.id&&ver(state.baseId)) return ver(state.baseId);
+  const vs=state.versions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const i=vs.findIndex(x=>x.id===v.id);
+  return i>0?vs[i-1]:null;
+}
+function compTableHtml(v){
+  const su=v.summary; if(!su) return '';
+  const fx=v.fx||state.fx; const ref=compRefVer(v);
+  const refMap={};
+  if(ref&&ref.summary){ for(const sc of ref.summary.sections) refMap[norm(sc.name)]=sc.subtotal;
+    for(const a of ref.summary.addOns) refMap[norm(a.name)]=a.total;
+    refMap['__nett']=ref.summary.nett; refMap['__grand']=ref.summary.grandTotal; }
+  const grand=su.grandTotal||1;
+  const line=(name,val,refVal,cls2)=>{ const d=(ref&&refVal!=null)?val-refVal:null; const dp=(d!=null&&refVal)?d/Math.abs(refVal):null;
+    return `<tr class="${cls2||''}"><td>${esc(name)}</td><td class="num">${money(val,'VND')}</td><td class="num">${moneyU(val/fx)}</td>
+      <td class="num">${pct(val/grand)}</td>
+      <td class="num ${d==null?'':cls(d)}">${d==null?'—':sign(d)+money(d,'VND')}</td>
+      <td class="num ${d==null?'':cls(d)}">${dp==null?'—':sign(d)+pct(dp)}</td></tr>`; };
+  let rows='';
+  for(const sc of su.sections) rows+=line(sc.name,sc.subtotal,refMap[norm(sc.name)]);
+  rows+=line('Nett Construction Cost',su.nett,refMap['__nett'],'sect');
+  for(const a of su.addOns) rows+=line(a.name,a.total,refMap[norm(a.name)]);
+  rows+=line(t('grand'),su.grandTotal,refMap['__grand'],'total');
+  const vs=state.versions.filter(x=>x.id!==v.id);
+  return `<div class="panel"><h3>📋 ${t('compT')}
+    <span style="margin-left:auto;font-weight:400;font-size:12px" class="noprint">${t('vsRef')}:
+    <select onchange="App.set('compRef',this.value)">
+      <option value="auto" ${state.compRef==='auto'?'selected':''}>${t('refAuto')}</option>
+      ${vs.map(x=>`<option value="${x.id}" ${state.compRef===x.id?'selected':''}>${esc(x.name)} (${x.date})</option>`).join('')}
+    </select></span></h3>
+   <div class="tblwrap" style="max-height:none;overflow:auto"><table>
+    <thead><tr><th>${t('item')}</th><th class="num">VND</th><th class="num">USD</th><th class="num">${t('share')}</th>
+      <th class="num">${t('vsRef')} ${ref?esc(ref.name.slice(0,24)):'—'}</th><th class="num">Δ%</th></tr></thead>
+    <tbody>${rows}</tbody></table></div></div>`;
 }
 function advisorHtml(v){
   const items=(v.items||[]).slice().sort((a,b)=>b.total-a.total);
@@ -724,28 +920,21 @@ function advisorHtml(v){
   <div class="tblwrap" style="max-height:420px"><table><thead><tr><th>${t('rank')}</th><th>${t('item')}</th><th>${t('sheet')}</th><th class="num">${t('total')}</th><th class="num">${t('share')}</th><th class="num">${t('cum')}</th><th></th></tr></thead><tbody>${rowsH}</tbody></table></div>${varH}`;
 }
 function drawDashCharts(v){
-  if(document.getElementById('chAreas')){
-    const br=areaBreakdown(v);
-    const list=AREAS.map(a=>({l:t(a.k),v:br[a.id].file+br[a.id].manual,c:a.color})).filter(x=>x.v>0);
-    const sum=list.reduce((s2,x)=>s2+x.v,0)||1;
-    mkChart('chAreas',{type:'doughnut',data:{labels:list.map(x=>x.l),datasets:[{data:list.map(x=>x.v),backgroundColor:list.map(x=>x.c),borderWidth:1}]},
-      options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},
-        tooltip:{callbacks:{label:c=>` ${c.label}: ${compact(c.raw)} (${pct(c.raw/sum)})`}}}}});
-  }
   const su=v.summary; if(!su) return;
-  const parts=su.sections.map(sc=>({l:sc.name,v:sc.subtotal||sc.items.reduce((a,b)=>a+b.total,0)}))
-    .concat(su.addOns.filter(a=>a.total).map(a=>({l:a.name.replace(/\s*\(as SSP.s budget\)/i,''),v:a.total})));
-  mkChart('chComp',{type:'doughnut',data:{labels:parts.map(p=>p.l),datasets:[{data:parts.map(p=>p.v),backgroundColor:PAL,borderWidth:1}]},
-    options:{maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}},
-      tooltip:{callbacks:{label:c=>` ${c.label}: ${compact(c.raw)} (${pct(c.raw/parts.reduce((a,b)=>a+b.v,0))})`}}}}});
+  const fx=v.fx||state.fx;
   const rb=su.roomBlocks.filter(b=>b.total);
-  mkChart('chRooms',{type:'bar',data:{labels:rb.map(b=>b.code),datasets:[{label:t('total'),data:rb.map(b=>b.total),backgroundColor:'#1f3a5f'}]},
-    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+compact(c.raw)}}},
-      scales:{y:{ticks:{callback:x=>compact(x)}},x:{ticks:{font:{size:10}}}}}});
-  const keyed=rb.map(b=>({code:b.code,k:roomKeys(v,b.code),t:b.total})).filter(x=>x.k>0);
-  mkChart('chKeys',{type:'bar',data:{labels:keyed.map(x=>x.code+' ('+x.k+')'),datasets:[{label:'USD/key',data:keyed.map(x=>Math.round(x.t/x.k/(v.fx||state.fx))),backgroundColor:'#c8a557'}]},
-    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' $'+Math.round(c.raw).toLocaleString()+' /key'}}},
-      scales:{y:{ticks:{callback:x=>'$'+(x/1000)+'K'}},x:{ticks:{font:{size:10}}}}}});
+  const labels=rb.map(b=>roomLbl(v,b.code));
+  const keys=rb.map(b=>roomKeys(v,b.code));
+  const perKey=rb.map((b,i)=>keys[i]>0?Math.round(b.total/keys[i]/fx):null);
+  mkChart('chCombo',{data:{labels,datasets:[
+    {type:'bar',label:t('total')+' (VND)',data:rb.map(b=>b.total),backgroundColor:'#1f3a5f',yAxisID:'y',order:2},
+    {type:'line',label:t('perKeyCol'),data:perKey,borderColor:'#c8a557',backgroundColor:'#c8a557',yAxisID:'y1',spanGaps:false,order:1,pointRadius:4,tension:0}]},
+    options:{maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:c=>c.dataset.yAxisID==='y1'?(c.raw==null?'':' $'+c.raw.toLocaleString()+' /key ('+keys[c.dataIndex]+' '+t('keys')+')'):' '+compact(c.raw)}}},
+      scales:{y:{position:'left',ticks:{callback:x=>compact(x)}},
+        y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:x=>'$'+(x/1000)+'K'}},
+        x:{ticks:{font:{size:10},maxRotation:60}}}}});
   const vs=state.versions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   mkChart('chTrend',{type:'line',data:{labels:vs.map(x=>x.date+' · '+x.name.slice(0,18)),datasets:[{label:t('grandTotal'),data:vs.map(x=>grandOf(x)),borderColor:'#1f3a5f',backgroundColor:'rgba(200,165,87,.25)',fill:true,tension:.25,pointRadius:5,pointBackgroundColor:'#c8a557'}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+compact(c.raw)}}},scales:{y:{ticks:{callback:x=>compact(x)}},x:{ticks:{font:{size:10}}}}}});
@@ -767,7 +956,10 @@ function renderVersions(){
       <td style="font-size:11.5px;color:var(--mut)">${(v.items||[]).length} items · ${(v.materials||[]).length} mats</td>
       <td><button class="btn sm danger" onclick="App.delVer('${v.id}')">✕</button></td></tr>`; }).join('');
   el.innerHTML=`
-  <div class="toolbar"><button class="btn gold" onclick="App.pickXlsx()">⬆ ${t('upload')}</button><span class="help">${t('uploadHint')}</span></div>
+  <div class="toolbar"><button class="btn gold" onclick="App.pickXlsx()">⬆ ${t('upload')}</button><span class="help">${t('uploadHint')}</span>
+    <span class="sp"></span>
+    <button class="btn ghost" onclick="App.tabXlsx()">${t('exportTab')}</button>
+    <button class="btn ghost" onclick="App.tabPdf()">${t('printTab')}</button></div>
   <div class="drop" id="dropzone" style="margin-bottom:16px">${t('dropHint')}</div>
   <div class="panel"><h3>🗂 ${t('verList')}</h3>
   ${vs.length?`<div class="tblwrap"><table><thead><tr><th>${t('vActive')}</th><th>${t('vBase')}</th><th>${t('vName')}</th><th>${t('vDate')}</th><th class="num">${t('vTotal')}</th><th class="num">${t('vDelta')}</th><th>${t('vNote')}</th><th></th><th></th></tr></thead><tbody>${rowsH}</tbody></table></div>`:`<div class="help">${t('needOne')}</div>`}
@@ -805,11 +997,14 @@ function renderCompare(){
         <option value="room" ${cmpState.level==='room'?'selected':''}>${t('lvlRoom')}</option>
         <option value="item" ${cmpState.level==='item'?'selected':''}>${t('lvlItem')}</option></select></div>
     ${cmpState.level==='section'?`<div><label style="font-size:11px;color:var(--mut)">${t('scope')}</label><br>
-      <select onchange="App.cmpSet('scope',this.value)"><option value="__all">${t('overall')}</option>${codes.map(c=>`<option ${cmpState.scope===c?'selected':''}>${c}</option>`).join('')}</select></div>`:''}
+      <select onchange="App.cmpSet('scope',this.value)"><option value="__all">${t('overall')}</option>${codes.map(c=>`<option value="${esc(c)}" ${cmpState.scope===c?'selected':''}>${esc(c)} — ${esc(roomName(B||A,c))}</option>`).join('')}</select></div>`:''}
     ${cmpState.level==='item'?`<div><label style="font-size:11px;color:var(--mut)">${t('sheet')}</label><br>
       <select onchange="App.cmpSet('sect',this.value)"><option value="__all">${t('all')}</option>${sects.map(c=>`<option ${cmpState.sect===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>`:''}
     <div style="align-self:end"><label style="font-size:12px"><input type="checkbox" ${cmpState.onlyChanged?'checked':''} onchange="App.cmpSet('onlyChanged',this.checked)"> ${t('onlyChanged')}</label></div>
-    <input placeholder="${t('search')}" value="${esc(cmpState.q)}" oninput="App.cmpSet('q',this.value)" style="align-self:end;width:200px">
+    <input id="cmpQ" placeholder="${t('search')}" value="${esc(cmpState.q)}" oninput="App.cmpSet('q',this.value)" style="align-self:end;width:200px">
+    <span class="sp"></span>
+    <button class="btn ghost" style="align-self:end" onclick="App.tabXlsx()">${t('exportTab')}</button>
+    <button class="btn ghost" style="align-self:end" onclick="App.tabPdf()">${t('printTab')}</button>
   </div></div>
   <div id="cmpBody"></div>`;
   renderCompareBody();
@@ -848,7 +1043,8 @@ function cmpRows(){
   let out=rows;
   if(cmpState.q) out=out.filter(r=>norm(r.name+' '+r.sub).includes(norm(cmpState.q)));
   if(cmpState.onlyChanged) out=out.filter(r=>Math.abs(r.d)>1||r.isGrand);
-  out.sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
+  // item level: biggest movers first; section/room level: keep the workbook's natural order
+  if(cmpState.level==='item') out.sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
   return out;
 }
 function renderCompareBody(){
@@ -929,6 +1125,8 @@ function renderEstimate(){
     <span class="sp"></span>
     <button class="btn" onclick="App.newItemModal()">${t('addItem')}</button>
     <button class="btn ghost" onclick="App.resetOv()">${t('resetOv')}</button>
+    <button class="btn ghost" onclick="App.tabXlsx()">${t('exportTab')}</button>
+    <button class="btn ghost" onclick="App.tabPdf()">${t('printTab')}</button>
   </div>
   <div class="tblwrap"><table><thead><tr><th>${t('inc')}</th><th style="min-width:280px">${t('desc')}</th><th class="num">${t('qty')}</th><th>${t('unit')}</th><th class="num">${t('rate')}</th><th class="num">${t('total')}</th><th class="num">Δ</th><th></th></tr></thead><tbody>${html}</tbody></table></div>
   </div>
@@ -998,7 +1196,11 @@ function renderVE(){
         <td class="num"><b>${money(r.prop)}</b></td><td class="num ${cls(r.vari)}">${sign(r.vari)}${money(r.vari)}</td>
         <td>${r.prop===best?`<span class="chip g">★ ${t('bestOpt')}</span>`:''}</td></tr>`;}).join('')}</tbody></table></div>`; }
   el.innerHTML=`
-  <div class="panel"><h3>⚡ ${t('veT')}</h3><div class="help">${t('veTip')}</div></div>
+  <div class="panel"><h3>⚡ ${t('veT')}
+    <span style="margin-left:auto" class="noprint">
+      <button class="btn sm ghost" onclick="App.tabXlsx()">${t('exportTab')}</button>
+      <button class="btn sm ghost" onclick="App.tabPdf()">${t('printTab')}</button></span></h3>
+    <div class="help">${t('veTip')}</div></div>
   <div class="panel" style="border-left:4px solid var(--gold)"><h3>🧮 ${t('qcalc')}</h3>
     <div class="row" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       <div style="flex:2;min-width:200px"><label style="font-size:11px;color:var(--mut)">${t('linkItem')}</label><br>
@@ -1032,9 +1234,106 @@ function renderMaterials(){
     <td style="font-size:12px">${esc(m.remarks)}</td></tr>`; }
   el.innerHTML=`
   <div class="panel"><h3>🧱 ${t('matT')} <span class="chip n">${mats.length}</span></h3><div class="help">${t('matTip')}</div>
-  <div class="toolbar" style="margin-top:10px"><input id="matQ" placeholder="${t('search')}" value="${esc(matQ)}" oninput="App.matSearch(this.value)" style="width:280px"></div>
+  <div class="toolbar" style="margin-top:10px"><input id="matQ" placeholder="${t('search')}" value="${esc(matQ)}" oninput="App.matSearch(this.value)" style="width:280px">
+    <span class="sp"></span>
+    <button class="btn ghost" onclick="App.tabXlsx()">${t('exportTab')}</button>
+    <button class="btn ghost" onclick="App.tabPdf()">${t('printTab')}</button></div>
   ${mats.length?`<div class="tblwrap" style="max-height:70vh"><table><thead><tr><th>${t('ref')}</th><th>${t('item')}</th><th>${t('area')}</th><th style="min-width:220px">${t('spec')}</th><th>${t('supplier')}</th><th>${t('veAlt')}</th><th>${t('remarks')}</th></tr></thead><tbody>${html}</tbody></table></div>`:`<div class="help">${t('noMats')}</div>`}
   </div>`;
+}
+
+/* ============================== render: payments ============================== */
+let payState={q:'',cat:'__all'};
+function renderPay(){
+  const el=$('#tab-pay'); const P=state.payments;
+  const cloudBtns=state.cloudEnabled?`<button class="btn ghost" onclick="App.cloudPush()">☁⬆ ${t('push')}</button>
+    <button class="btn ghost" onclick="App.cloudPull()">☁⬇ ${t('pull')}</button>`:'';
+  const head=`<div class="panel"><h3>💳 ${t('payT')}</h3><div class="help">${t('payTip')}<br><b>${t('ledgerHint')}</b></div>
+   <div class="toolbar" style="margin-top:10px">
+    <button class="btn gold" onclick="$('#fileLedger').click()">${t('impLedger')}</button>
+    <button class="btn" onclick="$('#fileContracts').click()">${t('impContracts')} (${(state.contracts||[]).length})</button>
+    <button class="btn ghost" onclick="App.tabXlsx()">${t('exportTab')}</button>
+    <button class="btn ghost" onclick="App.tabPdf()">${t('printTab')}</button>
+    <span class="sp"></span>${cloudBtns}
+    <button class="btn ${state.showInternal?'':'ghost'}" onclick="App.togglePayInternal()">${state.showInternal?t('hideInternal'):t('showInternal')}</button>
+   </div></div>`;
+  if(!P||!(P.rows||[]).length){ el.innerHTML=head+`<div class="panel"><div class="help">${t('noLedger')}</div></div>`; return; }
+  const D=payData();
+  const cards=`
+  <div class="cards">
+    <div class="card"><div class="lbl">${t('paidTotal')}</div><div class="val">${money(D.total)}</div>
+      <div class="sub">${t('asOf')}: ${esc(P.period)} · ${D.visible.length} ${t('payRows')}${state.showInternal?'':' · <span class="chip a">'+t('internalHiddenChip')+'</span>'}</div></div>
+    <div class="card"><div class="lbl">${t('paidNet')}</div><div class="val">${money(D.net)}</div></div>
+    <div class="card"><div class="lbl">${t('vatPaid')}</div><div class="val">${money(D.vat)}</div></div>
+    ${state.showInternal?`<div class="card" style="border-left:4px solid var(--amber)"><div class="lbl">${t('internalTotal')}</div><div class="val">${money(D.internal)}</div><div class="sub">${D.internalCount} ${t('payRows')}</div></div>`:''}
+    <div class="card"><div class="lbl">${t('unmatchedTotal')}</div><div class="val">${money(D.other)}</div><div class="sub">${D.otherCount} ${t('payRows')}</div></div>
+  </div>
+  ${state.showInternal?`<div class="panel noprint" style="border-left:4px solid var(--amber)"><h3>🔑 ${t('internalCat')} — ${t('kw')}</h3>
+    <div class="help" style="margin-bottom:6px">${t('kwHint')} (+ ${accName('64217')}, ${accName('64276')}, ${accName('64282')}, ${accName('64288')})</div>
+    <textarea rows="2" style="width:100%" onchange="App.set('payKeywords',this.value)">${esc(state.payKeywords)}</textarea></div>`
+  :`<div class="warnbox noprint">${t('internalNote')}</div>`}`;
+  // contract tracking table
+  let conH='';
+  if((state.contracts||[]).length){
+    const groups=[...new Set(state.contracts.map(c=>c.group||'Other'))];
+    let rows='';
+    for(const g of groups){
+      const cs=state.contracts.filter(c=>(c.group||'Other')===g);
+      rows+=`<tr class="grp"><td colspan="8">${esc(g)}</td></tr>`;
+      let gv=0,gp=0;
+      const companies=[...new Set(cs.map(c=>c.company))];
+      for(const comp of companies){
+        const cc=cs.filter(c=>c.company===comp);
+        const cv=cc.reduce((x,c)=>x+c.value,0);
+        const cp=cc.reduce((x,c)=>x+(D.byContract[c.id]||0),0);
+        const rem=cv-cp; const pr=cv?cp/cv:null; gv+=cv; gp+=cp;
+        rows+=`<tr class="sect"><td><b>${esc(cc[0].category)}</b><div style="font-size:11px;font-weight:400;color:var(--mut)">${esc(comp)}</div></td>
+          <td style="font-size:11.5px;color:var(--mut)">${cc.length} ${t('contract').toLowerCase()}${cc.length>1?'s':''}</td>
+          <td class="num">${money(cv)}</td><td class="num"><b>${money(cp)}</b></td>
+          <td class="num ${rem<0?'pos':''}">${money(rem)}</td>
+          <td style="min-width:110px">${pr==null?'—':`<div>${pct(pr)}</div><div class="bar"><i style="width:${Math.min(100,pr*100).toFixed(1)}%;background:${pr>1?'var(--red)':'var(--gold)'}"></i></div>`}</td>
+          <td></td><td></td></tr>`;
+        for(const c of cc){ const solo=cc.length===1?(D.byContract[c.id]||0):null;
+          rows+=`<tr><td style="padding-left:26px;color:var(--mut)">↳</td>
+            <td style="font-size:12px">${esc(c.contract)}<div style="font-size:11px;color:var(--mut)">${esc(c.date)}</div></td>
+            <td class="num">${money(c.value)}</td><td class="num">${solo!=null?money(solo):'—'}</td><td></td><td></td>
+            <td><input value="${esc(c.kw)}" style="width:170px;font-size:11.5px" title="${t('kwHint')}" onchange="App.conKw('${c.id}',this.value)"></td>
+            <td><button class="btn sm danger noprint" onclick="App.conDel('${c.id}')">✕</button></td></tr>`; }
+      }
+      rows+=`<tr class="total"><td colspan="2">${esc(g)} — TOTAL</td><td class="num">${money(gv)}</td><td class="num">${money(gp)}</td><td class="num">${money(gv-gp)}</td><td>${gv?pct(gp/gv):'—'}</td><td></td><td></td></tr>`;
+    }
+    conH=`<div class="panel"><h3>📜 ${t('contractsT')}</h3><div class="help" style="margin-bottom:8px">${t('kwHint')}</div>
+      <div class="tblwrap" style="max-height:56vh"><table><thead><tr><th>${t('category')}</th><th>${t('contract')}</th><th class="num">${t('contractVal')}</th><th class="num">${t('paidToDate')}</th><th class="num">${t('remaining')}</th><th>${t('progress')}</th><th>${t('kw')}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+  // detail table
+  const cats=[['__all',t('allCats')],['vat',t('vatCat')],['other',t('otherCat')]]
+    .concat(state.showInternal?[['internal',t('internalCat')]]:[])
+    .concat((state.contracts||[]).map(c=>[c.id,(c.category||c.company).slice(0,40)]));
+  let list=D.visible;
+  if(payState.cat!=='__all') list=list.filter(r=>r.cat===payState.cat);
+  if(payState.q) list=list.filter(r=>norm(r.desc+' '+r.voucher+' '+r.code).includes(norm(payState.q)));
+  const assignOpts=r=>['','vat','internal','other'].map(x=>`<option value="${x}" ${r.cat===x?'selected':''}>${x?catLabel(x):t('assign')}</option>`).join('')
+    +(state.contracts||[]).map(c=>`<option value="${c.id}" ${r.cat===c.id?'selected':''}>${esc((c.category||c.company).slice(0,36))}</option>`).join('');
+  const detRows=list.slice(0,600).map(r=>`<tr>
+    <td style="white-space:nowrap">${r.date}</td><td>${esc(r.voucher)}</td>
+    <td style="min-width:280px">${esc(r.desc)}<div style="font-size:11px;color:var(--mut)">${esc(r.code)}</div></td>
+    <td style="font-size:11.5px;white-space:nowrap">${accName(r.contra)}</td>
+    <td><span class="chip ${r.cat==='vat'?'n':r.cat==='internal'?'a':r.cat==='other'?'r':'b'}">${esc(catLabel(r.cat))}</span></td>
+    <td class="noprint"><select style="font-size:11px;max-width:140px" onchange="App.payAssign('${btoa(encodeURIComponent(payKey(r)))}',this.value)">${assignOpts(r)}</select></td>
+    <td class="num"><b>${money(r.amt)}</b></td></tr>`).join('');
+  const detH=`<div class="panel"><h3>🧾 ${t('payDetailT')} <span class="chip n">${list.length}</span></h3>
+    <div class="toolbar"><select onchange="App.paySet('cat',this.value)">${cats.map(([v2,l])=>`<option value="${v2}" ${payState.cat===v2?'selected':''}>${esc(l)}</option>`).join('')}</select>
+      <input id="payQ" placeholder="${t('search')}" value="${esc(payState.q)}" oninput="App.paySet('q',this.value)" style="width:230px"></div>
+    <div class="tblwrap" style="max-height:58vh"><table><thead><tr><th>${t('vDate')}</th><th>${t('voucher')}</th><th>${t('desc')}</th><th>${t('contraAcc')}</th><th>${t('catCol')}</th><th class="noprint"></th><th class="num">${t('amount')}</th></tr></thead><tbody>${detRows}</tbody></table></div></div>`;
+  const chartH=`<div class="panel"><h3>📅 ${t('monthChart')}</h3><div class="chartbox" style="height:240px"><canvas id="chPayMonth"></canvas></div></div>`;
+  el.innerHTML=head+cards+conH+chartH+detH;
+  // month chart
+  const byM={};
+  for(const r of D.visible){ const m=(r.date||'').slice(0,7)||'?'; byM[m]=(byM[m]||0)+r.amt; }
+  const ms=Object.keys(byM).sort();
+  mkChart('chPayMonth',{type:'bar',data:{labels:ms,datasets:[{data:ms.map(m=>byM[m]),backgroundColor:'#1f3a5f'}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+compact(c.raw)}}},
+      scales:{y:{ticks:{callback:x=>compact(x)}},x:{ticks:{font:{size:10}}}}}});
 }
 
 /* ============================== render: attachments ============================== */
@@ -1076,6 +1375,9 @@ function renderSettings(){
       <div class="sd">${t('attFolderHint')}</div></div>
   </div>
   <div class="panel"><h3>☁ ${t('cloudT')}</h3><div class="help">${t('cloudHelp')}</div>
+    <div class="setrow"><div class="sl">${t('cloudEnable')}</div>
+      <label style="font-size:13px"><input type="checkbox" ${state.cloudEnabled?'checked':''} onchange="App.set('cloudEnabled',this.checked)"> ${state.cloudEnabled?'ON':'OFF'}</label>
+      <div class="sd">${t('cloudEnableHint')}</div></div>
     <div class="setrow"><div class="sl">${t('apiKey')}</div><input type="password" value="${esc((state.cloud||{}).apiKey||'')}" style="width:340px" onchange="App.cloudSet('apiKey',this.value)"></div>
     <div class="setrow"><div class="sl">${t('binId')}</div><input value="${esc((state.cloud||{}).binId||'')}" style="width:260px" onchange="App.cloudSet('binId',this.value)">
       <button class="btn sm ghost" onclick="App.cloudCreate()">${t('createBin')}</button></div>
@@ -1103,6 +1405,7 @@ function renderSettings(){
 const App={
  go(tab){ state.tab=tab; save(); renderAll(); },
  set(k,v2){ state[k]=v2; save(); renderAll(); },
+ setRoomLabel(m){ state.roomLabel=m; save(); renderAll(); },
  setActive(id){ state.activeId=id; save(); renderAll(); },
  setBase(id){ state.baseId=id; save(); renderAll(); },
  renameVer(id,v2){ const V=ver(id); if(V){V.name=v2; save(); renderNav();} },
@@ -1251,6 +1554,79 @@ const App={
      attCache.push({id:uid(),name:f.name,mime:f.type||'',size:f.size||0,date:Date.now(),link:'',note:'',rel:dir+'/'+f.name});
      fPut(attCache[attCache.length-1]); }
    save(); renderAll(); toast('✓ '+t('saved')); },
+ // payments
+ paySet(k,v2){ payState[k]=v2; if(k==='q'){ debounceRender(renderPay); } else renderPay(); },
+ togglePayInternal(){ state.showInternal=!state.showInternal; save(); renderPay(); },
+ payAssign(b64,val){ const key=decodeURIComponent(atob(b64)); state.payOverrides=state.payOverrides||{};
+   if(val) state.payOverrides[key]=val; else delete state.payOverrides[key];
+   save(); renderPay(); },
+ conKw(id,v2){ const c=(state.contracts||[]).find(x=>x.id===id); if(c){ c.kw=v2; save(); renderPay(); } },
+ conDel(id){ if(!confirm('?')) return; state.contracts=(state.contracts||[]).filter(x=>x.id!==id); save(); renderPay(); },
+ readLedgerFile(file){ if(typeof XLSX==='undefined'){ toast(t('libFail')); return; }
+   const rd=new FileReader();
+   rd.onload=e=>{ try{ const wb=XLSX.read(e.target.result,{type:'array'});
+     const P=parseLedger(wb,file.name);
+     if(!P||!P.rows.length){ toast('✗ Ledger layout not recognised'); return; }
+     state.payments=P; save(); renderPay();
+     toast('✓ '+P.rows.length+' '+t('payRows')+' ('+P.period+')');
+   }catch(err){ toast('✗ '+err.message); } };
+   rd.readAsArrayBuffer(file); },
+ readContractsFile(file){ if(typeof XLSX==='undefined'){ toast(t('libFail')); return; }
+   const rd=new FileReader();
+   rd.onload=e=>{ try{ const wb=XLSX.read(e.target.result,{type:'array'});
+     const cs=parseContracts(wb);
+     if(!cs||!cs.length){ toast('✗ Contracts layout not recognised'); return; }
+     // keep user-edited keywords for contracts that still exist (match company+contract)
+     for(const c of cs){ const old=(state.contracts||[]).find(x=>norm(x.company)===norm(c.company)&&norm(x.contract)===norm(c.contract)); if(old&&old.kw) c.kw=old.kw; }
+     state.contracts=cs; save(); renderPay(); toast('✓ '+cs.length+' '+t('contract'));
+   }catch(err){ toast('✗ '+err.message); } };
+   rd.readAsArrayBuffer(file); },
+ // per-tab exports
+ tabXlsx(){ if(typeof XLSX==='undefined'){ toast(t('libFail')); return; }
+   const wb=XLSX.utils.book_new(); const nm='SSP-'+state.tab+'-'+new Date().toISOString().slice(0,10).replace(/-/g,'');
+   const add=(sheetName,aoa,cols)=>{ const ws=XLSX.utils.aoa_to_sheet(aoa); if(cols) ws['!cols']=cols; XLSX.utils.book_append_sheet(wb,ws,sheetName); };
+   const v=activeVer();
+   if(state.tab==='compare'){ const rows=cmpRows(); const A=ver(cmpState.a),B=ver(cmpState.b);
+     const aoa=[['Compare: A = '+(A?A.name:'')+' → B = '+(B?B.name:'')+' · '+t('level')+': '+cmpState.level+(cmpState.level==='section'&&cmpState.scope!=='__all'?' · '+cmpState.scope:'')],
+       [t('name'),t('section'),t('sheet'),'A (VND)','B (VND)',t('diff'),'Δ%','Status']];
+     for(const r of rows) aoa.push([r.name,r.sub||'',r.sheet||'',r.a,r.b,r.d,r.dp,r.status||'']);
+     add('Compare',aoa,[{wch:52},{wch:24},{wch:18},{wch:16},{wch:16},{wch:15},{wch:8},{wch:9}]);
+   } else if(state.tab==='estimate'&&v){ const aoa=[[t('sheet'),t('section'),'No',t('desc'),t('qty'),t('unit'),t('rate'),'Base total','Adj. total','Δ',t('inc')]];
+     for(const it of v.items){ const e=itemEff(v,it); aoa.push([it.sheet,it.category||it.group,it.no,it.desc,e.qty,it.unit,e.rate,it.total,e.total,e.total-it.total,e.inc?'Y':'N']); }
+     for(const ni of (v.newItems||[])){ const tt=(n(ni.qty)||0)*(n(ni.rate)||0); aoa.push(['(new)',ni.category,'',ni.desc,ni.qty,ni.unit,ni.rate,0,tt,tt,ni.inc!==false?'Y':'N']); }
+     add('BOQ',aoa,[{wch:20},{wch:26},{wch:6},{wch:60},{wch:10},{wch:7},{wch:12},{wch:15},{wch:15},{wch:13},{wch:5}]);
+   } else if(state.tab==='ve'){ const aoa=[[t('optTitle'),t('study'),t('qty'),t('unit'),t('curRate'),t('newRate'),t('variation'),'Δ%',t('include'),t('notes')]];
+     for(const o of state.options){ const r=veCalc(o.baseRate,o.newRate,o.qty); aoa.push([o.title,o.study,o.qty,o.unit,n(o.baseRate),n(o.newRate),r.vari,r.p,o.include?'Y':'N',o.notes]); }
+     add('VE Options',aoa,[{wch:38},{wch:16},{wch:9},{wch:7},{wch:13},{wch:13},{wch:16},{wch:8},{wch:8},{wch:42}]);
+   } else if(state.tab==='materials'&&v){ const aoa=[[t('ref'),t('category'),t('item'),t('area'),t('spec'),t('supplier'),t('veAlt'),t('remarks')]];
+     for(const m of (v.materials||[])) aoa.push([m.ref,m.category,m.item,m.area,m.desc,m.supplier,m.ve,m.remarks]);
+     add('Materials',aoa,[{wch:9},{wch:18},{wch:18},{wch:18},{wch:46},{wch:36},{wch:18},{wch:20}]);
+   } else if(state.tab==='versions'){ const vs=state.versions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+     const aoa=[[t('vName'),t('vDate'),t('vFile'),t('vTotal')+' (VND)','USD',t('vNote')]];
+     for(const x of vs) aoa.push([x.name,x.date,x.fileName,grandOf(x),Math.round((grandOf(x)||0)/(x.fx||state.fx)),x.note]);
+     add('Versions',aoa,[{wch:34},{wch:12},{wch:38},{wch:18},{wch:12},{wch:28}]);
+   } else if(state.tab==='pay'&&state.payments){ const D=payData();
+     const a1=[[t('payT')],[t('asOf'),state.payments.period,t('importedOn'),state.payments.importedAt,state.showInternal?'':t('internalNote')],[],
+       [t('paidTotal'),D.total],[t('paidNet'),D.net],[t('vatPaid'),D.vat]];
+     if(state.showInternal) a1.push([t('internalTotal'),D.internal]);
+     a1.push([t('unmatchedTotal'),D.other]);
+     if((state.contracts||[]).length){ a1.push([],[t('contractsT')],[t('category'),t('company'),t('contract'),t('contractVal'),t('paidToDate'),t('remaining'),t('progress')]);
+       for(const comp of [...new Set(state.contracts.map(c=>c.company))]){
+         const cc=state.contracts.filter(c=>c.company===comp);
+         const cv=cc.reduce((x,c)=>x+c.value,0), cp=cc.reduce((x,c)=>x+(D.byContract[c.id]||0),0);
+         a1.push([cc[0].category,comp,cc.map(c=>c.contract).join(' | '),cv,cp,cv-cp,cv?cp/cv:null]); } }
+     add('Summary',a1,[{wch:30},{wch:34},{wch:44},{wch:16},{wch:16},{wch:16},{wch:10}]);
+     const a2=[[t('vDate'),t('voucher'),t('desc'),'Code',t('contraAcc'),t('catCol'),t('amount')+' (VND)']];
+     for(const r of D.visible) a2.push([r.date,r.voucher,r.desc,r.code,r.contra,catLabel(r.cat),r.amt]);
+     add('Payments',a2,[{wch:11},{wch:12},{wch:80},{wch:10},{wch:8},{wch:26},{wch:15}]);
+   } else { App.reportXlsx(); return; }
+   XLSX.writeFile(wb,nm+'.xlsx'); toast('✓ Excel'); },
+ tabPdf(){ const html=buildTabPrintHtml(); if(!html){ App.reportPdf(); return; }
+   document.getElementById('printReport').innerHTML=html;
+   document.body.classList.add('rpt');
+   const off=()=>document.body.classList.remove('rpt');
+   window.onafterprint=off; setTimeout(off,2000);
+   window.print(); },
  // reports
  reportXlsx(){ if(typeof XLSX==='undefined'){ toast(t('libFail')); return; }
    const v=activeVer(); if(!v){ toast(t('needOne')); return; }
@@ -1318,13 +1694,13 @@ const App={
    if(!p||p.app!=='ssp-budget-tracker'||!p.state){ toast('Not a tracker backup'); return; }
    if(!confirm(t('confirmImport'))) return;
    const keepCloud=state.cloud;
-   state=Object.assign({lang:'en',currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},tab:'dash'},p.state);
+   state=Object.assign({lang:'en',currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},showInternal:false,tab:'dash'},p.state);
    if((!state.cloud||!state.cloud.apiKey)&&keepCloud&&keepCloud.apiKey) state.cloud=keepCloud;
    await fClear(); attCache=[];
    for(const f of (p.attachments||[])){ await fPut(f); attCache.push(f); }
    save(); renderAll(); toast('✓ '+t('importBtn')); },
  async wipe(){ if(!confirm(t('confirmWipe'))) return;
-   state={lang:state.lang,currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},tab:'dash'};
+   state={lang:state.lang,currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},showInternal:false,tab:'dash'};
    await fClear(); attCache=[]; save(); renderAll(); }
 };
 window.App=App; window.closeModal=closeModal; window.qc=qc; window.$=$; window.__state=()=>state;
@@ -1335,6 +1711,8 @@ $('#fileAtt').addEventListener('change',e=>{ App.addAttFiles(e.target.files,'');
 $('#fileOptImg').addEventListener('change',e=>{ App.addAttFiles(e.target.files,window.__optTarget); e.target.value=''; });
 $('#fileImport').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; if(f) App.importJson(f); });
 $('#fileLink').addEventListener('change',e=>{ App.linkFilesPicked(e.target.files); e.target.value=''; });
+$('#fileLedger').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; if(f) App.readLedgerFile(f); });
+$('#fileContracts').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; if(f) App.readContractsFile(f); });
 $('#curSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ state.currency=b.dataset.cur; save(); renderAll(); } });
 $('#langSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ state.lang=b.dataset.lang; save(); renderAll(); } });
 
