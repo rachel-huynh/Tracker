@@ -254,7 +254,10 @@ en:{
  impQuote:'⬆ Import quotation', srcCol:'rate', qsRate:'QS rate', bestVs:'Best vs QS', srcs:'Quotations', matchedRows:'Rows matched to QS', avgVsQs:'Weighted vs QS', potSaving:'Potential saving (best rates × QS qty)', potOverrun:'Exposure (rates above QS × QS qty)',
  onlyQs:'Only rows with QS match', onlyAll:'Priced by every quotation', ambiguous:'ambiguous', resolveQs:'Pick QS line…', noQs:'— no QS match —', toVE:'→ VE', veMade:'VE option created', delSrc:'Remove this quotation?',
  noQuotes:'No quotations imported yet. Import the contractor Contract BOQ files to start comparing.', ratePairs:'priced items', avgNote:'Σ(quoted rate × QS qty) ÷ Σ(QS rate × QS qty) − 1, over matched rows only',
- cheaper:'cheaper', pricier:'pricier'
+ cheaper:'cheaper', pricier:'pricier',
+ sortBy:'Sort', srtNew:'Newest first', srtSave:'Biggest saving first', srtOver:'Biggest increase first', srtTitle:'Title A–Z', srtTotal:'Largest total first',
+ stAll:'All statuses', stSaving:'Saving', stOverrun:'Overrun', stIncluded:'Included in forecast', allStudies:'All studies', noStudy:'(no study)', ofN:'of',
+ allMonths:'All months', sortHint:'Click a column header to sort'
 },
 vi:{
  dash:'Tổng quan', versions:'Phiên bản', compare:'So sánh', estimate:'Dự toán', ve:'VE Studio', materials:'Vật liệu', atts:'Đính kèm', settings:'Cài đặt',
@@ -330,7 +333,10 @@ vi:{
  impQuote:'⬆ Nhập báo giá', srcCol:'đơn giá', qsRate:'Đơn giá QS', bestVs:'Tốt nhất so QS', srcs:'Báo giá', matchedRows:'Dòng khớp với QS', avgVsQs:'Bình quân gia quyền so QS', potSaving:'Tiết kiệm tiềm năng (giá tốt nhất × KL QS)', potOverrun:'Rủi ro vượt (giá cao hơn QS × KL QS)',
  onlyQs:'Chỉ dòng khớp QS', onlyAll:'Mọi báo giá đều có giá', ambiguous:'chưa rõ', resolveQs:'Chọn dòng QS…', noQs:'— không khớp QS —', toVE:'→ VE', veMade:'Đã tạo phương án VE', delSrc:'Xóa báo giá này?',
  noQuotes:'Chưa có báo giá. Hãy nhập file Contract BOQ của nhà thầu để bắt đầu so sánh.', ratePairs:'hạng mục có giá', avgNote:'Σ(giá báo × KL QS) ÷ Σ(giá QS × KL QS) − 1, chỉ tính các dòng khớp',
- cheaper:'rẻ hơn', pricier:'đắt hơn'
+ cheaper:'rẻ hơn', pricier:'đắt hơn',
+ sortBy:'Sắp xếp', srtNew:'Mới nhất trước', srtSave:'Tiết kiệm nhiều nhất', srtOver:'Tăng nhiều nhất', srtTitle:'Tên A–Z', srtTotal:'Tổng lớn nhất trước',
+ stAll:'Tất cả trạng thái', stSaving:'Tiết kiệm', stOverrun:'Vượt', stIncluded:'Đã đưa vào dự báo', allStudies:'Tất cả nhóm', noStudy:'(chưa có nhóm)', ofN:'trên',
+ allMonths:'Tất cả các tháng', sortHint:'Bấm tiêu đề cột để sắp xếp'
 }};
 function t(k){ return (I18N[state.lang]||I18N.en)[k] || I18N.en[k] || k; }
 
@@ -1238,6 +1244,21 @@ function refLinkify(txt){ return esc(txt).replace(/\b([A-Z]{2,3}-\d{2}[A-Z]?)\b/
 
 /* ============================== render: VE studio ============================== */
 let qc={desc:'',qty:1,unit:'',baseRate:'',newRate:'',link:''};
+let veState={q:'',study:'__all',status:'__all',sort:'new'};
+function fmtQty(v){ if(v==null||v==='') return '—'; const x=+v; if(!isFinite(x)) return s(v); return x.toLocaleString('en-US',{maximumFractionDigits:2}); }
+/* unique picker entries: same description can exist on several sheets/categories with different qty & rate */
+let qcLinkMap=new Map();
+function qcItemOptions(){ const v=activeVer(); const items=(v&&v.items)||[]; qcLinkMap=new Map(); const cnt={}; const out=[];
+  for(const i of items.slice(0,1500)){ if(!i.desc) continue;
+    const sheetShort=i.sheet.replace(/^\d+(\.\d+)?\.?\s*/,'').slice(0,20);
+    const catShort=s(i.category||i.group).slice(0,20);
+    let val=i.desc.slice(0,64)+' ⟨'+sheetShort+(catShort?' · '+catShort:'')+'⟩';
+    cnt[val]=(cnt[val]||0)+1; if(cnt[val]>1) val+=' #'+cnt[val];
+    qcLinkMap.set(val,i.id);
+    out.push({val,label:(i.qty!=null?fmtQty(i.qty)+' '+s(i.unit):'')+(i.rate!=null?' @ '+money(i.rate,'VND'):'')});
+  }
+  return out;
+}
 function veCalc(base,nw,q){ base=n(base)||0;nw=n(nw)||0;q=n(q)||0;
   return {ud:nw-base,cur:base*q,prop:nw*q,vari:(nw-base)*q,p:base?(nw-base)/base:null}; }
 function veBadge(x){ return x>0.5?`<span class="chip r">${t('overrun')}</span>`:(x<-0.5?`<span class="chip g">${t('saving')}</span>`:`<span class="chip n">${t('onBudget')}</span>`); }
@@ -1256,14 +1277,26 @@ function renderVE(){
   const items=(v&&v.items)||[];
   const badge=veBadge;
   const studies=[...new Set(state.options.map(o=>o.study||''))];
-  const optsH=state.options.map(o=>{ const r=veCalc(o.baseRate,o.newRate,o.qty);
+  // filter + sort the option cards
+  const vv=o=>veCalc(o.baseRate,o.newRate,o.qty);
+  let opts=state.options.slice();
+  if(veState.study!=='__all') opts=opts.filter(o=>(o.study||'')===veState.study);
+  if(veState.q) opts=opts.filter(o=>norm(o.title+' '+(o.notes||'')+' '+(o.study||'')).includes(norm(veState.q)));
+  if(veState.status==='saving') opts=opts.filter(o=>vv(o).vari<-0.5);
+  else if(veState.status==='overrun') opts=opts.filter(o=>vv(o).vari>0.5);
+  else if(veState.status==='inc') opts=opts.filter(o=>!!o.include);
+  if(veState.sort==='save') opts.sort((a,b)=>vv(a).vari-vv(b).vari);
+  else if(veState.sort==='over') opts.sort((a,b)=>vv(b).vari-vv(a).vari);
+  else if(veState.sort==='total') opts.sort((a,b)=>vv(b).prop-vv(a).prop);
+  else if(veState.sort==='title') opts.sort((a,b)=>s(a.title).localeCompare(s(b.title)));
+  const optsH=opts.map(o=>{ const r=veCalc(o.baseRate,o.newRate,o.qty);
     const files=(o.files||[]).map(fid=>{ const f=attCache.find(a=>a.id===fid); if(!f) return '';
       const src=f.dataUrl||esc(f.rel||'');
       return f.mime&&f.mime.startsWith('image')?`<img src="${src}" title="${esc(f.name)}" onclick="App.viewAtt('${f.id}')" onerror="this.style.opacity=.25">`:`<div class="fdoc" onclick="App.viewAtt('${f.id}')">${esc(f.name.slice(0,26))}</div>`; }).join('');
     return `<div class="opt" style="border-left-color:${r.vari>0?'var(--red)':r.vari<0?'var(--green)':'var(--gold)'}">
     <div class="row"><div class="fld" style="flex:2"><label>${t('optTitle')}</label><input value="${esc(o.title)}" onchange="App.optEdit('${o.id}','title',this.value)"></div>
       <div class="fld"><label>${t('study')}</label><input value="${esc(o.study||'')}" list="dlStudies" onchange="App.optEdit('${o.id}','study',this.value)"></div></div>
-    <div class="row"><div class="fld"><label>${t('qty')}</label><input type="number" step="any" value="${o.qty}" onchange="App.optEdit('${o.id}','qty',this.value)"></div>
+    <div class="row"><div class="fld"><label>${t('qty')}</label><input type="number" step="any" value="${o.qty!=null&&o.qty!==''?+(+o.qty).toFixed(4):''}" onchange="App.optEdit('${o.id}','qty',this.value)"></div>
       <div class="fld"><label>${t('unit')}</label><input value="${esc(o.unit||'')}" onchange="App.optEdit('${o.id}','unit',this.value)"></div>
       <div class="fld"><label>${t('curRate')}</label><input type="number" step="any" value="${o.baseRate}" onchange="App.optEdit('${o.id}','baseRate',this.value)"></div>
       <div class="fld"><label>${t('newRate')}</label><input type="number" step="any" value="${o.newRate}" onchange="App.optEdit('${o.id}','newRate',this.value)"></div></div>
@@ -1281,14 +1314,14 @@ function renderVE(){
       <span><button class="btn sm ghost" onclick="App.optFiles('${o.id}')">${t('attach')}</button>
       <button class="btn sm danger" onclick="App.optDel('${o.id}')">✕</button></span>
     </div></div>`; }).join('');
-  // studies comparison
+  // studies comparison (uses the filtered set)
   let cmpH='';
-  for(const st of studies){ const os=state.options.filter(o=>(o.study||'')===st); if(os.length<2) continue;
+  for(const st of [...new Set(opts.map(o=>o.study||''))]){ const os=opts.filter(o=>(o.study||'')===st); if(os.length<2) continue;
     const best=Math.min(...os.map(o=>veCalc(o.baseRate,o.newRate,o.qty).prop));
-    cmpH+=`<h3 style="margin-top:14px">🆚 ${t('optCompare')}: ${esc(st)||'—'}</h3><div class="tblwrap"><table>
+    cmpH+=`<h3 style="margin-top:14px">🆚 ${t('optCompare')}: ${st?esc(st):t('noStudy')}</h3><div class="tblwrap"><table>
       <thead><tr><th>${t('optTitle')}</th><th class="num">${t('qty')}</th><th class="num">${t('curRate')}</th><th class="num">${t('newRate')}</th><th class="num">${t('newTotal')}</th><th class="num">${t('variation')}</th><th></th></tr></thead><tbody>
       ${os.map(o=>{const r=veCalc(o.baseRate,o.newRate,o.qty); return `<tr ${r.prop===best?'style="background:var(--greenbg)"':''}>
-        <td>${esc(o.title)}</td><td class="num">${o.qty}</td><td class="num">${money(n(o.baseRate))}</td><td class="num">${money(n(o.newRate))}</td>
+        <td>${esc(o.title)}</td><td class="num">${fmtQty(o.qty)}</td><td class="num">${money(n(o.baseRate))}</td><td class="num">${money(n(o.newRate))}</td>
         <td class="num"><b>${money(r.prop)}</b></td><td class="num ${cls(r.vari)}">${sign(r.vari)}${money(r.vari)}</td>
         <td>${r.prop===best?`<span class="chip g">★ ${t('bestOpt')}</span>`:''}</td></tr>`;}).join('')}</tbody></table></div>`; }
   el.innerHTML=`
@@ -1308,13 +1341,30 @@ function renderVE(){
       <div><label style="font-size:11px;color:var(--mut)">${t('newRate')}</label><br><input type="number" step="any" value="${qc.newRate}" style="width:130px" oninput="App.qcSet('newRate',this.value)"></div>
       <button class="btn gold" onclick="App.qcSave()">${t('saveOpt')}</button>
     </div>
-    <datalist id="dlItems">${items.slice(0,900).map(i=>`<option value="${esc(i.desc.slice(0,80))}">`).join('')}</datalist>
+    <datalist id="dlItems">${qcItemOptions().map(o=>`<option value="${esc(o.val)}" label="${esc(o.label)}">`).join('')}</datalist>
     <datalist id="dlStudies">${studies.filter(Boolean).map(s2=>`<option value="${esc(s2)}">`).join('')}</datalist>
     <div class="res" id="qcRes" style="background:#f6f7f9;border-radius:8px;padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px;font-size:13px">${qcResHtml()}</div>
   </div>
   ${cmpH}
-  <h3 style="margin:16px 0 10px;color:var(--navy2)">🗃 ${t('ve')} (${state.options.length})</h3>
-  ${state.options.length?`<div class="opts">${optsH}</div>`:`<div class="help">${t('noOpts')}</div>`}`;
+  <div class="toolbar noprint" style="margin:16px 0 10px">
+    <h3 style="color:var(--navy2);margin:0">🗃 ${t('ve')} (${opts.length}${opts.length!==state.options.length?' '+t('ofN')+' '+state.options.length:''})</h3>
+    <span class="sp"></span>
+    <input id="veQ" placeholder="${t('search')}" value="${esc(veState.q)}" oninput="App.veSet('q',this.value)" style="width:190px">
+    <select onchange="App.veSet('study',this.value)"><option value="__all">${t('allStudies')}</option>
+      ${studies.map(s2=>`<option value="${esc(s2)}" ${veState.study===s2?'selected':''}>${s2?esc(s2):t('noStudy')}</option>`).join('')}</select>
+    <select onchange="App.veSet('status',this.value)">
+      <option value="__all">${t('stAll')}</option>
+      <option value="saving" ${veState.status==='saving'?'selected':''}>${t('stSaving')}</option>
+      <option value="overrun" ${veState.status==='overrun'?'selected':''}>${t('stOverrun')}</option>
+      <option value="inc" ${veState.status==='inc'?'selected':''}>${t('stIncluded')}</option></select>
+    <select onchange="App.veSet('sort',this.value)">
+      <option value="new">${t('sortBy')}: ${t('srtNew')}</option>
+      <option value="save" ${veState.sort==='save'?'selected':''}>${t('srtSave')}</option>
+      <option value="over" ${veState.sort==='over'?'selected':''}>${t('srtOver')}</option>
+      <option value="total" ${veState.sort==='total'?'selected':''}>${t('srtTotal')}</option>
+      <option value="title" ${veState.sort==='title'?'selected':''}>${t('srtTitle')}</option></select>
+  </div>
+  ${opts.length?`<div class="opts">${optsH}</div>`:`<div class="help">${t('noOpts')}</div>`}`;
 }
 
 /* ============================== render: materials ============================== */
@@ -1413,7 +1463,7 @@ function renderRates(){
 }
 
 /* ============================== render: payments ============================== */
-let payState={q:'',cat:'__all'};
+let payState={q:'',cat:'__all',month:'__all',sort:'date',dir:-1};
 function renderPay(){
   const el=$('#tab-pay'); const P=state.payments;
   const cloudBtns=state.cloudEnabled?`<button class="btn ghost" onclick="App.cloudPush()">☁⬆ ${t('push')}</button>
@@ -1481,7 +1531,18 @@ function renderPay(){
     .concat((state.contracts||[]).map(c=>[c.id,(c.category||c.company).slice(0,40)]));
   let list=D.visible;
   if(payState.cat!=='__all') list=list.filter(r=>r.cat===payState.cat);
+  if(payState.month!=='__all') list=list.filter(r=>(r.date||'').slice(0,7)===payState.month);
   if(payState.q) list=list.filter(r=>norm(r.desc+' '+r.voucher+' '+r.code).includes(norm(payState.q)));
+  const months=[...new Set(D.visible.map(r=>(r.date||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  const listSum=list.reduce((x,r)=>x+r.amt,0);
+  { const sf=payState.sort, dir=payState.dir;
+    list=list.slice().sort((a,b)=>{ let x,y;
+      if(sf==='amt'){ x=a.amt; y=b.amt; return (x-y)*dir; }
+      if(sf==='cat'){ x=catLabel(a.cat); y=catLabel(b.cat); }
+      else { x=s(a[sf]); y=s(b[sf]); }
+      return String(x).localeCompare(String(y))*dir; }); }
+  const arrow=f=>payState.sort===f?(payState.dir>0?' ▲':' ▼'):'';
+  const sth=(f,label,cls2)=>`<th class="${cls2||''}" style="cursor:pointer" title="${t('sortHint')}" onclick="App.paySort('${f}')">${label}${arrow(f)}</th>`;
   const assignOpts=r=>['','vat','internal','other'].map(x=>`<option value="${x}" ${r.cat===x?'selected':''}>${x?catLabel(x):t('assign')}</option>`).join('')
     +(state.contracts||[]).map(c=>`<option value="${c.id}" ${r.cat===c.id?'selected':''}>${esc((c.category||c.company).slice(0,36))}</option>`).join('');
   const detRows=list.slice(0,600).map(r=>`<tr>
@@ -1491,10 +1552,11 @@ function renderPay(){
     <td><span class="chip ${r.cat==='vat'?'n':r.cat==='internal'?'a':r.cat==='other'?'r':'b'}">${esc(catLabel(r.cat))}</span></td>
     <td class="noprint"><select style="font-size:11px;max-width:140px" onchange="App.payAssign('${btoa(encodeURIComponent(payKey(r)))}',this.value)">${assignOpts(r)}</select></td>
     <td class="num"><b>${money(r.amt)}</b></td></tr>`).join('');
-  const detH=`<div class="panel"><h3>🧾 ${t('payDetailT')} <span class="chip n">${list.length}</span></h3>
+  const detH=`<div class="panel"><h3>🧾 ${t('payDetailT')} <span class="chip n">${list.length}</span> <span class="chip b">${money(listSum)}</span></h3>
     <div class="toolbar"><select onchange="App.paySet('cat',this.value)">${cats.map(([v2,l])=>`<option value="${v2}" ${payState.cat===v2?'selected':''}>${esc(l)}</option>`).join('')}</select>
+      <select onchange="App.paySet('month',this.value)"><option value="__all">${t('allMonths')}</option>${months.map(m=>`<option value="${m}" ${payState.month===m?'selected':''}>${m}</option>`).join('')}</select>
       <input id="payQ" placeholder="${t('search')}" value="${esc(payState.q)}" oninput="App.paySet('q',this.value)" style="width:230px"></div>
-    <div class="tblwrap" style="max-height:58vh"><table><thead><tr><th>${t('vDate')}</th><th>${t('voucher')}</th><th>${t('desc')}</th><th>${t('contraAcc')}</th><th>${t('catCol')}</th><th class="noprint"></th><th class="num">${t('amount')}</th></tr></thead><tbody>${detRows}</tbody></table></div></div>`;
+    <div class="tblwrap" style="max-height:58vh"><table><thead><tr>${sth('date',t('vDate'))}${sth('voucher',t('voucher'))}${sth('desc',t('desc'))}${sth('contra',t('contraAcc'))}${sth('cat',t('catCol'))}<th class="noprint"></th>${sth('amt',t('amount'),'num')}</tr></thead><tbody>${detRows}</tbody></table></div></div>`;
   const chartH=`<div class="panel"><h3>📅 ${t('monthChart')}</h3><div class="chartbox" style="height:240px"><canvas id="chPayMonth"></canvas></div></div>`;
   el.innerHTML=head+cards+conH+chartH+detH;
   // month chart
@@ -1644,9 +1706,12 @@ const App={
  // VE
  qcSet(k,v2){ qc[k]=v2; const el=document.getElementById('qcRes'); if(el) el.innerHTML=qcResHtml(); else renderVE(); },
  qcLink(val){ qc.link=val; const v=activeVer(); if(!v) {renderVE();return;}
-   const it=(v.items||[]).find(i=>i.desc.slice(0,80)===val||norm(i.desc)===norm(val));
+   let it=null; const id=qcLinkMap.get(val); // exact picker entry (unique even for duplicate names)
+   if(id) it=(v.items||[]).find(x=>x.id===id);
+   if(!it) it=(v.items||[]).find(i=>i.desc.slice(0,80)===val||norm(i.desc)===norm(val));
    if(it){ qc.desc=it.desc; qc.qty=it.qty!=null?it.qty:1; qc.unit=it.unit||''; qc.baseRate=it.rate!=null?it.rate:''; }
    renderVE(); },
+ veSet(k,v2){ veState[k]=v2; if(k==='q'){ debounceRender(renderVE); } else renderVE(); },
  qcSave(){ if(!qc.desc&&!qc.link){ toast(t('desc')+'?'); return; }
    state.options.unshift({id:uid(),title:qc.desc||qc.link,study:'',qty:n(qc.qty)||1,unit:qc.unit,baseRate:n(qc.baseRate)||0,newRate:n(qc.newRate)||0,notes:'',include:false,files:[]});
    Object.assign(qc,{desc:'',qty:1,unit:'',baseRate:'',newRate:'',link:''}); save(); renderVE(); toast('✓ '+t('saved')); },
@@ -1751,6 +1816,7 @@ const App={
    save(); toast('✓ '+t('veMade')); },
  // payments
  paySet(k,v2){ payState[k]=v2; if(k==='q'){ debounceRender(renderPay); } else renderPay(); },
+ paySort(f){ if(payState.sort===f) payState.dir*=-1; else { payState.sort=f; payState.dir=f==='amt'?-1:1; } renderPay(); },
  togglePayInternal(){ state.showInternal=!state.showInternal; save(); renderPay(); },
  payAssign(b64,val){ const key=decodeURIComponent(atob(b64)); state.payOverrides=state.payOverrides||{};
    if(val) state.payOverrides[key]=val; else delete state.payOverrides[key];
