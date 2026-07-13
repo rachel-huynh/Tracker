@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cổng Pháp chế Nội bộ — Plaza Hotel Company Limited</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+  // ==== CẤU HÌNH — điền sau khi tạo project Supabase (xem README.md) ====
+  window.PORTAL_CONFIG = {
+    SUPABASE_URL: 'https://pyfwkojzpmpsguhlkeyr.supabase.co',        // vd: https://abcdefgh.supabase.co
+    SUPABASE_ANON_KEY: 'sb_publishable_bos37zusS4f_3KfoRTiWnQ_UkHDKhnu'    // anon public key
+  };
+  tailwind.config = {
+    theme: { extend: { colors: {
+      navy: '#2B3A5B', navylight: '#3A4C74', navydark: '#233049',
+      gold: '#C9A227', pagebg: '#F4F6F8'
+    } } }
+  };
+</script>
+<style>
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+  .stat-card { border-left: 4px solid var(--accent, #2B3A5B); }
+  .nav-item { border-left: 4px solid transparent; }
+  .nav-item.active { background: #3A4C74; border-left-color: #C9A227; }
+  .nav-item:hover:not(.active) { background: rgba(255,255,255,0.06); }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { background: #e8ecf1; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:9999px; font-size:11px; font-weight:600; white-space:nowrap; }
+  .drawer { transition: transform .2s ease; }
+  .chip { display:inline-block; padding:1px 8px; border-radius:6px; font-size:11px; background:#eef1f5; color:#2B3A5B; margin:1px; }
+  dialog::backdrop { background: rgba(35,48,73,.45); }
+  input[type=text],input[type=date],input[type=email],input[type=password],input[type=number],select,textarea {
+    border:1px solid #d6dbe3; border-radius:6px; padding:6px 8px; font-size:13px; background:#fff; width:100%;
+  }
+  input:focus,select:focus,textarea:focus { outline:2px solid #2B3A5B22; border-color:#2B3A5B; }
+  .btn { display:inline-flex; align-items:center; gap:4px; border-radius:6px; padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .btn-primary { background:#2B3A5B; color:#fff; } .btn-primary:hover { background:#233049; }
+  .btn-outline { background:#fff; color:#2B3A5B; border:1px solid #2B3A5B; } .btn-outline:hover { background:#f0f3f7; }
+  .btn-danger { background:#fff; color:#b91c1c; border:1px solid #b91c1c; } .btn-danger:hover { background:#fef2f2; }
+  .btn-sm { padding:3px 9px; font-size:12px; }
+  .table-scroll { max-height: 72vh; overflow: auto; }
+  table.data { width:100%; border-collapse:collapse; background:#fff; font-size:13px; table-layout: fixed; }
+  table.data th { background:#f1f4f8; color:#41506e; text-align:left; padding:8px 10px; border:1px solid #e3e8ef; font-size:12px; position:relative; }
+  table.data td { padding:7px 10px; border:1px solid #e9edf3; vertical-align:top; white-space:normal; word-break:break-word; overflow-wrap:anywhere; }
+  table.data tbody tr:hover { background:#f7f9fb; cursor:pointer; }
+  table.data thead tr.header-row th { position: sticky; top: 0; z-index: 6; }
+  table.data thead tr.filter-row th { position: sticky; top: 34px; z-index: 5; }
+  .filter-row th { padding:4px 6px !important; background:#fafbfd !important; }
+  .filter-row input, .filter-row select { font-size:12px; padding:3px 6px; }
+  .col-resize-handle { position:absolute; top:0; right:-3px; width:6px; height:100%; cursor:col-resize; user-select:none; z-index:7; }
+  .col-resize-handle:hover, .col-resize-handle.active { background:#C9A227aa; }
+  /* "table.data th { text-align:left }" ở trên mạnh hơn class .text-center của Tailwind
+     (nhiều phần tử trong selector) — ghi đè rõ ràng ở đây để căn giữa thật sự áp dụng. */
+  table.data th.text-center, table.data td.text-center { text-align: center; }
+</style>
+</head>
+<body class="bg-pagebg text-slate-800">
+
+<!-- ===================== LOGIN ===================== -->
+<div id="login-view" class="hidden min-h-screen flex items-center justify-center bg-navy">
+  <div class="bg-white rounded-xl shadow-xl p-8 w-full max-w-sm">
+    <div class="text-center mb-6">
+      <div class="text-navy font-extrabold text-lg uppercase tracking-wide" data-i18n="app_title"></div>
+      <div class="text-slate-500 text-sm" data-i18n="app_sub"></div>
+    </div>
+    <form id="login-form" class="space-y-4">
+      <div>
+        <label class="text-xs font-semibold text-slate-600" data-i18n="login_email"></label>
+        <input type="email" id="login-email" required autocomplete="username">
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-600" data-i18n="login_password"></label>
+        <input type="password" id="login-password" required autocomplete="current-password">
+      </div>
+      <div id="login-error" class="hidden text-sm text-red-600" data-i18n="login_error"></div>
+      <button type="submit" class="btn btn-primary w-full justify-center" data-i18n="login_btn"></button>
+    </form>
+    <div id="config-warning" class="hidden mt-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+      Chưa cấu hình SUPABASE_URL / ANON_KEY trong index.html — xem README.md.
+    </div>
+  </div>
+</div>
+
+<!-- ===================== APP SHELL ===================== -->
+<div id="app-view" class="hidden">
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-60 shrink-0 bg-navy text-white flex flex-col fixed inset-y-0 left-0 z-20">
+      <div class="px-4 py-5 border-b border-white/10">
+        <div class="font-extrabold text-sm uppercase leading-tight" data-i18n="app_title"></div>
+        <div class="text-[11px] text-white/60 mt-1" data-i18n="app_sub"></div>
+      </div>
+      <nav id="sidebar-nav" class="flex-1 overflow-y-auto py-3 text-[13px]"></nav>
+      <div class="px-4 py-3 border-t border-white/10">
+        <div id="user-box" class="text-xs text-white/80 mb-2"></div>
+        <div class="flex items-center justify-between">
+          <button id="lang-toggle" class="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 font-bold"></button>
+          <button id="logout-btn" class="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20" data-i18n="logout"></button>
+        </div>
+        <div class="text-[10px] text-white/40 mt-2" data-i18n="sidebar_footer"></div>
+      </div>
+    </aside>
+    <!-- Main -->
+    <main class="flex-1 ml-60 p-6" id="page"></main>
+  </div>
+</div>
+
+<!-- Drawer & modal roots -->
+<div id="drawer-root"></div>
+<div id="modal-root"></div>
+<div id="toast" class="hidden fixed bottom-5 right-5 z-50 bg-navy text-white text-sm px-4 py-2 rounded-lg shadow-lg"></div>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
