@@ -102,8 +102,10 @@
         <div class="text-[10px] text-white/40 mt-2" data-i18n="sidebar_footer"></div>
       </div>
     </aside>
-    <!-- Main -->
-    <main class="flex-1 ml-60 p-6" id="page"></main>
+    <!-- Main. min-w-0 để flex item co lại được (bảng rộng không đẩy tràn trang);
+         overflow-x-hidden để bảng cuộn ngang TRONG khung .table-scroll của nó,
+         không đẩy cả trang chạy ngang. -->
+    <main class="flex-1 min-w-0 overflow-x-hidden ml-60 p-6" id="page"></main>
   </div>
 </div>
 
