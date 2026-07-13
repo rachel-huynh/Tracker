@@ -840,7 +840,7 @@ function printDoc(html, pageSize) {
 function orgHeaderHTML(mau) {
   const s = DB.settings;
   return '<div class="phead"><div class="porgwrap"><img class="plogo" src="' + LOGO_CD + '" alt="Logo Công đoàn"><div class="porg">' + esc(s.capTren) + '<br><span class="u">' + esc(s.donVi) + '</span></div></div>' +
-    (mau ? '<div class="pmau">Mẫu số: ' + mau + '<br>(Ban hành kèm theo Thông tư số 107/2017/TT-BTC ngày 10/10/2017 của Bộ Tài chính)</div>' : '') + '</div>';
+    (mau ? '<div class="pmau">Mẫu số: ' + mau + '<br>(Theo Phụ lục I ban hành kèm theo Hướng dẫn số 47/HD-TLĐ ngày 30/12/2021 của Tổng Liên đoàn Lao động Việt Nam)</div>' : '') + '</div>';
 }
 function phieuPrintHTML(p) {
   const inf = LOAI_INFO[p.loai], s = DB.settings;
