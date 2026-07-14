@@ -997,7 +997,7 @@ async function openMemoEditor(m) {
  * SOP — Quy trình nội bộ (thuộc nhóm Văn bản nội bộ)
  * ==========================================================================*/
 let SOP_CACHE = [];
-async function pageSops() {
+async function pageSops(tab = 'all') {
   const { data, error } = await sb.from('sops').select('*').order('updated_at', { ascending: false });
   if (error) {
     $('#page').innerHTML = pageTitle(t('nav_sops')) +
@@ -1006,28 +1006,38 @@ async function pageSops() {
     return;
   }
   SOP_CACHE = data || [];
-  const canManage = hasPerm('memo', 'publish') || S.profile.is_admin;
   const canCreate = hasPerm('memo', 'submit') || S.profile.is_admin;
   const catName = id => { const c = S.categories.find(x => x.id === id); return c ? (S.lang === 'vi' ? c.name_vi : c.name_en) : ''; };
+  const tabs = [
+    { k: 'all', l: t('memo_tab_all'), f: () => true },
+    { k: 'mine', l: t('memo_tab_mine'), f: s => s.author_id === S.user.id && s.status === 'draft' },
+    ...(hasPerm('memo', 'review') ? [{ k: 'review', l: t('memo_tab_review'), f: s => ['submitted', 'under_review'].includes(s.status) }] : []),
+    ...(hasPerm('memo', 'approve') ? [{ k: 'approve', l: t('memo_tab_approve'), f: s => ['under_review', 'approved'].includes(s.status) }] : [])
+  ];
+  const cur = tabs.find(x => x.k === tab) || tabs[0];
 
   let html = pageTitle(t('nav_sops'));
-  html += `<div class="flex flex-wrap items-center gap-2 mb-4">
-    <span class="text-xs text-slate-500 flex-1">${esc(t('sop_intro'))}</span>
+  html += `<div class="flex flex-wrap items-center gap-2 mb-2">
+    ${tabs.map(x => `<button class="btn btn-sm ${x.k === cur.k ? 'btn-primary' : 'btn-outline'}" data-soptab="${x.k}">${esc(x.l)}</button>`).join('')}
+    <span class="flex-1"></span>
     ${canCreate ? `<button class="btn btn-primary" id="btn-newsop">${esc(t('sop_new'))}</button>` : ''}</div>
+    <div class="text-xs text-slate-500 mb-3">${esc(t('sop_intro'))}</div>
     <div id="sop-table"></div>`;
   $('#page').innerHTML = html;
+  document.querySelectorAll('[data-soptab]').forEach(b => b.addEventListener('click', () => pageSops(b.dataset.soptab)));
   $('#btn-newsop')?.addEventListener('click', () => openSopEditor(null));
 
   const tbl = makeTable({
     columns: [
-      { key: 'code', label: t('col_code'), type: 'text', width: 120, render: r => `<b class="text-navy">${esc(r.code || '—')}</b>` },
-      { key: 'title_vi', label: t('col_title'), type: 'text', width: 360, val: r => S.lang === 'en' && r.title_en ? r.title_en : r.title_vi, render: r => esc(S.lang === 'en' && r.title_en ? r.title_en : r.title_vi) },
-      { key: 'category_id', label: t('col_category'), type: 'multi', width: 160, options: S.categories.map(c => ({ v: String(c.id), l: catName(c.id) })), val: r => String(r.category_id || ''), render: r => esc(catName(r.category_id)) },
-      { key: 'visible_to', label: t('sop_visible'), type: 'multi', width: 200, options: S.orgUnits.map(o => ({ v: String(o.id), l: orgName(o.id) })), val: r => (r.visible_to || []).map(String), render: r => (r.visible_to || []).length ? (r.visible_to || []).map(id => `<span class="chip">${esc(orgName(id))}</span>`).join('') : `<span class="chip">${esc(t('all_departments'))}</span>` },
-      { key: 'is_hidden', label: t('sop_status'), type: 'multi', width: 110, align: 'center', options: [{ v: 'false', l: t('sop_shown') }, { v: 'true', l: t('sop_hidden') }], val: r => String(!!r.is_hidden), render: r => r.is_hidden ? `<span class="badge bg-slate-200 text-slate-600">${esc(t('sop_hidden'))}</span>` : `<span class="badge bg-green-100 text-green-800">${esc(t('sop_shown'))}</span>` },
+      { key: 'code', label: t('col_code'), type: 'text', width: 120, render: r => `<b class="text-navy">${esc(r.code || '—')}</b> <span class="text-xs text-slate-400">v${r.version || 1}</span>` },
+      { key: 'title_vi', label: t('col_title'), type: 'text', width: 320, val: r => S.lang === 'en' && r.title_en ? r.title_en : r.title_vi, render: r => esc(S.lang === 'en' && r.title_en ? r.title_en : r.title_vi) },
+      { key: 'category_id', label: t('col_category'), type: 'multi', width: 150, options: S.categories.map(c => ({ v: String(c.id), l: catName(c.id) })), val: r => String(r.category_id || ''), render: r => esc(catName(r.category_id)) },
+      { key: 'status', label: t('col_status'), type: 'multi', width: 130, align: 'center', options: MEMO_STATUSES.map(x => ({ v: x, l: t('memo_status_' + x) })), render: r => memoStatusBadge(r.status) },
+      { key: 'author_id', label: t('col_author'), type: 'text', width: 140, val: r => userName(r.author_id), render: r => esc(userName(r.author_id)) },
+      { key: 'visible_to', label: t('sop_visible'), type: 'multi', width: 180, options: S.orgUnits.map(o => ({ v: String(o.id), l: orgName(o.id) })), val: r => (r.visible_to || []).map(String), render: r => (r.visible_to || []).length ? (r.visible_to || []).map(id => `<span class="chip">${esc(orgName(id))}</span>`).join('') : `<span class="chip">${esc(t('all_departments'))}</span>` },
       { key: 'updated_at', label: t('col_updated'), type: 'date', width: 150, align: 'center', val: r => (r.updated_at || '').slice(0, 10), render: r => new Date(r.updated_at).toLocaleString('vi-VN') }
     ],
-    rows: SOP_CACHE,
+    rows: SOP_CACHE.filter(cur.f),
     onRow: openSopDrawer
   });
   $('#sop-table').appendChild(tbl);
@@ -1037,8 +1047,11 @@ async function openSopDrawer(id) {
   const s = SOP_CACHE.find(x => x.id === id) || (await sb.from('sops').select('*').eq('id', id).single()).data;
   if (!s) return;
   const en = S.lang === 'en';
-  const canManage = hasPerm('memo', 'publish') || S.profile.is_admin || s.author_id === S.user.id;
   const catName = cid => { const c = S.categories.find(x => x.id === cid); return c ? (S.lang === 'vi' ? c.name_vi : c.name_en) : ''; };
+  const [hist, logs] = await Promise.all([
+    sb.from('sops').select('id, code, version, status, updated_at').or(`id.eq.${s.parent_id || s.id},parent_id.eq.${s.parent_id || s.id}`).order('version'),
+    sb.from('audit_log').select('*').eq('entity', 'sops').eq('entity_id', s.id).order('at', { ascending: false }).limit(20)
+  ]);
   let attach = '';
   if (s.attachment_path) {
     const { data } = await sb.storage.from('memo-attachments').createSignedUrl(s.attachment_path, 3600);
@@ -1046,12 +1059,14 @@ async function openSopDrawer(id) {
   }
   const html = `<div class="p-6">
     <div class="flex items-start justify-between gap-3">
-      <div><div class="text-xs text-slate-500">SOP${s.code ? ' · ' + esc(s.code) : ''}${s.category_id ? ' · ' + esc(catName(s.category_id)) : ''}</div>
+      <div><div class="text-xs text-slate-500">SOP · v${s.version || 1}${s.code ? ' · ' + esc(s.code) : ''}${s.category_id ? ' · ' + esc(catName(s.category_id)) : ''}</div>
         <h2 class="text-xl font-extrabold text-navy mt-1">${esc(en && s.title_en ? s.title_en : s.title_vi)}</h2></div>
       <button class="btn btn-outline btn-sm" data-close>✕</button></div>
-    <div class="flex flex-wrap gap-2 mt-2 items-center">
-      ${s.is_hidden ? `<span class="badge bg-slate-200 text-slate-600">${esc(t('sop_hidden'))}</span>` : `<span class="badge bg-green-100 text-green-800">${esc(t('sop_shown'))}</span>`}
+    <div class="flex flex-wrap gap-2 mt-2 items-center">${memoStatusBadge(s.status)}
+      ${s.is_hidden ? `<span class="badge bg-slate-200 text-slate-600">${esc(t('sop_hidden'))}</span>` : ''}
+      <span class="text-xs text-slate-500">${esc(t('col_author'))}: <b>${esc(userName(s.author_id))}</b></span>
       <span class="text-xs text-slate-500">${esc(t('sop_visible'))}: ${(s.visible_to || []).map(i => `<span class="chip">${esc(orgName(i))}</span>`).join('') || `<span class="chip">${esc(t('all_departments'))}</span>`}</span></div>
+    ${s.status === 'revoked' && s.revoke_reason ? `<div class="mt-2 text-xs bg-red-50 border border-red-200 text-red-700 rounded px-2 py-1">${esc(t('memo_status_revoked'))}: ${esc(s.revoke_reason)}</div>` : ''}
     <div class="mt-4 grid ${s.body_en ? 'md:grid-cols-2' : ''} gap-3">
       <div><div class="text-xs font-bold text-slate-500 uppercase mb-1">VI</div>
         <div class="text-sm bg-slate-50 rounded-md p-3 whitespace-pre-wrap">${esc(s.body_vi || '—')}</div></div>
@@ -1059,20 +1074,80 @@ async function openSopDrawer(id) {
         <div class="text-sm bg-slate-50 rounded-md p-3 whitespace-pre-wrap">${esc(s.body_en)}</div></div>` : ''}
     </div>
     ${attach}
-    ${canManage ? `<div class="flex flex-wrap gap-2 mt-5">
-      <button class="btn btn-outline" data-edit>${esc(t('btn_edit'))}</button>
-      <button class="btn ${s.is_hidden ? 'btn-primary' : 'btn-danger'}" data-toggle>${esc(s.is_hidden ? t('sop_unhide') : t('sop_hide'))}</button>
-    </div>` : ''}
-  </div>`;
+    <div class="flex flex-wrap gap-2 mt-5" id="sop-wf-buttons"></div>
+    <div class="mt-6"><div class="text-xs font-bold text-slate-500 uppercase mb-2">${esc(t('memo_history'))}</div>
+      <div class="space-y-1 text-xs text-slate-600">
+        ${(hist.data || []).map(h => `<div>• v${h.version} — ${esc(t('memo_status_' + h.status))} <span class="text-slate-400">${new Date(h.updated_at).toLocaleString('vi-VN')}</span>${h.id === s.id ? ' ◀' : ''}</div>`).join('')}
+        <hr class="my-2">
+        ${(logs.data || []).map(l => `<div>• <b>${esc(userName(l.actor_id))}</b> ${esc(l.action)} ${l.old_status ? esc(l.old_status) + '→' : ''}${esc(l.new_status || '')} ${l.note ? '— ' + esc(l.note) : ''} <span class="text-slate-400">${new Date(l.at).toLocaleString('vi-VN')}</span></div>`).join('')}
+      </div></div></div>`;
   const root = openDrawer(html);
   root.querySelector('[data-close]').addEventListener('click', closeDrawer);
-  root.querySelector('[data-edit]')?.addEventListener('click', () => { closeDrawer(); openSopEditor(s); });
-  root.querySelector('[data-toggle]')?.addEventListener('click', async () => {
-    const { error } = await sb.from('sops').update({ is_hidden: !s.is_hidden }).eq('id', s.id);
-    if (error) { toast(error.message, false); return; }
-    await audit('sops', s.id, s.is_hidden ? 'unhide' : 'hide', s.title_vi);
-    toast(t('saved')); closeDrawer(); pageSops();
+  root.querySelectorAll('[data-reldoc]').forEach(el => el.addEventListener('click', () => { closeDrawer(); openDocDrawer(el.dataset.reldoc); }));
+
+  const btns = [];
+  const isAuthor = s.author_id === S.user.id;
+  if (s.status === 'draft' && (isAuthor || S.profile.is_admin)) {
+    btns.push({ l: t('btn_edit'), cls: 'btn-outline', fn: () => { closeDrawer(); openSopEditor(s); } });
+    btns.push({ l: t('wf_submit'), cls: 'btn-primary', fn: () => moveSop(s, 'submitted') });
+  }
+  if (s.status === 'submitted' && hasPerm('memo', 'review')) {
+    btns.push({ l: t('wf_start_review'), cls: 'btn-primary', fn: () => moveSop(s, 'under_review', { reviewer_id: S.user.id }) });
+    btns.push({ l: t('wf_send_back'), cls: 'btn-danger', fn: () => sendBackSop(s) });
+  }
+  if (s.status === 'under_review' && hasPerm('memo', 'approve')) {
+    btns.push({ l: t('wf_approve'), cls: 'btn-primary', fn: () => moveSop(s, 'approved', { approver_id: S.user.id }) });
+    btns.push({ l: t('wf_send_back'), cls: 'btn-danger', fn: () => sendBackSop(s) });
+  }
+  if (s.status === 'approved' && hasPerm('memo', 'publish')) {
+    btns.push({ l: t('wf_publish'), cls: 'btn-primary', fn: () => moveSop(s, 'published') });
+    btns.push({ l: t('wf_send_back'), cls: 'btn-danger', fn: () => sendBackSop(s) });
+  }
+  if (s.status === 'published' && (hasPerm('memo', 'publish') || S.profile.is_admin)) {
+    btns.push({ l: t('wf_revoke'), cls: 'btn-danger', fn: () => revokeSop(s) });
+    btns.push({ l: t('wf_supersede'), cls: 'btn-outline', fn: () => supersedeSop(s) });
+    btns.push({ l: s.is_hidden ? t('sop_unhide') : t('sop_hide'), cls: s.is_hidden ? 'btn-primary' : 'btn-outline', fn: () => toggleSopHidden(s) });
+  }
+  $('#sop-wf-buttons').innerHTML = btns.map((b, i) => `<button class="btn ${b.cls}" data-wf="${i}">${esc(b.l)}</button>`).join('');
+  root.querySelectorAll('[data-wf]').forEach(el => el.addEventListener('click', () => btns[Number(el.dataset.wf)].fn()));
+}
+async function moveSop(s, status, extra = {}) {
+  const { error } = await sb.from('sops').update({ status, ...extra }).eq('id', s.id);
+  if (error) { toast(error.message, false); return; }
+  toast(t('saved')); closeDrawer(); pageSops();
+}
+async function sendBackSop(s) {
+  const note = prompt(t('wf_note_required')); if (!note) return;
+  const { error } = await sb.from('sops').update({ status: 'draft' }).eq('id', s.id);
+  if (error) { toast(error.message, false); return; }
+  await audit('sops', s.id, 'send_back', note, s.status, 'draft');
+  toast(t('saved')); closeDrawer(); pageSops();
+}
+async function revokeSop(s) {
+  const reason = prompt(t('wf_note_required')); if (!reason) return;
+  const { error } = await sb.from('sops').update({ status: 'revoked', revoke_reason: reason }).eq('id', s.id);
+  if (error) { toast(error.message, false); return; }
+  toast(t('saved')); closeDrawer(); pageSops();
+}
+async function supersedeSop(s) {
+  const copy = { ...s };
+  delete copy.id; delete copy.created_at; delete copy.updated_at; delete copy.search_vector;
+  Object.assign(copy, {
+    version: (s.version || 1) + 1, parent_id: s.parent_id || s.id, status: 'draft',
+    author_id: S.user.id, submitted_at: null, reviewed_at: null, approved_at: null, published_at: null,
+    revoke_reason: null
   });
+  const { data, error } = await sb.from('sops').insert(copy).select().single();
+  if (error) { toast(error.message, false); return; }
+  await sb.from('sops').update({ status: 'superseded' }).eq('id', s.id);
+  await audit('sops', s.id, 'superseded_by', data.id, 'published', 'superseded');
+  toast(t('saved')); closeDrawer(); openSopEditor(data);
+}
+async function toggleSopHidden(s) {
+  const { error } = await sb.from('sops').update({ is_hidden: !s.is_hidden }).eq('id', s.id);
+  if (error) { toast(error.message, false); return; }
+  await audit('sops', s.id, s.is_hidden ? 'unhide' : 'hide', s.title_vi);
+  toast(t('saved')); closeDrawer(); pageSops();
 }
 
 async function openSopEditor(s) {
@@ -1119,7 +1194,6 @@ async function openSopEditor(s) {
     if (s?.id) ({ error } = await sb.from('sops').update(row).eq('id', s.id));
     else { row.author_id = S.user.id; ({ error } = await sb.from('sops').insert(row)); }
     if (error) { toast(error.message, false); return; }
-    await audit('sops', s?.id || row.code || '', s ? 'update' : 'create', row.title_vi);
     toast(t('saved')); closeModal(); pageSops();
   });
 }
