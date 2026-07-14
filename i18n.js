@@ -11,7 +11,6 @@ window.I18N = {
     nav_dashboard: 'Trang tổng quan',
     nav_legal: 'Danh mục VBPL',
     nav_memos: 'Memo',
-<<<<<<< Updated upstream
     nav_sops: 'SOP - Quy trình',
     sop_intro: 'Quy trình chuẩn (SOP) nội bộ — hiển thị theo bộ phận, có thể ẩn/hiện.',
     sop_new: '+ Tạo SOP',
@@ -26,8 +25,6 @@ window.I18N = {
     sop_unhide: 'Hiện lại',
     sop_hide_on_save: 'Ẩn SOP này (chỉ Admin/người soạn thấy)',
     sop_table_missing: 'Chưa có bảng SOP trong cơ sở dữ liệu. Chạy file tools/add-sop-and-auto-status-2026-07.sql trong Supabase để tạo, rồi tải lại trang.',
-=======
->>>>>>> Stashed changes
     nav_users: 'Người dùng & Đơn vị',
     nav_roles: 'Ma trận phân quyền',
     nav_sources: 'Nguồn & Hàng đợi',
