@@ -356,12 +356,11 @@ const pageTitle = txt => `<h1 class="text-2xl font-extrabold text-navy mb-5">${e
  * TRANG TỔNG QUAN
  * ==========================================================================*/
 async function pageDashboard() {
-  const [{ data: stats }, alerts, act, totalRes, colCheck] = await Promise.all([
+  const [{ data: stats }, alerts, totalRes, colCheck] = await Promise.all([
     sb.rpc('dashboard_stats'),
     sb.from('legal_docs').select('*')
       .or(`and(expiry_date.gte.${today()},expiry_date.lte.${addDays(90)}),and(effective_date.gt.${today()},effective_date.lte.${addDays(90)})`)
       .order('effective_date').limit(100),
-    sb.from('audit_log').select('*').order('at', { ascending: false }).limit(10),
     sb.from('legal_docs').select('id', { count: 'exact', head: true }),
     sb.from('sops').select('dept_name').limit(1)
   ]);
@@ -398,25 +397,15 @@ async function pageDashboard() {
   }
   html += '</div></div>';
 
-  // Quick actions + activity
-  const actRows = act.data || [];
-  const actHtml = act.error
-    ? `<div class="text-xs text-red-600">${esc(act.error.message)}</div>`
-    : actRows.length
-      ? actRows.map(a => `<div>• <b>${esc(a.actor_id ? userName(a.actor_id) : t('system_actor'))}</b> ${esc(a.action)} ${esc(a.entity)} ${a.new_status ? '→ ' + esc(a.new_status) : ''} <span class="text-slate-400">${new Date(a.at).toLocaleString('vi-VN')}</span></div>`).join('')
-      : `<div class="text-xs text-slate-400">${esc(t('no_data'))}</div>`;
-  html += `<div class="grid md:grid-cols-2 gap-4">
-    <div class="bg-white rounded-lg shadow-sm p-5">
+  // Quick actions (log hoạt động xem tại Quản trị › Nhật ký hệ thống)
+  html += `<div class="bg-white rounded-lg shadow-sm p-5">
       <div class="font-bold text-navy mb-3">${esc(t('quick_actions'))}</div>
       <div class="flex flex-wrap gap-2">
         ${hasPerm('legal', 'review') ? `<button class="btn btn-primary" id="qa-add">${esc(t('qa_quick_add'))}</button>` : ''}
         ${hasPerm('memo', 'submit') ? `<button class="btn btn-outline" id="qa-memo">${esc(t('qa_new_memo'))}</button>` : ''}
         ${hasPerm('memo', 'submit') ? `<button class="btn btn-outline" id="qa-sop">${esc(t('qa_new_sop'))}</button>` : ''}
         ${S.profile.is_admin ? `<button class="btn btn-outline" id="qa-export">${esc(t('qa_export'))}</button>` : ''}
-      </div></div>
-    <div class="bg-white rounded-lg shadow-sm p-5">
-      <div class="font-bold text-navy mb-3">${esc(t('recent_activity'))}</div>
-      <div class="space-y-1 text-xs text-slate-600">${actHtml}</div></div></div>`;
+      </div></div>`;
 
   $('#page').innerHTML = html;
   document.querySelectorAll('[data-doc]').forEach(el => el.addEventListener('click', () => openDocDrawer(el.dataset.doc)));
@@ -1803,7 +1792,7 @@ async function pageOrgChart() {
   const unitCard = ou => {
     const members = users.filter(u => u.org_unit_id === ou.id);
     const pm = permsOfUnit(ou.id);
-    return `<div class="org-node bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+    return `<div class="org-node bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden w-56 text-left">
       <div class="bg-navy text-white px-3 py-2">
         <div class="font-bold text-sm">${esc(orgName(ou.id))}</div>
         <div class="text-[10px] text-white/60 uppercase tracking-wider">${esc(ou.code)} · ${esc(ou.name_en || '')}</div></div>
@@ -1816,25 +1805,49 @@ async function pageOrgChart() {
   };
   const admins = users.filter(u => u.is_admin);
   const orphans = users.filter(u => !u.org_unit_id && !u.is_admin);
-  let html = pageTitle(t('nav_orgchart'));
-  html += `<p class="text-xs text-slate-500 mb-4">${esc(t('org_intro'))}</p>
-  <div class="flex flex-col items-center">
-    <div class="bg-navy text-white rounded-lg shadow px-6 py-3 text-center">
-      <div class="font-extrabold">${esc(t('app_title'))}</div>
-      <div class="text-[11px] text-white/70">${esc(t('app_sub'))}</div></div>
-    <div class="w-px h-5 bg-slate-300"></div>
-    <div class="bg-white rounded-lg shadow-sm border border-gold/60 px-4 py-2 mb-1">
-      <div class="text-xs font-bold text-navy mb-1">⭐ ${esc(t('org_admins'))}</div>
-      ${admins.map(userLine).join('') || `<div class="text-xs text-slate-400">—</div>`}</div>
-    <div class="w-px h-5 bg-slate-300"></div>
-    <div class="w-full border-t border-slate-300 relative"><div class="absolute left-1/2 -top-px w-px h-4 bg-slate-300"></div></div>
-    <div class="grid gap-4 mt-4 w-full" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
-      ${S.orgUnits.filter(o => o.active !== false).map(unitCard).join('')}
-    </div>
-    ${orphans.length ? `<div class="mt-4 w-full bg-amber-50 border border-amber-200 rounded-lg p-3">
+  const adminBox = `<div class="bg-navy text-white rounded-lg shadow px-5 py-2.5 text-center w-64">
+      <div class="font-bold text-sm">⭐ ${esc(t('org_admins'))}</div>
+      <div class="text-left mt-1">${admins.map(p => userLine(p).replace('bg-gold', 'bg-white/70')).join('') || '—'}</div></div>`;
+  const orphanBox = orphans.length ? `<div class="mt-6 w-full bg-amber-50 border border-amber-200 rounded-lg p-3">
       <div class="text-xs font-bold text-amber-800 mb-1">${esc(t('org_unassigned'))}</div>
-      ${orphans.map(userLine).join('')}</div>` : ''}
-  </div>`;
+      ${orphans.map(userLine).join('')}</div>` : '';
+
+  /* Cây phân cấp cố định theo yêu cầu BGĐ:
+     Quản trị hệ thống → Chủ đầu tư → (Pháp chế bám giữa đoạn nối) → Khách sạn + Văn phòng cho thuê;
+     mọi bộ phận còn lại (Nhân sự, Công đoàn, F&B, ...) nằm dưới Khách sạn. */
+  const byCode = Object.fromEntries(S.orgUnits.map(o => [o.code, o]));
+  const investor = byCode['investor'], hotel = byCode['hotel'], office = byCode['office'], legal = byCode['legal'];
+  const active = S.orgUnits.filter(o => o.active !== false);
+  const others = active.filter(o => ![investor?.id, hotel?.id, office?.id, legal?.id].includes(o.id));
+
+  let html = pageTitle(t('nav_orgchart'));
+  html += `<p class="text-xs text-slate-500 mb-4">${esc(t('org_intro'))}</p>`;
+  if (investor && hotel && office) {
+    html += `<div class="overflow-x-auto pb-4"><div class="flex flex-col items-center min-w-fit">
+      ${adminBox}
+      <div class="w-px h-6 bg-slate-300"></div>
+      ${unitCard(investor)}
+      <div class="w-px h-5 bg-slate-300"></div>
+      ${legal ? `<div class="grid w-full items-center" style="grid-template-columns:1fr auto 1fr">
+        <div></div>
+        <div class="w-px bg-slate-300 self-stretch"></div>
+        <div class="flex items-center"><div class="w-10 h-px bg-slate-300"></div>${unitCard(legal)}</div>
+      </div>` : ''}
+      <div class="w-px h-4 bg-slate-300"></div>
+      <ul class="otree">
+        <li>${unitCard(hotel)}
+          ${others.length ? `<ul>${others.map(o => `<li>${unitCard(o)}</li>`).join('')}</ul>` : ''}
+        </li>
+        <li>${unitCard(office)}</li>
+      </ul>
+      ${orphanBox}
+    </div></div>`;
+  } else {
+    /* fallback khi đơn vị đổi code khác chuẩn: hiện dạng lưới phẳng */
+    html += `<div class="flex flex-col items-center">${adminBox}<div class="w-px h-5 bg-slate-300"></div></div>
+      <div class="grid gap-4 mt-4 w-full" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+      ${active.map(unitCard).join('')}</div>${orphanBox}`;
+  }
   $('#page').innerHTML = html;
 }
 

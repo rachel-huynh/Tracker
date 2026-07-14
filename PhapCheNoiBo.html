@@ -56,6 +56,19 @@
   /* "table.data th { text-align:left }" ở trên mạnh hơn class .text-center của Tailwind
      (nhiều phần tử trong selector) — ghi đè rõ ràng ở đây để căn giữa thật sự áp dụng. */
   table.data th.text-center, table.data td.text-center { text-align: center; }
+  /* Sơ đồ tổ chức: cây org-chart thuần CSS (li::before/::after vẽ đường nối) */
+  .otree { display:flex; justify-content:center; list-style:none; margin:0; padding:0; }
+  .otree ul { display:flex; justify-content:center; list-style:none; margin:0; padding:18px 0 0 0; position:relative; }
+  .otree ul::before { content:''; position:absolute; top:0; left:50%; height:18px; border-left:1.5px solid #cbd5e1; }
+  .otree li { display:flex; flex-direction:column; align-items:center; position:relative; padding:18px 8px 0 8px; }
+  .otree li::before, .otree li::after { content:''; position:absolute; top:0; right:50%; width:50%; height:18px; border-top:1.5px solid #cbd5e1; }
+  .otree li::after { right:auto; left:50%; border-left:1.5px solid #cbd5e1; }
+  .otree li:first-child::before { border:0 none; }
+  .otree li:last-child::after { border:0 none; }
+  .otree li:last-child::before { border-right:1.5px solid #cbd5e1; }
+  /* con một: chỉ cần 1 đường thẳng đứng, không cần thanh ngang */
+  .otree li:only-child::before { display:none; }
+  .otree li:only-child::after { border-top:0 none; }
 </style>
 </head>
 <body class="bg-pagebg text-slate-800">
