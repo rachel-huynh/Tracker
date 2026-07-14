@@ -3,7 +3,7 @@ window.I18N = {
   vi: {
     app_title: 'CỔNG PHÁP CHẾ NỘI BỘ',
     app_sub: 'Plaza Hotel Company Limited',
-    sidebar_footer: 'Phòng Pháp chế – Hành chính · Nội bộ',
+    sidebar_footer: '17 Le Duan, Saigon, HCMC',
     sec_overview: 'TỔNG QUAN',
     sec_legal: 'VĂN BẢN PHÁP LUẬT',
     sec_memo: 'VĂN BẢN NỘI BỘ',
