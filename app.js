@@ -355,33 +355,36 @@ const pageTitle = txt => `<h1 class="text-2xl font-extrabold text-navy mb-5">${e
  * TRANG TỔNG QUAN
  * ==========================================================================*/
 async function pageDashboard() {
-  const [{ data: stats }, alerts, act] = await Promise.all([
+  const [{ data: stats }, alerts, act, totalRes, colCheck] = await Promise.all([
     sb.rpc('dashboard_stats'),
     sb.from('legal_docs').select('*')
       .or(`and(expiry_date.gte.${today()},expiry_date.lte.${addDays(90)}),and(effective_date.gt.${today()},effective_date.lte.${addDays(90)})`)
-      .order('effective_date'),
-    sb.from('audit_log').select('*').order('at', { ascending: false }).limit(10)
+      .order('effective_date').limit(100),
+    sb.from('audit_log').select('*').order('at', { ascending: false }).limit(10),
+    sb.from('legal_docs').select('id', { count: 'exact', head: true }),
+    sb.from('sops').select('dept_name').limit(1)
   ]);
   const st = stats || {};
   const cards = [
-    { label: 'stat_expiring', v: st.expiring ?? 0, c: '#dc2626' },
+    { label: 'stat_total', v: totalRes.count ?? 0, c: '#2B3A5B' },
     { label: 'stat_upcoming', v: st.upcoming ?? 0, c: '#2563eb' },
-    { label: 'stat_pending', v: st.pending_q ?? 0, c: '#C9A227' },
-    { label: 'stat_my_memos', v: st.my_memos ?? 0, c: '#2B3A5B' },
     { label: 'stat_published', v: st.published ?? 0, c: '#16a34a' }
   ];
   let html = pageTitle(t('nav_dashboard'));
   if (st.src_errors > 0) html += `<div class="mb-4 bg-red-50 border border-red-300 text-red-800 rounded-lg px-4 py-2 text-sm font-semibold">⚠ ${esc(t('src_error_banner'))}</div>`;
+  if (colCheck.error && /column|schema cache/i.test(colCheck.error.message || '') && S.profile.is_admin) {
+    html += `<div class="mb-4 bg-red-50 border border-red-300 text-red-800 rounded-lg px-4 py-2 text-sm font-semibold">⚠ ${esc(t('db_migration_banner'))}</div>`;
+  }
   html += `<div class="mb-5"><input id="gsearch" type="text" class="!py-3 !text-base shadow-sm" placeholder="${esc(t('global_search'))}">
            <div id="gsearch-results"></div></div>`;
-  html += `<div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">` + cards.map(c =>
+  html += `<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">` + cards.map(c =>
     `<div class="stat-card bg-white rounded-lg shadow-sm p-4" style="--accent:${c.c}">
        <div class="text-[11px] font-semibold text-slate-500 uppercase">${esc(t(c.label))}</div>
        <div class="text-3xl font-extrabold text-navy mt-1">${c.v}</div></div>`).join('') + '</div>';
 
-  // Alert card
+  // Alert card (cuộn trong khung riêng để danh sách dài không đẩy nội dung dưới ra khỏi màn hình)
   html += `<div class="bg-white rounded-lg shadow-sm p-5 mb-6">
-    <div class="font-bold text-navy mb-3">${esc(t('alert_title'))}</div><div id="alert-list" class="space-y-2">`;
+    <div class="font-bold text-navy mb-3">${esc(t('alert_title'))}</div><div id="alert-list" class="space-y-2 max-h-64 overflow-y-auto">`;
   const arows = alerts.data || [];
   if (!arows.length) html += `<div class="text-sm text-slate-400">${esc(t('alert_none'))}</div>`;
   for (const d of arows) {
@@ -395,24 +398,30 @@ async function pageDashboard() {
   html += '</div></div>';
 
   // Quick actions + activity
+  const actRows = act.data || [];
+  const actHtml = act.error
+    ? `<div class="text-xs text-red-600">${esc(act.error.message)}</div>`
+    : actRows.length
+      ? actRows.map(a => `<div>• <b>${esc(a.actor_id ? userName(a.actor_id) : t('system_actor'))}</b> ${esc(a.action)} ${esc(a.entity)} ${a.new_status ? '→ ' + esc(a.new_status) : ''} <span class="text-slate-400">${new Date(a.at).toLocaleString('vi-VN')}</span></div>`).join('')
+      : `<div class="text-xs text-slate-400">${esc(t('no_data'))}</div>`;
   html += `<div class="grid md:grid-cols-2 gap-4">
     <div class="bg-white rounded-lg shadow-sm p-5">
       <div class="font-bold text-navy mb-3">${esc(t('quick_actions'))}</div>
       <div class="flex flex-wrap gap-2">
         ${hasPerm('legal', 'review') ? `<button class="btn btn-primary" id="qa-add">${esc(t('qa_quick_add'))}</button>` : ''}
         ${hasPerm('memo', 'submit') ? `<button class="btn btn-outline" id="qa-memo">${esc(t('qa_new_memo'))}</button>` : ''}
+        ${hasPerm('memo', 'submit') ? `<button class="btn btn-outline" id="qa-sop">${esc(t('qa_new_sop'))}</button>` : ''}
         ${S.profile.is_admin ? `<button class="btn btn-outline" id="qa-export">${esc(t('qa_export'))}</button>` : ''}
       </div></div>
     <div class="bg-white rounded-lg shadow-sm p-5">
       <div class="font-bold text-navy mb-3">${esc(t('recent_activity'))}</div>
-      <div class="space-y-1 text-xs text-slate-600">` +
-    (act.data || []).map(a => `<div>• <b>${esc(userName(a.actor_id))}</b> ${esc(a.action)} ${esc(a.entity)} ${a.new_status ? '→ ' + esc(a.new_status) : ''} <span class="text-slate-400">${new Date(a.at).toLocaleString('vi-VN')}</span></div>`).join('') +
-    `</div></div></div>`;
+      <div class="space-y-1 text-xs text-slate-600">${actHtml}</div></div></div>`;
 
   $('#page').innerHTML = html;
   document.querySelectorAll('[data-doc]').forEach(el => el.addEventListener('click', () => openDocDrawer(el.dataset.doc)));
   $('#qa-add')?.addEventListener('click', openQuickAdd);
   $('#qa-memo')?.addEventListener('click', () => openMemoEditor(null));
+  $('#qa-sop')?.addEventListener('click', () => openSopEditor(null));
   $('#qa-export')?.addEventListener('click', () => { location.hash = '#/admin/backup'; });
 
   // global search
