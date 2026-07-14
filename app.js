@@ -855,6 +855,9 @@ async function openMemoDrawer(id) {
     <div class="flex flex-wrap gap-2 mt-2 items-center">${memoStatusBadge(m.status)}
       <span class="text-xs text-slate-500">${esc(t('col_author'))}: <b>${esc(userName(m.author_id))}</b></span>
       ${m.effective_date ? `<span class="text-xs text-slate-500">${esc(t('memo_effective'))}: <b>${fmtDate(m.effective_date)}</b></span>` : ''}</div>
+    ${m.to_line || m.from_line ? `<div class="mt-2 text-xs text-slate-600 space-y-0.5">
+      ${m.to_line ? `<div><b>Kính gửi/ To:</b> ${esc(m.to_line)}</div>` : ''}
+      ${m.from_line ? `<div><b>Từ/ From:</b> ${esc(m.from_line)}</div>` : ''}</div>` : ''}
     ${m.status === 'revoked' && m.revoke_reason ? `<div class="mt-2 text-xs bg-red-50 border border-red-200 text-red-700 rounded px-2 py-1">${esc(t('memo_status_revoked'))}: ${esc(m.revoke_reason)}</div>` : ''}
     <div class="mt-4 grid ${m.body_en ? 'md:grid-cols-2' : ''} gap-3">
       <div><div class="text-xs font-bold text-slate-500 uppercase mb-1">VI</div>
@@ -865,7 +868,10 @@ async function openMemoDrawer(id) {
     ${relDocs ? `<div class="mt-3"><span class="text-xs font-bold text-slate-500 uppercase">${esc(t('memo_related'))}:</span> ${relDocs}</div>` : ''}
     <div class="mt-2"><span class="text-xs font-bold text-slate-500 uppercase">${esc(t('memo_visible'))}:</span> ${(m.visible_to || []).map(i => `<span class="chip">${esc(orgName(i))}</span>`).join('') || `<span class="chip">${esc(t('all_departments'))}</span>`}</div>
     ${attach}
-    <div class="flex flex-wrap gap-2 mt-5" id="wf-buttons"></div>
+    <div class="flex flex-wrap gap-2 mt-4">
+      <button class="btn btn-outline btn-sm" data-print>🖨 ${esc(t('btn_print'))}</button>
+      <button class="btn btn-outline btn-sm" data-word>📄 ${esc(t('btn_word'))}</button></div>
+    <div class="flex flex-wrap gap-2 mt-3" id="wf-buttons"></div>
     <div class="mt-6"><div class="text-xs font-bold text-slate-500 uppercase mb-2">${esc(t('memo_history'))}</div>
       <div class="space-y-1 text-xs text-slate-600">
         ${(hist.data || []).map(h => `<div>• v${h.version} — ${esc(t('memo_status_' + h.status))} <span class="text-slate-400">${new Date(h.updated_at).toLocaleString('vi-VN')}</span>${h.id === m.id ? ' ◀' : ''}</div>`).join('')}
@@ -875,6 +881,8 @@ async function openMemoDrawer(id) {
   const root = openDrawer(html);
   root.querySelector('[data-close]').addEventListener('click', closeDrawer);
   root.querySelectorAll('[data-reldoc]').forEach(el => el.addEventListener('click', () => { closeDrawer(); openDocDrawer(el.dataset.reldoc); }));
+  root.querySelector('[data-print]')?.addEventListener('click', () => printMemo(m));
+  root.querySelector('[data-word]')?.addEventListener('click', () => downloadMemoDocx(m));
 
   /* nút workflow render theo role_matrix + trạng thái */
   const btns = [];
@@ -945,11 +953,16 @@ async function openMemoEditor(m) {
       <div class="grid md:grid-cols-2 gap-3">
         <div><label class="text-xs font-semibold">${esc(t('memo_title_vi'))} *</label><input name="title_vi" value="${esc(m?.title_vi || '')}" required></div>
         <div><label class="text-xs font-semibold">${esc(t('memo_title_en'))}</label><input name="title_en" value="${esc(m?.title_en || '')}"></div>
+        <div><label class="text-xs font-semibold">${esc(t('memo_to'))}</label><input name="to_line" value="${esc(m?.to_line || '')}" placeholder="Mr. A – Chức danh/ Title, Đơn vị"></div>
+        <div><label class="text-xs font-semibold">${esc(t('memo_from'))}</label><input name="from_line" value="${esc(m?.from_line || '')}" placeholder="Mr. B – Chức danh/ Title, Đơn vị"></div>
         <div><label class="text-xs font-semibold">${esc(t('memo_body_vi'))}</label><textarea name="body_vi" rows="8">${esc(m?.body_vi || '')}</textarea></div>
         <div><label class="text-xs font-semibold">${esc(t('memo_body_en'))}</label><textarea name="body_en" rows="8">${esc(m?.body_en || '')}</textarea></div>
         <div><label class="text-xs font-semibold">${esc(t('col_category'))}</label><select name="category_id"><option value="">—</option>${catOpts}</select></div>
         <div><label class="text-xs font-semibold">${esc(t('memo_effective'))}</label><input type="date" name="effective_date" value="${m?.effective_date || ''}"></div>
+        <div><label class="text-xs font-semibold">${esc(t('memo_signer'))}</label><input name="signer_name" value="${esc(m?.signer_name || '')}" placeholder="NGUYỄN VĂN A"></div>
+        <div><label class="text-xs font-semibold">${esc(t('memo_signer_title'))}</label><input name="signer_title" value="${esc(m?.signer_title || '')}" placeholder="Tổng Giám đốc/ General Manager"></div>
       </div>
+      <div class="text-[11px] text-slate-400">${esc(t('memo_bilingual_hint'))}</div>
       <div><label class="text-xs font-semibold">${esc(t('memo_visible'))}</label>${checkboxList('visible_to', S.orgUnits.map(o => ({ v: String(o.id), l: orgName(o.id) })), (m?.visible_to || []).map(String))}</div>
       <div><label class="text-xs font-semibold">${esc(t('memo_related'))}</label>
         <select multiple size="4" name="related">${LEGAL_CACHE.map(d => `<option value="${d.id}" ${(m?.related_legal_doc_ids || []).includes(d.id) ? 'selected' : ''}>${esc(d.doc_no)} — ${esc((d.title_vi || '').slice(0, 60))}</option>`).join('')}</select></div>
@@ -969,7 +982,9 @@ async function openMemoEditor(m) {
       category_id: g('category_id') ? Number(g('category_id')) : null,
       effective_date: g('effective_date'),
       visible_to: readChecks(root, 'visible_to').map(Number),
-      related_legal_doc_ids: [...root.querySelector('[name="related"]').selectedOptions].map(o => o.value)
+      related_legal_doc_ids: [...root.querySelector('[name="related"]').selectedOptions].map(o => o.value),
+      to_line: g('to_line'), from_line: g('from_line'),
+      signer_name: g('signer_name'), signer_title: g('signer_title')
     };
     // upload file nếu có
     const f = root.querySelector('[name="attachment"]').files[0];
@@ -979,15 +994,13 @@ async function openMemoEditor(m) {
       if (upErr) { toast(upErr.message, false); return; }
       row.attachment_path = path;
     }
-    let error;
-    if (m?.id) ({ error } = await sb.from('memos').update(row).eq('id', m.id));
-    else {
+    if (!m?.id) {
       const year = new Date().getFullYear();
       const { count } = await sb.from('memos').select('*', { count: 'exact', head: true }).like('memo_code', `MEMO-${year}-%`);
       row.memo_code = `MEMO-${year}-${String((count || 0) + 1).padStart(3, '0')}`;
       row.author_id = S.user.id;
-      ({ error } = await sb.from('memos').insert(row));
     }
+    const { error } = await saveRowTolerant('memos', row, m?.id, ['to_line', 'from_line', 'signer_name', 'signer_title']);
     if (error) { toast(error.message, false); return; }
     toast(t('saved')); closeModal(); pageMemos();
   });
@@ -1067,14 +1080,26 @@ async function openSopDrawer(id) {
       <span class="text-xs text-slate-500">${esc(t('col_author'))}: <b>${esc(userName(s.author_id))}</b></span>
       <span class="text-xs text-slate-500">${esc(t('sop_visible'))}: ${(s.visible_to || []).map(i => `<span class="chip">${esc(orgName(i))}</span>`).join('') || `<span class="chip">${esc(t('all_departments'))}</span>`}</span></div>
     ${s.status === 'revoked' && s.revoke_reason ? `<div class="mt-2 text-xs bg-red-50 border border-red-200 text-red-700 rounded px-2 py-1">${esc(t('memo_status_revoked'))}: ${esc(s.revoke_reason)}</div>` : ''}
-    <div class="mt-4 grid ${s.body_en ? 'md:grid-cols-2' : ''} gap-3">
-      <div><div class="text-xs font-bold text-slate-500 uppercase mb-1">VI</div>
-        <div class="text-sm bg-slate-50 rounded-md p-3 whitespace-pre-wrap">${esc(s.body_vi || '—')}</div></div>
+    ${s.dept_name ? `<div class="mt-2 text-xs text-slate-600"><b>${esc(t('sop_dept'))}:</b> ${esc(s.dept_name)}</div>` : ''}
+    ${s.objective || s.performers || s.beneficiaries || s.steps ? `<div class="mt-4 space-y-2 text-sm">
+      ${s.objective ? `<div><span class="font-bold text-navy">Mục đích/ Objective:</span> ${esc(s.objective)}</div>` : ''}
+      ${s.performers ? `<div><span class="font-bold text-navy">${esc(t('sop_performers'))}:</span> ${esc(s.performers)}</div>` : ''}
+      ${s.beneficiaries ? `<div><span class="font-bold text-navy">${esc(t('sop_beneficiaries'))}:</span> ${esc(s.beneficiaries)}</div>` : ''}
+      ${s.steps ? `<div><div class="font-bold text-navy">QUY TRÌNH/ PROCEDURES</div>
+        <ul class="list-disc ml-5 mt-1 space-y-1 bg-slate-50 rounded-md p-3">${s.steps.split(/\n/).map(x => x.trim()).filter(Boolean).map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+      ${s.lean_note ? `<div><span class="font-bold text-navy">${esc(t('sop_lean_note'))}:</span> ${esc(s.lean_note)}</div>` : ''}
+    </div>` : ''}
+    ${s.body_vi || s.body_en ? `<div class="mt-4 grid ${s.body_en ? 'md:grid-cols-2' : ''} gap-3">
+      ${s.body_vi ? `<div><div class="text-xs font-bold text-slate-500 uppercase mb-1">VI</div>
+        <div class="text-sm bg-slate-50 rounded-md p-3 whitespace-pre-wrap">${esc(s.body_vi)}</div></div>` : ''}
       ${s.body_en ? `<div><div class="text-xs font-bold text-slate-500 uppercase mb-1">EN</div>
         <div class="text-sm bg-slate-50 rounded-md p-3 whitespace-pre-wrap">${esc(s.body_en)}</div></div>` : ''}
-    </div>
+    </div>` : ''}
     ${attach}
-    <div class="flex flex-wrap gap-2 mt-5" id="sop-wf-buttons"></div>
+    <div class="flex flex-wrap gap-2 mt-4">
+      <button class="btn btn-outline btn-sm" data-print>🖨 ${esc(t('btn_print'))}</button>
+      <button class="btn btn-outline btn-sm" data-word>📄 ${esc(t('btn_word'))}</button></div>
+    <div class="flex flex-wrap gap-2 mt-3" id="sop-wf-buttons"></div>
     <div class="mt-6"><div class="text-xs font-bold text-slate-500 uppercase mb-2">${esc(t('memo_history'))}</div>
       <div class="space-y-1 text-xs text-slate-600">
         ${(hist.data || []).map(h => `<div>• v${h.version} — ${esc(t('memo_status_' + h.status))} <span class="text-slate-400">${new Date(h.updated_at).toLocaleString('vi-VN')}</span>${h.id === s.id ? ' ◀' : ''}</div>`).join('')}
@@ -1084,6 +1109,8 @@ async function openSopDrawer(id) {
   const root = openDrawer(html);
   root.querySelector('[data-close]').addEventListener('click', closeDrawer);
   root.querySelectorAll('[data-reldoc]').forEach(el => el.addEventListener('click', () => { closeDrawer(); openDocDrawer(el.dataset.reldoc); }));
+  root.querySelector('[data-print]')?.addEventListener('click', () => printSop(s));
+  root.querySelector('[data-word]')?.addEventListener('click', () => downloadSopDocx(s));
 
   const btns = [];
   const isAuthor = s.author_id === S.user.id;
@@ -1156,12 +1183,18 @@ async function openSopEditor(s) {
     <h2 class="text-lg font-bold text-navy mb-4">${s ? esc(t('sop_edit')) : esc(t('sop_new'))}</h2>
     <form id="sop-form" class="space-y-3">
       <div class="grid md:grid-cols-2 gap-3">
-        <div><label class="text-xs font-semibold">${esc(t('sop_code'))}</label><input name="code" value="${esc(s?.code || '')}" placeholder="SOP-FO-01"></div>
+        <div><label class="text-xs font-semibold">${esc(t('sop_code'))}</label><input name="code" value="${esc(s?.code || '')}" placeholder="XX-SOP-000"></div>
+        <div><label class="text-xs font-semibold">${esc(t('sop_dept'))}</label><input name="dept_name" value="${esc(s?.dept_name || '')}" placeholder="Phòng Pháp chế – Hành chính"></div>
         <div><label class="text-xs font-semibold">${esc(t('col_category'))}</label><select name="category_id"><option value="">—</option>${catOpts}</select></div>
-        <div class="md:col-span-2"><label class="text-xs font-semibold">${esc(t('memo_title_vi'))} *</label><input name="title_vi" value="${esc(s?.title_vi || '')}" required></div>
+        <div><label class="text-xs font-semibold">${esc(t('memo_title_vi'))} *</label><input name="title_vi" value="${esc(s?.title_vi || '')}" required placeholder="Động từ + đối tượng, vd: Xử lý đơn nghỉ phép"></div>
         <div class="md:col-span-2"><label class="text-xs font-semibold">${esc(t('memo_title_en'))}</label><input name="title_en" value="${esc(s?.title_en || '')}"></div>
-        <div><label class="text-xs font-semibold">${esc(t('memo_body_vi'))}</label><textarea name="body_vi" rows="8">${esc(s?.body_vi || '')}</textarea></div>
-        <div><label class="text-xs font-semibold">${esc(t('memo_body_en'))}</label><textarea name="body_en" rows="8">${esc(s?.body_en || '')}</textarea></div>
+        <div class="md:col-span-2"><label class="text-xs font-semibold">${esc(t('sop_objective'))}</label><textarea name="objective" rows="2" placeholder="1–2 câu: SOP này bảo đảm điều gì?">${esc(s?.objective || '')}</textarea></div>
+        <div><label class="text-xs font-semibold">${esc(t('sop_performers'))}</label><input name="performers" value="${esc(s?.performers || '')}" placeholder="Chức danh A (vai trò chính); Chức danh B (hỗ trợ)"></div>
+        <div><label class="text-xs font-semibold">${esc(t('sop_beneficiaries'))}</label><input name="beneficiaries" value="${esc(s?.beneficiaries || '')}" placeholder="Đối tượng/bộ phận nhận giá trị"></div>
+        <div class="md:col-span-2"><label class="text-xs font-semibold">${esc(t('sop_steps'))}</label><textarea name="steps" rows="8" placeholder="Bước 1 – Tiếp nhận yêu cầu từ … qua kênh …&#10;Bước 2 – Kiểm tra tính hợp lệ trong … ngày làm việc&#10;Bước 3 – Trình … phê duyệt theo phân cấp">${esc(s?.steps || '')}</textarea></div>
+        <div class="md:col-span-2"><label class="text-xs font-semibold">${esc(t('sop_lean_note'))}</label><textarea name="lean_note" rows="2" placeholder="Bước nào đã gộp / chạy song song / loại bỏ và vì sao">${esc(s?.lean_note || '')}</textarea></div>
+        <div><label class="text-xs font-semibold">${esc(t('memo_body_vi'))}</label><textarea name="body_vi" rows="4">${esc(s?.body_vi || '')}</textarea></div>
+        <div><label class="text-xs font-semibold">${esc(t('memo_body_en'))}</label><textarea name="body_en" rows="4">${esc(s?.body_en || '')}</textarea></div>
       </div>
       <div><label class="text-xs font-semibold">${esc(t('sop_visible'))}</label>${checkboxList('visible_to', S.orgUnits.map(o => ({ v: String(o.id), l: orgName(o.id) })), (s?.visible_to || []).map(String))}
         <div class="text-[11px] text-slate-400 mt-1">${esc(t('sop_visible_hint'))}</div></div>
@@ -1181,7 +1214,11 @@ async function openSopEditor(s) {
       body_vi: root.querySelector('[name="body_vi"]').value, body_en: root.querySelector('[name="body_en"]').value || null,
       category_id: g('category_id') ? Number(g('category_id')) : null,
       visible_to: readChecks(root, 'visible_to').map(Number),
-      is_hidden: root.querySelector('[name="is_hidden"]').checked
+      is_hidden: root.querySelector('[name="is_hidden"]').checked,
+      dept_name: g('dept_name'), objective: root.querySelector('[name="objective"]').value.trim() || null,
+      performers: g('performers'), beneficiaries: g('beneficiaries'),
+      steps: root.querySelector('[name="steps"]').value.trim() || null,
+      lean_note: root.querySelector('[name="lean_note"]').value.trim() || null
     };
     const f = root.querySelector('[name="attachment"]').files[0];
     if (f) {
@@ -1190,12 +1227,288 @@ async function openSopEditor(s) {
       if (upErr) { toast(upErr.message, false); return; }
       row.attachment_path = path;
     }
-    let error;
-    if (s?.id) ({ error } = await sb.from('sops').update(row).eq('id', s.id));
-    else { row.author_id = S.user.id; ({ error } = await sb.from('sops').insert(row)); }
+    if (!s?.id) row.author_id = S.user.id;
+    const { error } = await saveRowTolerant('sops', row, s?.id,
+      ['dept_name', 'objective', 'performers', 'beneficiaries', 'steps', 'lean_note']);
     if (error) { toast(error.message, false); return; }
     toast(t('saved')); closeModal(); pageSops();
   });
+}
+
+/* ============================================================================
+ * IN / XUẤT FILE THEO TEMPLATE CÔNG TY (Memo + SOP)
+ * Template gốc: SOP_Template.docx + Memo_Director Benefits.docx
+ * Quy ước: VI = đen, EN = xanh #215E99; Times New Roman 12pt; A4.
+ * ==========================================================================*/
+const TPL = {
+  company_vi: 'CÔNG TY TNHH LIÊN DOANH KHÁCH SẠN PLAZA',
+  company_en: 'PLAZA HOTEL COMPANY LIMITED',
+  addr: ['17 Lê Duẩn, P. Sài Gòn', 'TP. Hồ Chí Minh, Việt Nam', '(+84 28) 3823 5500'],
+  navy: '0B2545', gold: 'B8860B', graybar: 'D8DDE3', gray: '6B7A8A', blue: '215E99'
+};
+const fileSafe = s => (s || 'document').replace(/[\/\\:*?"<>|]+/g, '-').trim();
+const viDate = d => { if (!d) return ''; const [y, m, day] = d.split('-'); return `Ngày ${day} tháng ${m} năm ${y}`; };
+const enDate = d => {
+  if (!d) return '';
+  const M = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const [y, m, day] = d.split('-'); return `${M[Number(m) - 1]} ${Number(day)}, ${y}`;
+};
+/* Ghép song ngữ: nếu số đoạn VI = EN thì xen kẽ từng đoạn (như template), ngược lại VI hết rồi tới EN */
+function biParas(vi, en) {
+  const a = (vi || '').split(/\n/).map(x => x.trim()).filter(Boolean);
+  const b = (en || '').split(/\n/).map(x => x.trim()).filter(Boolean);
+  const out = [];
+  if (a.length === b.length && a.length > 0) {
+    for (let i = 0; i < a.length; i++) { out.push({ t: a[i], lang: 'vi' }); out.push({ t: b[i], lang: 'en' }); }
+  } else { a.forEach(t => out.push({ t, lang: 'vi' })); b.forEach(t => out.push({ t, lang: 'en' })); }
+  return out;
+}
+
+/* ------------------------- IN / PDF (cửa sổ in) --------------------------- */
+function letterheadHTML() {
+  return `<div class="lh">
+    <table class="lh-top"><tr>
+      <td class="lh-navy"></td><td class="lh-sp"></td>
+      <td class="lh-name"><div class="c1">${esc(TPL.company_vi)}</div><div class="c2">${esc(TPL.company_en)}</div></td>
+      <td class="lh-addr">${TPL.addr.map(a => `<div>${esc(a)}</div>`).join('')}</td>
+    </tr></table>
+    <table class="lh-bar"><tr><td class="b-gold"></td><td class="b-gray"></td></tr></table>
+  </div>`;
+}
+function openPrintWindow(title, inner, { footer = '', marginCss = '2cm 2cm 2cm 2.5cm' } = {}) {
+  const w = window.open('', '_blank');
+  if (!w) { toast(t('print_popup_blocked'), false); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+    @page { size: A4; margin: ${marginCss}; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; color: #000; }
+    .lh { margin-bottom: 14pt; }
+    table { border-collapse: collapse; width: 100%; }
+    .lh-top td { vertical-align: top; }
+    .lh-navy { width: 8pt; background: #${TPL.navy}; }
+    .lh-sp { width: 4pt; }
+    .lh-name .c1 { font-weight: bold; color: #${TPL.navy}; font-size: 10.5pt; }
+    .lh-name .c2 { color: #${TPL.gray}; font-size: 8pt; }
+    .lh-addr { text-align: right; color: #${TPL.gray}; font-size: 7.5pt; width: 130pt; }
+    .lh-bar { margin-top: 4pt; }
+    .b-gold { width: 68pt; background: #${TPL.gold}; height: 3pt; }
+    .b-gray { background: #${TPL.graybar}; height: 3pt; }
+    .en { color: #${TPL.blue}; }
+    p { margin-bottom: 6pt; text-align: justify; }
+    .memo-title { text-align: center; font-weight: bold; font-size: 20pt; margin: 8pt 0 2pt; }
+    .memo-no { text-align: center; margin-bottom: 12pt; }
+    .info td { padding: 2pt 4pt; vertical-align: top; }
+    .info .lbl { width: 100pt; font-weight: bold; white-space: nowrap; }
+    .sign { margin-top: 28pt; }
+    .sign .name { font-weight: bold; text-transform: uppercase; margin-top: 42pt; }
+    .sop-head { border: 0.75pt solid #000; margin-bottom: 12pt; }
+    .sop-head td { border: 0.75pt solid #000; padding: 4pt 6pt; vertical-align: top; }
+    .sop-head .tl { width: 40%; text-align: center; font-weight: bold; }
+    .sop-head .tl .en2 { font-weight: normal; font-style: italic; font-size: 10pt; }
+    .sop-title { font-weight: bold; text-align: center; }
+    .lbl-blue { font-weight: bold; color: #${TPL.blue}; }
+    ul { margin: 4pt 0 8pt 22pt; }
+    li { margin-bottom: 4pt; text-align: justify; }
+    .foot { position: fixed; bottom: 0; left: 0; right: 0; font-size: 8pt; color: #${TPL.gray};
+            border-top: 0.5pt solid #${TPL.graybar}; padding-top: 3pt; display: flex; justify-content: space-between; }
+    @media print { .noprint { display: none; } }
+  </style></head><body>
+    ${letterheadHTML()}${inner}
+    ${footer ? `<div class="foot"><span>${esc(footer)}</span></div>` : ''}
+  </body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 350);
+}
+function printMemo(m) {
+  const paras = biParas(m.body_vi, m.body_en)
+    .map(p => `<p class="${p.lang === 'en' ? 'en' : ''}">${esc(p.t)}</p>`).join('');
+  const inner = `
+    <div class="memo-title">MEMO</div>
+    <div class="memo-no">Số/ No. ${esc(m.memo_code || '')}</div>
+    <table class="info">
+      <tr><td class="lbl">Kính gửi/ To:</td><td>${esc(m.to_line || '')}</td></tr>
+      <tr><td class="lbl">Từ/ From:</td><td>${esc(m.from_line || '')}</td></tr>
+      <tr><td class="lbl">Về việc/ Re:</td><td>${esc(m.title_vi || '')}${m.title_en ? `<span class="en">/ ${esc(m.title_en)}</span>` : ''}</td></tr>
+      <tr><td class="lbl">Ngày hiệu lực:<br><span style="font-weight:bold">Effective date:</span></td>
+          <td>${esc(viDate(m.effective_date))}<br><span class="en">${esc(enDate(m.effective_date))}</span></td></tr>
+    </table>
+    <div style="margin-top:12pt">${paras}</div>
+    <div class="sign">
+      <p>Trân trọng,<br><span class="en">Yours sincerely,</span></p>
+      <div class="name">${esc(m.signer_name || '')}</div>
+      <div>${esc(m.signer_title || '')}</div>
+    </div>`;
+  openPrintWindow(`Memo ${m.memo_code || ''}`, inner,
+    { footer: 'Plaza Hotel Company Limited  —  Confidential', marginCss: '2cm 2cm 2.2cm 2.5cm' });
+}
+function printSop(s) {
+  const steps = (s.steps || '').split(/\n/).map(x => x.trim()).filter(Boolean);
+  const inner = `
+    <table class="sop-head">
+      <tr><td class="tl" rowspan="2">QUY TRÌNH TIÊU CHUẨN<br><span class="en2">Standard Operating Procedure</span></td>
+          <td>${esc(s.dept_name || '')}</td></tr>
+      <tr><td>Mã số/ No.: ${esc(s.code || '')}</td></tr>
+      <tr><td colspan="2" class="sop-title">${esc(s.title_vi || '')}${s.title_en ? `<br><span class="en" style="font-weight:normal">${esc(s.title_en)}</span>` : ''}</td></tr>
+    </table>
+    <p><span class="lbl-blue">Mục đích/ Objective:</span> ${esc(s.objective || '')}</p>
+    <p><span class="lbl-blue">Người thực hiện:</span> ${esc(s.performers || '')}</p>
+    <p><span class="lbl-blue">Người thụ hưởng:</span> ${esc(s.beneficiaries || '')}</p>
+    <p class="lbl-blue" style="margin-top:10pt">QUY TRÌNH/ PROCEDURES</p>
+    ${steps.length ? `<ul>${steps.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`
+      : biParas(s.body_vi, s.body_en).map(p => `<p class="${p.lang === 'en' ? 'en' : ''}">${esc(p.t)}</p>`).join('')}
+    ${s.lean_note ? `<p><span class="lbl-blue">Ghi chú ngắn gọn:</span> ${esc(s.lean_note)}</p>` : ''}`;
+  openPrintWindow(`SOP ${s.code || ''}`, inner, { marginCss: '2.54cm' });
+}
+
+/* --------------------------- TẢI WORD (.docx) ----------------------------- */
+let _docxLoading = null;
+function ensureDocxLib() {
+  if (window.docx) return Promise.resolve(window.docx);
+  if (_docxLoading) return _docxLoading;
+  _docxLoading = new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js';
+    sc.onload = () => res(window.docx);
+    sc.onerror = () => { _docxLoading = null; rej(new Error(t('docx_lib_failed'))); };
+    document.head.appendChild(sc);
+  });
+  return _docxLoading;
+}
+function docxHelpers(D) {
+  const NB = { style: D.BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+  const noBorders = { top: NB, bottom: NB, left: NB, right: NB, insideHorizontal: NB, insideVertical: NB };
+  const run = (text, o = {}) => new D.TextRun({ text, font: 'Times New Roman', size: o.size || 24,
+    bold: o.bold, italics: o.italics, color: o.color, allCaps: o.caps });
+  const para = (children, o = {}) => new D.Paragraph({
+    children: Array.isArray(children) ? children : [children],
+    alignment: o.align, spacing: o.spacing || { after: 120 }, bullet: o.bullet });
+  const cell = (kids, o = {}) => new D.TableCell({
+    children: kids, width: { size: o.w, type: D.WidthType.DXA },
+    shading: o.fill ? { type: D.ShadingType.CLEAR, fill: o.fill } : undefined,
+    borders: o.borders, columnSpan: o.span, verticalAlign: D.VerticalAlign.TOP,
+    margins: { top: 40, bottom: 40, left: 80, right: 80 } });
+  /* Letterhead: ô navy + tên công ty + địa chỉ phải; thanh gold + xám */
+  const letterhead = contentW => {
+    const nameW = contentW - 142 - 20 - 2130;
+    const t1 = new D.Table({ width: { size: contentW, type: D.WidthType.DXA }, columnWidths: [142, 20, nameW, 2130],
+      borders: noBorders, rows: [new D.TableRow({ children: [
+        cell([para(run('', { size: 2 }), { spacing: { after: 0 } })], { w: 142, fill: TPL.navy, borders: noBorders }),
+        cell([para(run('', { size: 2 }), { spacing: { after: 0 } })], { w: 20, borders: noBorders }),
+        cell([para(run(TPL.company_vi, { bold: true, color: TPL.navy, size: 21 }), { spacing: { after: 0 } }),
+              para(run(TPL.company_en, { color: TPL.gray, size: 16 }), { spacing: { after: 0 } })], { w: nameW, borders: noBorders }),
+        cell(TPL.addr.map(a => para(run(a, { color: TPL.gray, size: 15 }), { align: D.AlignmentType.RIGHT, spacing: { after: 0 } })), { w: 2130, borders: noBorders })
+      ] })] });
+    const t2 = new D.Table({ width: { size: contentW, type: D.WidthType.DXA }, columnWidths: [1200, contentW - 1200],
+      borders: noBorders, rows: [new D.TableRow({ height: { value: 60, rule: D.HeightRule.EXACT }, children: [
+        cell([para(run('', { size: 2 }), { spacing: { after: 0 } })], { w: 1200, fill: TPL.gold, borders: noBorders }),
+        cell([para(run('', { size: 2 }), { spacing: { after: 0 } })], { w: contentW - 1200, fill: TPL.graybar, borders: noBorders })
+      ] })] });
+    return new D.Header({ children: [t1, t2] });
+  };
+  return { noBorders, run, para, cell, letterhead };
+}
+function saveDocxBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function downloadMemoDocx(m) {
+  const D = await ensureDocxLib().catch(e => { toast(e.message, false); return null; });
+  if (!D) return;
+  const { run, para, cell, noBorders, letterhead } = docxHelpers(D);
+  const CW = 9354; /* content width: A4 11906 - 1418 - 1134 */
+  const J = D.AlignmentType.JUSTIFIED;
+  const body = biParas(m.body_vi, m.body_en).map(p =>
+    para(run(p.t, p.lang === 'en' ? { color: TPL.blue } : {}), { align: J }));
+  const infoRow = (lbl1, lbl2, kids) => new D.TableRow({ children: [
+    cell([para(run(lbl1, { bold: true }), { spacing: { after: 0 } }),
+      ...(lbl2 ? [para(run(lbl2, { bold: true }), { spacing: { after: 0 } })] : [])], { w: 1700, borders: noBorders }),
+    cell(kids, { w: CW - 1700, borders: noBorders })] });
+  const doc = new D.Document({ sections: [{
+    properties: { page: { size: { width: 11906, height: 16838 },
+      margin: { top: 1134, right: 1134, bottom: 1134, left: 1418, header: 709, footer: 709 } } },
+    headers: { default: letterhead(CW) },
+    footers: { default: new D.Footer({ children: [new D.Paragraph({
+      tabStops: [{ type: D.TabStopType.RIGHT, position: CW }],
+      children: [run('Plaza Hotel Company Limited  —  Confidential', { size: 16, color: TPL.gray }),
+        new D.TextRun({ children: ['\t', 'Page '], font: 'Times New Roman', size: 16, color: TPL.gray }),
+        new D.TextRun({ children: [D.PageNumber.CURRENT], font: 'Times New Roman', size: 16, color: TPL.gray })] })] }) },
+    children: [
+      para(run('MEMO', { bold: true, size: 40 }), { align: D.AlignmentType.CENTER, spacing: { after: 40 } }),
+      para(run(`Số/ No. ${m.memo_code || ''}`), { align: D.AlignmentType.CENTER, spacing: { after: 240 } }),
+      new D.Table({ width: { size: CW, type: D.WidthType.DXA }, columnWidths: [1700, CW - 1700], borders: noBorders, rows: [
+        infoRow('Kính gửi/ To:', '', [para(run(m.to_line || ''), { spacing: { after: 0 } })]),
+        infoRow('Từ/ From:', '', [para(run(m.from_line || ''), { spacing: { after: 0 } })]),
+        infoRow('Về việc/ Re:', '', [para([run(m.title_vi || ''),
+          ...(m.title_en ? [run(`/ ${m.title_en}`, { color: TPL.blue })] : [])], { spacing: { after: 0 } })]),
+        infoRow('Ngày hiệu lực:', 'Effective date:', [
+          para(run(viDate(m.effective_date)), { spacing: { after: 0 } }),
+          para(run(enDate(m.effective_date), { color: TPL.blue }), { spacing: { after: 0 } })])
+      ] }),
+      para(run('', { size: 2 }), { spacing: { after: 120 } }),
+      ...body,
+      para(run('Trân trọng,'), { spacing: { before: 240, after: 0 } }),
+      para(run('Yours sincerely,', { color: TPL.blue }), { spacing: { after: 720 } }),
+      para(run((m.signer_name || '').toUpperCase(), { bold: true }), { spacing: { after: 0 } }),
+      para(run(m.signer_title || ''), { spacing: { after: 0 } })
+    ] }] });
+  const blob = await D.Packer.toBlob(doc);
+  saveDocxBlob(blob, `Memo_${fileSafe(m.memo_code)}.docx`);
+}
+async function downloadSopDocx(s) {
+  const D = await ensureDocxLib().catch(e => { toast(e.message, false); return null; });
+  if (!D) return;
+  const { run, para, cell, letterhead } = docxHelpers(D);
+  const CW = 9026; /* content width: A4 11906 - 1440*2 */
+  const J = D.AlignmentType.JUSTIFIED;
+  const C = D.AlignmentType.CENTER;
+  const steps = (s.steps || '').split(/\n/).map(x => x.trim()).filter(Boolean);
+  const stepParas = steps.length
+    ? steps.map(x => para(run(x), { bullet: { level: 0 }, align: J }))
+    : biParas(s.body_vi, s.body_en).map(p => para(run(p.t, p.lang === 'en' ? { color: TPL.blue } : {}), { align: J }));
+  const lblPara = (lbl, txt) => para([run(lbl, { bold: true, color: TPL.blue }), run(' ' + (txt || ''))], { align: J });
+  const doc = new D.Document({ sections: [{
+    properties: { page: { size: { width: 11906, height: 16838 },
+      margin: { top: 1440, right: 1440, bottom: 1440, left: 1440, header: 708, footer: 708 } } },
+    headers: { default: letterhead(CW) },
+    children: [
+      new D.Table({ width: { size: CW, type: D.WidthType.DXA }, columnWidths: [3610, CW - 3610], rows: [
+        new D.TableRow({ children: [
+          cell([para(run('QUY TRÌNH TIÊU CHUẨN', { bold: true }), { align: C, spacing: { after: 0 } }),
+                para(run('Standard Operating Procedure', { italics: true, size: 20, color: TPL.blue }), { align: C, spacing: { after: 0 } })], { w: 3610 }),
+          cell([para(run(s.dept_name || ''), { spacing: { after: 0 } })], { w: CW - 3610 })] }),
+        new D.TableRow({ children: [
+          cell([para(run('', { size: 2 }), { spacing: { after: 0 } })], { w: 3610 }),
+          cell([para(run(`Mã số/ No.: ${s.code || ''}`), { spacing: { after: 0 } })], { w: CW - 3610 })] }),
+        new D.TableRow({ children: [
+          cell([para(run(s.title_vi || '', { bold: true }), { align: C, spacing: { after: 0 } }),
+            ...(s.title_en ? [para(run(s.title_en, { color: TPL.blue }), { align: C, spacing: { after: 0 } })] : [])], { w: CW, span: 2 })] })
+      ] }),
+      para(run('', { size: 2 }), { spacing: { after: 120 } }),
+      lblPara('Mục đích/ Objective:', s.objective),
+      lblPara('Người thực hiện:', s.performers),
+      lblPara('Người thụ hưởng:', s.beneficiaries),
+      para(run('QUY TRÌNH/ PROCEDURES', { bold: true, color: TPL.blue }), { spacing: { before: 120, after: 80 } }),
+      ...stepParas,
+      ...(s.lean_note ? [lblPara('Ghi chú ngắn gọn:', s.lean_note)] : [])
+    ] }] });
+  const blob = await D.Packer.toBlob(doc);
+  saveDocxBlob(blob, `SOP_${fileSafe(s.code || s.title_vi)}.docx`);
+}
+/* Lưu row có các cột mới; nếu DB chưa chạy SQL bổ sung thì tự bỏ cột mới và lưu tiếp */
+async function saveRowTolerant(table, row, id, extraCols) {
+  let q = id ? sb.from(table).update(row).eq('id', id) : sb.from(table).insert(row);
+  let { error } = await q;
+  if (error && /column|schema cache/i.test(error.message || '')) {
+    const slim = { ...row };
+    extraCols.forEach(c => delete slim[c]);
+    ({ error } = await (id ? sb.from(table).update(slim).eq('id', id) : sb.from(table).insert(slim)));
+    if (!error) toast(t('print_cols_missing'), false);
+  }
+  return { error };
 }
 
 /* ============================================================================
