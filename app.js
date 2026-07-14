@@ -325,6 +325,7 @@ const ROUTES = [
   { hash: '#/dashboard', section: 'sec_overview', label: 'nav_dashboard', show: () => true, render: pageDashboard },
   { hash: '#/legal', section: 'sec_legal', label: 'nav_legal', show: () => hasPerm('legal', 'view'), render: pageLegal },
   { hash: '#/memos', section: 'sec_memo', label: 'nav_memos', show: () => hasPerm('memo', 'view'), render: pageMemos },
+  { hash: '#/sops', section: 'sec_memo', label: 'nav_sops', show: () => hasPerm('memo', 'view'), render: pageSops },
   { hash: '#/admin/users', section: 'sec_admin', label: 'nav_users', show: () => S.profile?.is_admin, render: pageUsers },
   { hash: '#/admin/roles', section: 'sec_admin', label: 'nav_roles', show: () => S.profile?.is_admin, render: pageRoles },
   { hash: '#/admin/sources', section: 'sec_admin', label: 'nav_sources', show: () => hasPerm('legal', 'review'), render: pageSources },
@@ -993,6 +994,137 @@ async function openMemoEditor(m) {
 }
 
 /* ============================================================================
+ * SOP — Quy trình nội bộ (thuộc nhóm Văn bản nội bộ)
+ * ==========================================================================*/
+let SOP_CACHE = [];
+async function pageSops() {
+  const { data, error } = await sb.from('sops').select('*').order('updated_at', { ascending: false });
+  if (error) {
+    $('#page').innerHTML = pageTitle(t('nav_sops')) +
+      `<div class="bg-white rounded-lg shadow-sm p-6 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded">
+         ${esc(t('sop_table_missing'))}</div>`;
+    return;
+  }
+  SOP_CACHE = data || [];
+  const canManage = hasPerm('memo', 'publish') || S.profile.is_admin;
+  const canCreate = hasPerm('memo', 'submit') || S.profile.is_admin;
+  const catName = id => { const c = S.categories.find(x => x.id === id); return c ? (S.lang === 'vi' ? c.name_vi : c.name_en) : ''; };
+
+  let html = pageTitle(t('nav_sops'));
+  html += `<div class="flex flex-wrap items-center gap-2 mb-4">
+    <span class="text-xs text-slate-500 flex-1">${esc(t('sop_intro'))}</span>
+    ${canCreate ? `<button class="btn btn-primary" id="btn-newsop">${esc(t('sop_new'))}</button>` : ''}</div>
+    <div id="sop-table"></div>`;
+  $('#page').innerHTML = html;
+  $('#btn-newsop')?.addEventListener('click', () => openSopEditor(null));
+
+  const tbl = makeTable({
+    columns: [
+      { key: 'code', label: t('col_code'), type: 'text', width: 120, render: r => `<b class="text-navy">${esc(r.code || '—')}</b>` },
+      { key: 'title_vi', label: t('col_title'), type: 'text', width: 360, val: r => S.lang === 'en' && r.title_en ? r.title_en : r.title_vi, render: r => esc(S.lang === 'en' && r.title_en ? r.title_en : r.title_vi) },
+      { key: 'category_id', label: t('col_category'), type: 'multi', width: 160, options: S.categories.map(c => ({ v: String(c.id), l: catName(c.id) })), val: r => String(r.category_id || ''), render: r => esc(catName(r.category_id)) },
+      { key: 'visible_to', label: t('sop_visible'), type: 'multi', width: 200, options: S.orgUnits.map(o => ({ v: String(o.id), l: orgName(o.id) })), val: r => (r.visible_to || []).map(String), render: r => (r.visible_to || []).length ? (r.visible_to || []).map(id => `<span class="chip">${esc(orgName(id))}</span>`).join('') : `<span class="chip">${esc(t('all_departments'))}</span>` },
+      { key: 'is_hidden', label: t('sop_status'), type: 'multi', width: 110, align: 'center', options: [{ v: 'false', l: t('sop_shown') }, { v: 'true', l: t('sop_hidden') }], val: r => String(!!r.is_hidden), render: r => r.is_hidden ? `<span class="badge bg-slate-200 text-slate-600">${esc(t('sop_hidden'))}</span>` : `<span class="badge bg-green-100 text-green-800">${esc(t('sop_shown'))}</span>` },
+      { key: 'updated_at', label: t('col_updated'), type: 'date', width: 150, align: 'center', val: r => (r.updated_at || '').slice(0, 10), render: r => new Date(r.updated_at).toLocaleString('vi-VN') }
+    ],
+    rows: SOP_CACHE,
+    onRow: openSopDrawer
+  });
+  $('#sop-table').appendChild(tbl);
+}
+
+async function openSopDrawer(id) {
+  const s = SOP_CACHE.find(x => x.id === id) || (await sb.from('sops').select('*').eq('id', id).single()).data;
+  if (!s) return;
+  const en = S.lang === 'en';
+  const canManage = hasPerm('memo', 'publish') || S.profile.is_admin || s.author_id === S.user.id;
+  const catName = cid => { const c = S.categories.find(x => x.id === cid); return c ? (S.lang === 'vi' ? c.name_vi : c.name_en) : ''; };
+  let attach = '';
+  if (s.attachment_path) {
+    const { data } = await sb.storage.from('memo-attachments').createSignedUrl(s.attachment_path, 3600);
+    if (data?.signedUrl) attach = `<a class="btn btn-outline btn-sm mt-2" href="${esc(data.signedUrl)}" target="_blank">📎 ${esc(s.attachment_path.split('/').pop())}</a>`;
+  }
+  const html = `<div class="p-6">
+    <div class="flex items-start justify-between gap-3">
+      <div><div class="text-xs text-slate-500">SOP${s.code ? ' · ' + esc(s.code) : ''}${s.category_id ? ' · ' + esc(catName(s.category_id)) : ''}</div>
+        <h2 class="text-xl font-extrabold text-navy mt-1">${esc(en && s.title_en ? s.title_en : s.title_vi)}</h2></div>
+      <button class="btn btn-outline btn-sm" data-close>✕</button></div>
+    <div class="flex flex-wrap gap-2 mt-2 items-center">
+      ${s.is_hidden ? `<span class="badge bg-slate-200 text-slate-600">${esc(t('sop_hidden'))}</span>` : `<span class="badge bg-green-100 text-green-800">${esc(t('sop_shown'))}</span>`}
+      <span class="text-xs text-slate-500">${esc(t('sop_visible'))}: ${(s.visible_to || []).map(i => `<span class="chip">${esc(orgName(i))}</span>`).join('') || `<span class="chip">${esc(t('all_departments'))}</span>`}</span></div>
+    <div class="mt-4 grid ${s.body_en ? 'md:grid-cols-2' : ''} gap-3">
+      <div><div class="text-xs font-bold text-slate-500 uppercase mb-1">VI</div>
+        <div class="text-sm bg-slate-50 rounded-md p-3 whitespace-pre-wrap">${esc(s.body_vi || '—')}</div></div>
+      ${s.body_en ? `<div><div class="text-xs font-bold text-slate-500 uppercase mb-1">EN</div>
+        <div class="text-sm bg-slate-50 rounded-md p-3 whitespace-pre-wrap">${esc(s.body_en)}</div></div>` : ''}
+    </div>
+    ${attach}
+    ${canManage ? `<div class="flex flex-wrap gap-2 mt-5">
+      <button class="btn btn-outline" data-edit>${esc(t('btn_edit'))}</button>
+      <button class="btn ${s.is_hidden ? 'btn-primary' : 'btn-danger'}" data-toggle>${esc(s.is_hidden ? t('sop_unhide') : t('sop_hide'))}</button>
+    </div>` : ''}
+  </div>`;
+  const root = openDrawer(html);
+  root.querySelector('[data-close]').addEventListener('click', closeDrawer);
+  root.querySelector('[data-edit]')?.addEventListener('click', () => { closeDrawer(); openSopEditor(s); });
+  root.querySelector('[data-toggle]')?.addEventListener('click', async () => {
+    const { error } = await sb.from('sops').update({ is_hidden: !s.is_hidden }).eq('id', s.id);
+    if (error) { toast(error.message, false); return; }
+    await audit('sops', s.id, s.is_hidden ? 'unhide' : 'hide', s.title_vi);
+    toast(t('saved')); closeDrawer(); pageSops();
+  });
+}
+
+async function openSopEditor(s) {
+  const catOpts = S.categories.map(c => `<option value="${c.id}" ${s?.category_id === c.id ? 'selected' : ''}>${esc(S.lang === 'vi' ? c.name_vi : c.name_en)}</option>`).join('');
+  const root = openModal(`<div class="p-6">
+    <h2 class="text-lg font-bold text-navy mb-4">${s ? esc(t('sop_edit')) : esc(t('sop_new'))}</h2>
+    <form id="sop-form" class="space-y-3">
+      <div class="grid md:grid-cols-2 gap-3">
+        <div><label class="text-xs font-semibold">${esc(t('sop_code'))}</label><input name="code" value="${esc(s?.code || '')}" placeholder="SOP-FO-01"></div>
+        <div><label class="text-xs font-semibold">${esc(t('col_category'))}</label><select name="category_id"><option value="">—</option>${catOpts}</select></div>
+        <div class="md:col-span-2"><label class="text-xs font-semibold">${esc(t('memo_title_vi'))} *</label><input name="title_vi" value="${esc(s?.title_vi || '')}" required></div>
+        <div class="md:col-span-2"><label class="text-xs font-semibold">${esc(t('memo_title_en'))}</label><input name="title_en" value="${esc(s?.title_en || '')}"></div>
+        <div><label class="text-xs font-semibold">${esc(t('memo_body_vi'))}</label><textarea name="body_vi" rows="8">${esc(s?.body_vi || '')}</textarea></div>
+        <div><label class="text-xs font-semibold">${esc(t('memo_body_en'))}</label><textarea name="body_en" rows="8">${esc(s?.body_en || '')}</textarea></div>
+      </div>
+      <div><label class="text-xs font-semibold">${esc(t('sop_visible'))}</label>${checkboxList('visible_to', S.orgUnits.map(o => ({ v: String(o.id), l: orgName(o.id) })), (s?.visible_to || []).map(String))}
+        <div class="text-[11px] text-slate-400 mt-1">${esc(t('sop_visible_hint'))}</div></div>
+      <div><label class="text-xs font-semibold">${esc(t('memo_attachment'))}</label><input type="file" name="attachment">
+        ${s?.attachment_path ? `<span class="text-xs text-slate-500">📎 ${esc(s.attachment_path.split('/').pop())}</span>` : ''}</div>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_hidden" class="!w-auto" ${s?.is_hidden ? 'checked' : ''}>${esc(t('sop_hide_on_save'))}</label>
+      <div class="flex justify-end gap-2">
+        <button type="button" class="btn btn-outline" data-cancel>${esc(t('btn_cancel'))}</button>
+        <button type="submit" class="btn btn-primary">${esc(t('btn_save'))}</button></div>
+    </form></div>`, true);
+  root.querySelector('[data-cancel]').addEventListener('click', closeModal);
+  root.querySelector('#sop-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const g = n => root.querySelector(`[name="${n}"]`)?.value.trim() || null;
+    const row = {
+      code: g('code'), title_vi: g('title_vi'), title_en: g('title_en'),
+      body_vi: root.querySelector('[name="body_vi"]').value, body_en: root.querySelector('[name="body_en"]').value || null,
+      category_id: g('category_id') ? Number(g('category_id')) : null,
+      visible_to: readChecks(root, 'visible_to').map(Number),
+      is_hidden: root.querySelector('[name="is_hidden"]').checked
+    };
+    const f = root.querySelector('[name="attachment"]').files[0];
+    if (f) {
+      const path = `sop/${S.user.id}/${Date.now()}_${f.name}`;
+      const { error: upErr } = await sb.storage.from('memo-attachments').upload(path, f);
+      if (upErr) { toast(upErr.message, false); return; }
+      row.attachment_path = path;
+    }
+    let error;
+    if (s?.id) ({ error } = await sb.from('sops').update(row).eq('id', s.id));
+    else { row.author_id = S.user.id; ({ error } = await sb.from('sops').insert(row)); }
+    if (error) { toast(error.message, false); return; }
+    await audit('sops', s?.id || row.code || '', s ? 'update' : 'create', row.title_vi);
+    toast(t('saved')); closeModal(); pageSops();
+  });
+}
+
+/* ============================================================================
  * QUẢN TRỊ — Người dùng & Đơn vị
  * ==========================================================================*/
 async function pageUsers() {
@@ -1386,7 +1518,7 @@ async function pageAudit() {
   $('#audit-table').appendChild(tbl);
 }
 
-const BACKUP_TABLES = ['org_units', 'permissions', 'role_matrix', 'profiles', 'legal_docs', 'memo_categories', 'memos', 'sources', 'watchlist', 'ingest_queue', 'audit_log', 'app_settings'];
+const BACKUP_TABLES = ['org_units', 'permissions', 'role_matrix', 'profiles', 'legal_docs', 'memo_categories', 'memos', 'sops', 'sources', 'watchlist', 'ingest_queue', 'audit_log', 'app_settings'];
 async function pageBackup() {
   $('#page').innerHTML = pageTitle(t('backup_title')) + `
     <div class="bg-white rounded-lg shadow-sm p-5 space-y-4 max-w-xl">
