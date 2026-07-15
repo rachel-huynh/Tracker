@@ -1563,7 +1563,7 @@ en:{ subtitle:'Owner / BOD Revenue & Profit Analytics — 284 keys',
   xlsx:'⬇ Export Excel', printPdf:'🖨 Print / PDF',
   dropTitle:'Drag & drop workbooks here', orClick:'…or click to choose files',
   dropNote:'(parsed in your browser — data stays local unless you sign in and Publish to your private Supabase)',
-  tabCockpit:'Dashboard', tabRooms:'Rooms', tabFnb:'F&B', tabOther:'Other Ops',
+  tabCockpit:'Hotel', tabOffice:'Office Building', tabRooms:'Rooms', tabFnb:'F&B', tabOther:'Other Ops',
   grpSystem:'System', tabSettings:'Settings & Data',
   tabUndist:'Undistributed', tabMarket:'Market — STR', tabBench:'Benchmark — HotStats', tabConso:'Consolidated',
   grpOverview:'Overview', grpOps:'Operations', grpMarket:'Market', grpGroup:'Group',
@@ -1598,7 +1598,7 @@ vi:{ subtitle:'Phân tích Doanh thu & Lợi nhuận cho Chủ đầu tư / HĐQ
   xlsx:'⬇ Xuất Excel', printPdf:'🖨 In / PDF',
   dropTitle:'Kéo & thả file Excel vào đây', orClick:'…hoặc bấm để chọn file',
   dropNote:'(xử lý trên trình duyệt — dữ liệu chỉ đồng bộ lên Supabase riêng khi bạn đăng nhập và Publish)',
-  tabCockpit:'Trang tổng quan', tabRooms:'Phòng', tabFnb:'Ẩm thực', tabOther:'BP khác',
+  tabCockpit:'Khách sạn', tabOffice:'Toà văn phòng', tabRooms:'Phòng', tabFnb:'Ẩm thực', tabOther:'BP khác',
   grpSystem:'Hệ thống', tabSettings:'Cài đặt & Dữ liệu',
   tabUndist:'Chi phí chung', tabMarket:'Thị trường — STR', tabBench:'So chuẩn — HotStats', tabConso:'Hợp nhất',
   grpOverview:'Tổng hợp', grpOps:'Vận hành', grpMarket:'Thị trường', grpGroup:'Tập đoàn',
@@ -2779,6 +2779,51 @@ function renderRevA(d){
   }
 }
 
+/* ---------------- OFFICE BUILDING (Central Plaza) ---------------- */
+function renderOffice(d){
+  const el=$('#tab-office');
+  const fsAll={}; for(const[k,m] of Object.entries(state.store.months)) if(m.fs) fsAll[k]=m.fs;
+  const fs=curMonth().fs;
+  if(!fs){ el.innerHTML=`<div class="panel"><span class="small">${na('Central Plaza figures come from the Consolidated FS workbook — drop "PHCL financial statements" for this month')}</span></div>`; return; }
+  const P=state.period, f=P==='YTD'?'yact':'act', fb=P==='YTD'?'ybud':'bud';
+  const c=fs.centralGop||{}, h=fs.hotelGop||{};
+  const grp=(c[f]??0)+(h[f]??0);
+  const notes=(state.store.execNotes?.[state.month]?.cp)||'';
+  const keys=Object.keys(fsAll).sort();
+  const rows=keys.map(k=>{ const cc=fsAll[k].centralGop||{}, hh=fsAll[k].hotelGop||{};
+    const gg=(cc.act??0)+(hh.act??0);
+    return `<tr class="${k===state.month?'tot':''}"><td>${fmtMonthKey(k)}</td>
+      <td data-v="${cc.act??''}">${money(cc.act)}</td><td data-v="${cc.bud??''}">${money(cc.bud)}</td>
+      <td data-v="${varPct(cc.act,cc.bud)??''}" class="${cls(varPct(cc.act,cc.bud))}">${pct(varPct(cc.act,cc.bud))}</td>
+      <td data-v="${cc.ly??''}">${money(cc.ly)}</td>
+      <td data-v="${varPct(cc.act,cc.ly)??''}" class="${cls(varPct(cc.act,cc.ly))}">${pct(varPct(cc.act,cc.ly))}</td>
+      <td data-v="${gg?cc.act/gg:''}">${gg?pct(cc.act/gg):na()}</td></tr>`; }).join('');
+  el.innerHTML=`
+    <div class="kgrid">
+      ${kpiCard('Central Plaza GOP — '+P,money(c[f]),varPct(c[f],c[fb]),P==='MTD'?varPct(c.act,c.ly):null)}
+      ${kpiCard('Budget',money(c[fb]),null,null)}
+      ${P==='MTD'?kpiCard('Last year',money(c.ly),null,null):kpiCard('YTD budget',money(c.ybud),null,null)}
+      ${kpiCard('Share of group GOP',grp?pct(c[f]/grp):na(),null,null)}
+      ${kpiCard('Hotel GOP (reference)',money(h[f]),varPct(h[f],h[fb]),null)}
+    </div>
+    <div class="cols c2">
+      <div class="panel"><h3>Central Plaza GOP by month <span class="small">(from stored Consolidated FS)</span></h3>
+        <div class="chartbox tall"><canvas id="chOffice"></canvas></div></div>
+      <div class="panel"><h3>Monthly detail</h3>
+        <table><thead><tr><th>Month</th><th>GOP</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>% of group</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+        <div class="small" style="margin-top:6px">Office occupancy, vacant area and rental yield are not disclosed in the FS workbook — only Central GOP. Track leasing matters in the notes below (they also feed the BOD email draft).</div></div>
+    </div>
+    <div class="panel"><h3>Leasing & tenant notes — ${fmtMonthKey(state.month)} <span class="small">(edit in Exec Summary tab)</span></h3>
+      <div class="small" style="white-space:pre-wrap">${notes||'— no notes for this month yet (add them in Exec Summary → "2/ Central Plaza") —'}</div></div>`;
+  mkChart('chOffice',{type:'bar',data:{labels:keys.map(fmtMonthKey),datasets:[
+      {type:'bar',label:'Central GOP',data:keys.map(k=>cv(fsAll[k].centralGop?.act)),backgroundColor:'#2e5f9e'},
+      {type:'bar',label:'Budget',data:keys.map(k=>cv(fsAll[k].centralGop?.bud)),backgroundColor:'rgba(201,162,39,.55)'},
+      {type:'line',label:'% of group GOP (right)',yAxisID:'y1',tension:.3,borderColor:'#1e7e4f',
+        data:keys.map(k=>{const cc=fsAll[k].centralGop?.act,hh=fsAll[k].hotelGop?.act; return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;})}]},
+    options:{scales:{y:{ticks:{callback:v=>money(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
+}
+
 /* ---------------- DATA QUALITY ---------------- */
 function renderDQ(d){
   const el=$('#tab-dq'); const m=curMonth();
@@ -2870,7 +2915,7 @@ function refreshMonths(){
 function renderAll(){
   applyStaticI18n();
   const d=derive();
-  renderCockpit(d); renderRooms(d); renderSeg(d); renderFnb(d); renderOther(d);
+  renderCockpit(d); renderOffice(d); renderRooms(d); renderSeg(d); renderFnb(d); renderOther(d);
   renderUndist(d); renderMarket(d); renderBench(d); renderConso(d); renderDQ(d);
   renderForecast(d); renderHeat(d); renderRevA(d); renderEng(d); renderExec(d); renderSettings();
 }
@@ -3068,7 +3113,7 @@ function buildExportWb(){
   const ws0=XLSX.utils.aoa_to_sheet(aoa); ws0['!cols']=[{wch:28},{wch:16},{wch:16},{wch:16},{wch:12},{wch:12}];
   XLSX.utils.book_append_sheet(wb,ws0,'Cockpit');
   /* every rendered table, tab by tab (exports exactly what is on screen) */
-  const tabsX=[['exec','Exec Summary'],['forecast','Forecast'],['rooms','Rooms'],['seg','Segmentation'],['fnb','F&B'],['other','Other Ops'],['undist','Undistributed'],
+  const tabsX=[['exec','Exec Summary'],['office','Office Building'],['forecast','Forecast'],['rooms','Rooms'],['seg','Segmentation'],['fnb','F&B'],['other','Other Ops'],['undist','Undistributed'],
     ['reva','Revenue Analysis'],['market','Market STR'],['heat','Patterns'],['bench','HotStats'],['conso','Consolidated'],['eng','Engineering'],['dq','Data Quality']];
   for(const [id,name] of tabsX){
     document.querySelectorAll('#tab-'+id+' table').forEach((tb,i)=>{
