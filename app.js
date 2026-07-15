@@ -312,10 +312,16 @@ async function loadRefData() {
   S.allPermissions = perms.data || [];
   S.roleMatrix = rm.data || [];
   (profs.data || []).forEach(p => S.profilesById[p.id] = p);
-  S.perms = { legal: new Set(), memo: new Set() };
+  S.perms = { legal: new Set(), memo: new Set(), sop: new Set() };
   for (const r of S.roleMatrix) {
     if (r.allowed && r.org_unit_id === S.profile.org_unit_id) S.perms[r.module]?.add(r.permissions.code);
   }
+}
+/* Quyền phân hệ SOP: nếu DB chưa chạy add-sop-module (chưa có dòng 'sop' nào trong
+   role_matrix) thì tạm dùng quyền memo như trước — không ai bị mất quyền giữa chừng. */
+function hasSopPerm(p) {
+  const sopConfigured = S.roleMatrix.some(r => r.module === 'sop');
+  return sopConfigured ? hasPerm('sop', p) : hasPerm('memo', p);
 }
 
 /* ============================================================================
@@ -325,7 +331,7 @@ const ROUTES = [
   { hash: '#/dashboard', section: 'sec_overview', label: 'nav_dashboard', show: () => true, render: pageDashboard },
   { hash: '#/legal', section: 'sec_legal', label: 'nav_legal', show: () => hasPerm('legal', 'view'), render: pageLegal },
   { hash: '#/memos', section: 'sec_memo', label: 'nav_memos', show: () => hasPerm('memo', 'view'), render: pageMemos },
-  { hash: '#/sops', section: 'sec_memo', label: 'nav_sops', show: () => hasPerm('memo', 'view'), render: pageSops },
+  { hash: '#/sops', section: 'sec_memo', label: 'nav_sops', show: () => hasSopPerm('view'), render: pageSops },
   { hash: '#/admin/users', section: 'sec_admin', label: 'nav_users', show: () => S.profile?.is_admin, render: pageUsers },
   { hash: '#/admin/orgchart', section: 'sec_admin', label: 'nav_orgchart', show: () => S.profile?.is_admin, render: pageOrgChart },
   { hash: '#/admin/roles', section: 'sec_admin', label: 'nav_roles', show: () => S.profile?.is_admin, render: pageRoles },
@@ -383,13 +389,23 @@ async function pageDashboard() {
        <div class="text-3xl font-extrabold text-navy mt-1">${c.v}</div></div>`).join('') + '</div>';
 
   // Alert card (cuộn trong khung riêng để danh sách dài không đẩy nội dung dưới ra khỏi màn hình)
-  html += `<div class="bg-white rounded-lg shadow-sm p-5 mb-6">
-    <div class="font-bold text-navy mb-3">${esc(t('alert_title'))}</div><div id="alert-list" class="space-y-2 max-h-64 overflow-y-auto">`;
   const arows = alerts.data || [];
+  /* Tag thống kê theo lĩnh vực — bấm tag để lọc danh sách bên dưới */
+  const domCounts = {}; let noDom = 0;
+  arows.forEach(d => { const ds = d.domains || []; if (!ds.length) noDom++; ds.forEach(x => { domCounts[x] = (domCounts[x] || 0) + 1; }); });
+  const chipBtn = (key, label, count, cls) => `<button class="badge ${cls} cursor-pointer" data-dfilter="${esc(key)}">${esc(label)} · ${count}</button>`;
+  let chipsHtml = chipBtn('', t('filter_all'), arows.length, 'bg-navy text-white ring-2 ring-gold');
+  Object.keys(domCounts).sort((a, b) => domCounts[b] - domCounts[a])
+    .forEach(k => { chipsHtml += chipBtn(k, domainLabel(k), domCounts[k], DOMAIN_COLOR[k] || 'bg-slate-100 text-slate-700'); });
+  if (noDom) chipsHtml += chipBtn('__none__', t('alert_no_domain'), noDom, 'bg-slate-200 text-slate-600');
+  html += `<div class="bg-white rounded-lg shadow-sm p-5 mb-6">
+    <div class="font-bold text-navy mb-2">${esc(t('alert_title'))}</div>
+    <div class="flex flex-wrap gap-1.5 mb-3">${chipsHtml}</div>
+    <div id="alert-list" class="space-y-2 max-h-64 overflow-y-auto">`;
   if (!arows.length) html += `<div class="text-sm text-slate-400">${esc(t('alert_none'))}</div>`;
   for (const d of arows) {
     const expiring = d.expiry_date && d.expiry_date >= today() && d.expiry_date <= addDays(90);
-    html += `<div class="flex items-center gap-3 text-sm border-b border-slate-100 pb-2 cursor-pointer hover:bg-slate-50 rounded px-1" data-doc="${d.id}">
+    html += `<div class="flex items-center gap-3 text-sm border-b border-slate-100 pb-2 cursor-pointer hover:bg-slate-50 rounded px-1" data-doc="${d.id}" data-domains="${esc((d.domains || []).join(','))}">
       <span class="badge ${expiring ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-800'}">${esc(expiring ? t('badge_expiring') : t('badge_upcoming'))}</span>
       <b class="text-navy whitespace-nowrap">${esc(d.doc_no)}</b>
       <span class="flex-1 truncate">${esc(d.title_vi)}</span>
@@ -403,12 +419,20 @@ async function pageDashboard() {
       <div class="flex flex-wrap gap-2">
         ${hasPerm('legal', 'review') ? `<button class="btn btn-primary" id="qa-add">${esc(t('qa_quick_add'))}</button>` : ''}
         ${hasPerm('memo', 'submit') ? `<button class="btn btn-outline" id="qa-memo">${esc(t('qa_new_memo'))}</button>` : ''}
-        ${hasPerm('memo', 'submit') ? `<button class="btn btn-outline" id="qa-sop">${esc(t('qa_new_sop'))}</button>` : ''}
+        ${hasSopPerm('submit') ? `<button class="btn btn-outline" id="qa-sop">${esc(t('qa_new_sop'))}</button>` : ''}
         ${S.profile.is_admin ? `<button class="btn btn-outline" id="qa-export">${esc(t('qa_export'))}</button>` : ''}
       </div></div>`;
 
   $('#page').innerHTML = html;
   document.querySelectorAll('[data-doc]').forEach(el => el.addEventListener('click', () => openDocDrawer(el.dataset.doc)));
+  document.querySelectorAll('[data-dfilter]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.dfilter;
+    document.querySelectorAll('[data-dfilter]').forEach(x => x.classList.toggle('ring-2', x === b));
+    document.querySelectorAll('#alert-list [data-doc]').forEach(el => {
+      const ds = (el.dataset.domains || '').split(',').filter(Boolean);
+      el.style.display = !k || (k === '__none__' ? !ds.length : ds.includes(k)) ? '' : 'none';
+    });
+  }));
   $('#qa-add')?.addEventListener('click', openQuickAdd);
   $('#qa-memo')?.addEventListener('click', () => openMemoEditor(null));
   $('#qa-sop')?.addEventListener('click', () => openSopEditor(null));
@@ -449,7 +473,8 @@ async function pageLegal() {
     ${canEdit ? `<button class="btn btn-primary" id="btn-quickadd">${esc(t('btn_quick_add'))}</button>
     <button class="btn btn-outline" id="btn-adddoc">${esc(t('btn_add'))}</button>
     <button class="btn btn-outline" id="btn-import">${esc(t('btn_import_csv'))}</button>` : ''}
-    <button class="btn btn-outline" id="btn-export">${esc(t('btn_export_csv'))}</button></div>
+    <button class="btn btn-outline" id="btn-export">${esc(t('btn_export_csv'))}</button>
+    ${S.profile.is_admin ? `<button class="btn btn-danger" id="btn-legal-del">${esc(t('btn_bulk_delete'))}</button>` : ''}</div>
     <div id="legal-table"></div>`;
   $('#page').innerHTML = html;
 
@@ -473,6 +498,7 @@ async function pageLegal() {
   $('#btn-adddoc')?.addEventListener('click', () => openDocEditor(null));
   $('#btn-import')?.addEventListener('click', openCsvImport);
   $('#btn-export')?.addEventListener('click', () => downloadCsv('legal_docs.csv', LEGAL_CACHE));
+  $('#btn-legal-del')?.addEventListener('click', () => openBulkDelete('legal_docs'));
 }
 
 /* ---------------------------- drawer chi tiết ----------------------------- */
@@ -805,6 +831,7 @@ async function pageMemos(tab = 'all') {
     <span class="flex-1"></span>
     ${hasPerm('memo', 'publish') || S.profile.is_admin ? `<button class="btn btn-outline" id="btn-memo-import">${esc(t('btn_import_csv'))}</button>
       <button class="btn btn-outline" id="btn-memo-bulk">${esc(t('btn_bulk_assign'))}</button>` : ''}
+    ${S.profile.is_admin ? `<button class="btn btn-danger" id="btn-memo-del">${esc(t('btn_bulk_delete'))}</button>` : ''}
     ${hasPerm('memo', 'submit') ? `<button class="btn btn-primary" id="btn-newmemo">${esc(t('memo_new'))}</button>` : ''}</div>
     <div id="memo-table"></div>`;
   $('#page').innerHTML = html;
@@ -812,6 +839,7 @@ async function pageMemos(tab = 'all') {
   $('#btn-newmemo')?.addEventListener('click', () => openMemoEditor(null));
   $('#btn-memo-import')?.addEventListener('click', () => openBulkImport('memos'));
   $('#btn-memo-bulk')?.addEventListener('click', () => openBulkAssign('memos'));
+  $('#btn-memo-del')?.addEventListener('click', () => openBulkDelete('memos'));
 
   const catName = id => { const c = S.categories.find(x => x.id === id); return c ? (S.lang === 'vi' ? c.name_vi : c.name_en) : ''; };
   const tbl = makeTable({
@@ -1022,13 +1050,13 @@ async function pageSops(tab = 'all') {
     return;
   }
   SOP_CACHE = data || [];
-  const canCreate = hasPerm('memo', 'submit') || S.profile.is_admin;
+  const canCreate = hasSopPerm('submit') || S.profile.is_admin;
   const catName = id => { const c = S.categories.find(x => x.id === id); return c ? (S.lang === 'vi' ? c.name_vi : c.name_en) : ''; };
   const tabs = [
     { k: 'all', l: t('memo_tab_all'), f: () => true },
     { k: 'mine', l: t('memo_tab_mine'), f: s => s.author_id === S.user.id && s.status === 'draft' },
-    ...(hasPerm('memo', 'review') ? [{ k: 'review', l: t('memo_tab_review'), f: s => ['submitted', 'under_review'].includes(s.status) }] : []),
-    ...(hasPerm('memo', 'approve') ? [{ k: 'approve', l: t('memo_tab_approve'), f: s => ['under_review', 'approved'].includes(s.status) }] : [])
+    ...(hasSopPerm('review') ? [{ k: 'review', l: t('memo_tab_review'), f: s => ['submitted', 'under_review'].includes(s.status) }] : []),
+    ...(hasSopPerm('approve') ? [{ k: 'approve', l: t('memo_tab_approve'), f: s => ['under_review', 'approved'].includes(s.status) }] : [])
   ];
   const cur = tabs.find(x => x.k === tab) || tabs[0];
 
@@ -1036,8 +1064,9 @@ async function pageSops(tab = 'all') {
   html += `<div class="flex flex-wrap items-center gap-2 mb-2">
     ${tabs.map(x => `<button class="btn btn-sm ${x.k === cur.k ? 'btn-primary' : 'btn-outline'}" data-soptab="${x.k}">${esc(x.l)}</button>`).join('')}
     <span class="flex-1"></span>
-    ${hasPerm('memo', 'publish') || S.profile.is_admin ? `<button class="btn btn-outline" id="btn-sop-import">${esc(t('btn_import_csv'))}</button>
+    ${hasSopPerm('publish') || S.profile.is_admin ? `<button class="btn btn-outline" id="btn-sop-import">${esc(t('btn_import_csv'))}</button>
       <button class="btn btn-outline" id="btn-sop-bulk">${esc(t('btn_bulk_assign'))}</button>` : ''}
+    ${S.profile.is_admin ? `<button class="btn btn-danger" id="btn-sop-del">${esc(t('btn_bulk_delete'))}</button>` : ''}
     ${canCreate ? `<button class="btn btn-primary" id="btn-newsop">${esc(t('sop_new'))}</button>` : ''}</div>
     <div class="text-xs text-slate-500 mb-3">${esc(t('sop_intro'))}</div>
     <div id="sop-table"></div>`;
@@ -1046,6 +1075,7 @@ async function pageSops(tab = 'all') {
   $('#btn-newsop')?.addEventListener('click', () => openSopEditor(null));
   $('#btn-sop-import')?.addEventListener('click', () => openBulkImport('sops'));
   $('#btn-sop-bulk')?.addEventListener('click', () => openBulkAssign('sops'));
+  $('#btn-sop-del')?.addEventListener('click', () => openBulkDelete('sops'));
 
   const tbl = makeTable({
     columns: [
@@ -1125,19 +1155,19 @@ async function openSopDrawer(id) {
     btns.push({ l: t('btn_edit'), cls: 'btn-outline', fn: () => { closeDrawer(); openSopEditor(s); } });
     btns.push({ l: t('wf_submit'), cls: 'btn-primary', fn: () => moveSop(s, 'submitted') });
   }
-  if (s.status === 'submitted' && hasPerm('memo', 'review')) {
+  if (s.status === 'submitted' && hasSopPerm('review')) {
     btns.push({ l: t('wf_start_review'), cls: 'btn-primary', fn: () => moveSop(s, 'under_review', { reviewer_id: S.user.id }) });
     btns.push({ l: t('wf_send_back'), cls: 'btn-danger', fn: () => sendBackSop(s) });
   }
-  if (s.status === 'under_review' && hasPerm('memo', 'approve')) {
+  if (s.status === 'under_review' && hasSopPerm('approve')) {
     btns.push({ l: t('wf_approve'), cls: 'btn-primary', fn: () => moveSop(s, 'approved', { approver_id: S.user.id }) });
     btns.push({ l: t('wf_send_back'), cls: 'btn-danger', fn: () => sendBackSop(s) });
   }
-  if (s.status === 'approved' && hasPerm('memo', 'publish')) {
+  if (s.status === 'approved' && hasSopPerm('publish')) {
     btns.push({ l: t('wf_publish'), cls: 'btn-primary', fn: () => moveSop(s, 'published') });
     btns.push({ l: t('wf_send_back'), cls: 'btn-danger', fn: () => sendBackSop(s) });
   }
-  if (s.status === 'published' && (hasPerm('memo', 'publish') || S.profile.is_admin)) {
+  if (s.status === 'published' && (hasSopPerm('publish') || S.profile.is_admin)) {
     btns.push({ l: t('wf_revoke'), cls: 'btn-danger', fn: () => revokeSop(s) });
     btns.push({ l: t('wf_supersede'), cls: 'btn-outline', fn: () => supersedeSop(s) });
     btns.push({ l: s.is_hidden ? t('sop_unhide') : t('sop_hide'), cls: s.is_hidden ? 'btn-primary' : 'btn-outline', fn: () => toggleSopHidden(s) });
@@ -1710,6 +1740,60 @@ async function openBulkAssign(kind) {
     isMemo ? pageMemos() : pageSops();
   });
 }
+/* Xóa 1/nhiều VBPL, Memo, SOP — CHỈ admin (RLS cũng chặn ở tầng DB) */
+async function openBulkDelete(kind) {
+  const CFG = {
+    legal_docs: { code: 'doc_no', refresh: () => route() },
+    memos: { code: 'memo_code', refresh: () => pageMemos() },
+    sops: { code: 'code', refresh: () => pageSops() }
+  }[kind];
+  const { data, error } = await sb.from(kind).select(`id, ${CFG.code}, title_vi`).order(CFG.code === 'doc_no' ? 'doc_no' : 'updated_at', { ascending: CFG.code === 'doc_no' });
+  if (error) { toast(error.message, false); return; }
+  const rows = data || [];
+  const rowHtml = r => `<label class="flex items-start gap-2 text-xs py-1 border-b border-slate-100" data-row>
+      <input type="checkbox" class="!w-auto mt-0.5" data-did="${r.id}">
+      <b class="whitespace-nowrap">${esc(r[CFG.code] || '—')}</b>
+      <span class="flex-1 min-w-0 break-words">${esc(r.title_vi)}</span></label>`;
+  const root = openModal(`<div class="p-6">
+    <h2 class="text-lg font-bold text-red-700 mb-2">${esc(t('bulk_delete_title'))}</h2>
+    <p class="text-xs text-red-600 mb-3">${esc(t('bulk_delete_warn'))}</p>
+    <input type="text" id="bd-search" placeholder="${esc(t('search_in_table'))}" class="mb-2">
+    <label class="flex items-center gap-2 text-xs font-semibold mb-1"><input type="checkbox" id="bd-all" class="!w-auto">${esc(t('bulk_select_filtered'))}</label>
+    <div id="bd-list" class="border border-slate-200 rounded-md p-2 max-h-72 overflow-y-auto mb-3">${rows.map(rowHtml).join('')}</div>
+    <div class="flex justify-end gap-2">
+      <button class="btn btn-outline" data-cancel>${esc(t('btn_cancel'))}</button>
+      <button class="btn btn-danger" data-del>${esc(t('btn_delete'))}</button></div></div>`, true);
+  root.querySelector('[data-cancel]').addEventListener('click', closeModal);
+  root.querySelector('#bd-search').addEventListener('input', e => {
+    const q = deaccent(e.target.value.trim());
+    root.querySelectorAll('[data-row]').forEach(el => { el.style.display = !q || deaccent(el.textContent).includes(q) ? '' : 'none'; });
+  });
+  root.querySelector('#bd-all').addEventListener('change', e => {
+    root.querySelectorAll('[data-row]').forEach(el => {
+      if (el.style.display !== 'none') el.querySelector('[data-did]').checked = e.target.checked;
+    });
+  });
+  root.querySelector('[data-del]').addEventListener('click', async () => {
+    const ids = [...root.querySelectorAll('[data-did]:checked')].map(x => x.dataset.did);
+    if (!ids.length) { toast(t('bulk_none_selected'), false); return; }
+    if (!confirm(tf('bulk_delete_confirm', { n: ids.length }))) return;
+    /* thử xóa cả lô; nếu vướng khóa ngoại (memo có phiên bản con, VBPL đang được
+       hàng đợi tham chiếu...) thì xóa từng dòng để dòng lỗi không chặn dòng khác */
+    let ok = 0, fail = 0, firstErr = null;
+    const { error: batchErr } = await sb.from(kind).delete().in('id', ids);
+    if (!batchErr) ok = ids.length;
+    else {
+      for (const id of ids) {
+        const { error: e1 } = await sb.from(kind).delete().eq('id', id);
+        if (e1) { fail++; firstErr = firstErr || e1; } else ok++;
+      }
+    }
+    await audit(kind, '', 'bulk_delete', `deleted=${ok} failed=${fail}`);
+    if (fail) toast(tf('bulk_delete_result', { ok, fail }) + (firstErr ? ` — ${firstErr.message}` : ''), false);
+    else toast(tf('bulk_done', { n: ok }));
+    closeModal(); CFG.refresh();
+  });
+}
 
 /* ============================================================================
  * QUẢN TRỊ — Người dùng & Đơn vị
@@ -1779,7 +1863,7 @@ async function pageOrgChart() {
   const { data: profs } = await sb.from('profiles').select('*').order('full_name');
   const users = profs || Object.values(S.profilesById);
   const permsOfUnit = ouId => {
-    const out = { legal: [], memo: [] };
+    const out = { legal: [], memo: [], sop: [] };
     for (const r of S.roleMatrix) {
       if (r.allowed && r.org_unit_id === ouId && r.permissions?.code) out[r.module]?.push(t('perm_' + r.permissions.code) || r.permissions.code);
     }
@@ -1789,64 +1873,74 @@ async function pageOrgChart() {
     <span class="w-1.5 h-1.5 rounded-full bg-gold inline-block"></span>
     <span class="min-w-0 break-words">${esc(p.full_name || p.email)}</span>
     ${p.is_admin ? '<span class="badge bg-gold/20 text-yellow-800">Admin</span>' : ''}</div>`;
-  const unitCard = ou => {
+  const sopConfigured = S.roleMatrix.some(r => r.module === 'sop');
+  const unitCard = (ou, tag = '') => {
     const members = users.filter(u => u.org_unit_id === ou.id);
     const pm = permsOfUnit(ou.id);
     return `<div class="org-node bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden w-56 text-left">
       <div class="bg-navy text-white px-3 py-2">
-        <div class="font-bold text-sm">${esc(orgName(ou.id))}</div>
+        <div class="font-bold text-sm flex items-center gap-2">${esc(orgName(ou.id))}${tag}</div>
         <div class="text-[10px] text-white/60 uppercase tracking-wider">${esc(ou.code)} · ${esc(ou.name_en || '')}</div></div>
       <div class="p-3">
         ${members.length ? members.map(userLine).join('') : `<div class="text-xs text-slate-400">${esc(t('org_no_users'))}</div>`}
         <div class="mt-2 pt-2 border-t border-slate-100 space-y-1">
           <div class="text-[10px] text-slate-500"><b>${esc(t('admin_module_legal'))}:</b> ${pm.legal.map(esc).join(', ') || '—'}</div>
           <div class="text-[10px] text-slate-500"><b>${esc(t('admin_module_memo'))}:</b> ${pm.memo.map(esc).join(', ') || '—'}</div>
+          ${sopConfigured ? `<div class="text-[10px] text-slate-500"><b>${esc(t('admin_module_sop'))}:</b> ${pm.sop.map(esc).join(', ') || '—'}</div>` : ''}
         </div></div></div>`;
   };
   const admins = users.filter(u => u.is_admin);
   const orphans = users.filter(u => !u.org_unit_id && !u.is_admin);
-  const adminBox = `<div class="bg-navy text-white rounded-lg shadow px-5 py-2.5 text-center w-64">
-      <div class="font-bold text-sm">⭐ ${esc(t('org_admins'))}</div>
-      <div class="text-left mt-1">${admins.map(p => userLine(p).replace('bg-gold', 'bg-white/70')).join('') || '—'}</div></div>`;
+  /* Quản trị hệ thống = CHÚ THÍCH trên cùng (không phải 1 cấp trong cây —
+     không ai đứng trên Chủ đầu tư), chỉ cho biết tài khoản nào đang giữ admin */
+  const adminNote = `<div class="flex items-center gap-2 flex-wrap bg-white border border-gold/60 rounded-lg px-3 py-2 mb-4 text-xs">
+    <span class="font-bold text-navy">⭐ ${esc(t('org_admins'))}:</span>
+    ${admins.map(p => `<span class="chip">${esc(p.full_name || p.email)}</span>`).join('') || '—'}
+    <span class="text-slate-400">${esc(t('org_admin_note'))}</span></div>`;
   const orphanBox = orphans.length ? `<div class="mt-6 w-full bg-amber-50 border border-amber-200 rounded-lg p-3">
       <div class="text-xs font-bold text-amber-800 mb-1">${esc(t('org_unassigned'))}</div>
       ${orphans.map(userLine).join('')}</div>` : '';
 
   /* Cây phân cấp cố định theo yêu cầu BGĐ:
-     Quản trị hệ thống → Chủ đầu tư → (Pháp chế bám giữa đoạn nối) → Khách sạn + Văn phòng cho thuê;
-     mọi bộ phận còn lại (Nhân sự, Công đoàn, F&B, ...) nằm dưới Khách sạn. */
+     Chủ đầu tư (Owner, trên cùng) → (Pháp chế bám giữa đoạn nối) → Khách sạn + Văn phòng cho thuê;
+     các bộ phận còn lại (Nhân sự, F&B, ...) nằm dưới Khách sạn; CÔNG ĐOÀN đứng ĐỘC LẬP bên cạnh. */
   const byCode = Object.fromEntries(S.orgUnits.map(o => [o.code, o]));
-  const investor = byCode['investor'], hotel = byCode['hotel'], office = byCode['office'], legal = byCode['legal'];
+  const investor = byCode['investor'], hotel = byCode['hotel'], office = byCode['office'],
+    legal = byCode['legal'], union = byCode['union'];
   const active = S.orgUnits.filter(o => o.active !== false);
-  const others = active.filter(o => ![investor?.id, hotel?.id, office?.id, legal?.id].includes(o.id));
+  const others = active.filter(o => ![investor?.id, hotel?.id, office?.id, legal?.id, union?.id].includes(o.id));
+  const ownerTag = `<span class="badge bg-gold/30 text-yellow-100 border border-gold/60">Owner</span>`;
+  const unionBlock = union ? `<div class="flex flex-col items-center border-2 border-dashed border-slate-300 rounded-xl p-3 mt-1">
+      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">${esc(t('org_independent'))}</div>
+      ${unitCard(union)}</div>` : '';
 
   let html = pageTitle(t('nav_orgchart'));
   html += `<p class="text-xs text-slate-500 mb-4">${esc(t('org_intro'))}</p>`;
+  html += adminNote;
   if (investor && hotel && office) {
-    html += `<div class="overflow-x-auto pb-4"><div class="flex flex-col items-center min-w-fit">
-      ${adminBox}
-      <div class="w-px h-6 bg-slate-300"></div>
-      ${unitCard(investor)}
-      <div class="w-px h-5 bg-slate-300"></div>
-      ${legal ? `<div class="grid w-full items-center" style="grid-template-columns:1fr auto 1fr">
-        <div></div>
-        <div class="w-px bg-slate-300 self-stretch"></div>
-        <div class="flex items-center"><div class="w-10 h-px bg-slate-300"></div>${unitCard(legal)}</div>
-      </div>` : ''}
-      <div class="w-px h-4 bg-slate-300"></div>
-      <ul class="otree">
-        <li>${unitCard(hotel)}
-          ${others.length ? `<ul>${others.map(o => `<li>${unitCard(o)}</li>`).join('')}</ul>` : ''}
-        </li>
-        <li>${unitCard(office)}</li>
-      </ul>
-      ${orphanBox}
-    </div></div>`;
+    html += `<div class="overflow-x-auto pb-4"><div class="flex items-start justify-center gap-10 min-w-fit">
+      <div class="flex flex-col items-center">
+        ${unitCard(investor, ownerTag)}
+        <div class="w-px h-5 bg-slate-300"></div>
+        ${legal ? `<div class="grid w-full items-center" style="grid-template-columns:1fr auto 1fr">
+          <div></div>
+          <div class="w-px bg-slate-300 self-stretch"></div>
+          <div class="flex items-center"><div class="w-10 h-px bg-slate-300"></div>${unitCard(legal)}</div>
+        </div>` : ''}
+        <div class="w-px h-4 bg-slate-300"></div>
+        <ul class="otree">
+          <li>${unitCard(hotel)}
+            ${others.length ? `<ul>${others.map(o => `<li>${unitCard(o)}</li>`).join('')}</ul>` : ''}
+          </li>
+          <li>${unitCard(office)}</li>
+        </ul>
+      </div>
+      ${unionBlock}
+    </div>${orphanBox}</div>`;
   } else {
     /* fallback khi đơn vị đổi code khác chuẩn: hiện dạng lưới phẳng */
-    html += `<div class="flex flex-col items-center">${adminBox}<div class="w-px h-5 bg-slate-300"></div></div>
-      <div class="grid gap-4 mt-4 w-full" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
-      ${active.map(unitCard).join('')}</div>${orphanBox}`;
+    html += `<div class="grid gap-4 mt-4 w-full" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+      ${active.map(o => unitCard(o)).join('')}</div>${orphanBox}`;
   }
   $('#page').innerHTML = html;
 }
@@ -1860,8 +1954,13 @@ async function pageRoles() {
   const get = (ouId, permId, mod) => rm.find(r => r.org_unit_id === ouId && r.permission_id === permId && r.module === mod);
   let html = pageTitle(t('nav_roles'));
   html += `<p class="text-xs text-slate-500 mb-4">${esc(t('admin_roles_title'))}</p>`;
-  for (const mod of ['legal', 'memo']) {
-    html += `<h2 class="font-bold text-navy mb-2 mt-4">${esc(t(mod === 'legal' ? 'admin_module_legal' : 'admin_module_memo'))}</h2>
+  /* Phân hệ SOP chỉ hiện khi DB đã chạy add-sop-module (step1+step2) — nếu chưa,
+     lưu ma trận có cột sop sẽ lỗi enum nên ẩn đi + nhắc chạy SQL */
+  const sopConfigured = rm.some(r => r.module === 'sop');
+  if (!sopConfigured) html += `<div class="mb-3 bg-amber-50 border border-amber-200 text-amber-800 rounded px-3 py-2 text-xs">${esc(t('sop_module_missing'))}</div>`;
+  const MODULE_LABELS = { legal: 'admin_module_legal', memo: 'admin_module_memo', sop: 'admin_module_sop' };
+  for (const mod of (sopConfigured ? ['legal', 'memo', 'sop'] : ['legal', 'memo'])) {
+    html += `<h2 class="font-bold text-navy mb-2 mt-4">${esc(t(MODULE_LABELS[mod]))}</h2>
       <div class="bg-white rounded-lg shadow-sm p-4 overflow-x-auto mb-2"><table class="data"><thead><tr><th></th>` +
       perms.map(p => `<th class="text-center">${esc(t('perm_' + p.code) || p.code)}</th>`).join('') + '</tr></thead><tbody>';
     for (const ou of S.orgUnits) {

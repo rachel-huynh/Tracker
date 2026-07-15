@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FFE Assessment Hub — Plaza Hotel</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+if (typeof XLSX === 'undefined') {
+  document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+}
+</script>
+<style>
+:root{
+  --purple:#7030a0; --purple-light:#f3ecf9; --purple-mid:#c9a8e0;
+  --yellow:#bf9000; --yellow-light:#fff8e1;
+  --green:#2e7d32; --green-light:#e8f5e9;
+  --red:#c62828; --red-light:#ffebee;
+  --amber:#e65100; --amber-light:#fff3e0;
+  --ink:#1a1a2e; --muted:#6b7280; --line:#e5e7eb; --bg:#f6f7fb; --card:#ffffff;
+  --blue:#1565c0; --blue-light:#e3f2fd;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI",system-ui,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+h1,h2,h3{font-weight:600}
+button{cursor:pointer;font-family:inherit}
+input,select,textarea{font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--purple-mid)}
+textarea{resize:vertical;min-height:52px}
+label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:3px}
+
+/* Header */
+header{background:linear-gradient(135deg,#4a1d6e,#7030a0 65%,#9455c4);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:19px}
+header .sub{font-size:12px;opacity:.85}
+header .spacer{flex:1}
+header .hbtn{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:7px 14px;font-size:13px}
+header .hbtn:hover{background:rgba(255,255,255,.25)}
+
+/* Nav tabs */
+nav{display:flex;gap:2px;background:#fff;border-bottom:2px solid var(--line);padding:0 16px;overflow-x:auto}
+nav button{background:none;border:none;padding:12px 16px;font-size:13.5px;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap}
+nav button.active{color:var(--purple);border-bottom-color:var(--purple);font-weight:600}
+nav button:hover{color:var(--purple)}
+nav .badge{background:var(--purple-light);color:var(--purple);border-radius:10px;padding:1px 7px;font-size:11px;margin-left:5px}
+
+main{padding:18px 24px;max-width:1500px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(20,20,40,.05)}
+.card h2{font-size:15px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.card h3{font-size:13.5px;margin:12px 0 6px;color:#333}
+.grid{display:grid;gap:10px}
+.g2{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}.g5{grid-template-columns:repeat(5,1fr)}.g6{grid-template-columns:repeat(6,1fr)}
+@media(max-width:900px){.g3,.g4,.g5,.g6{grid-template-columns:repeat(2,1fr)}}
+.field input,.field select,.field textarea{width:100%}
+.muted{color:var(--muted);font-size:12px}
+.mono{font-family:Consolas,monospace}
+
+/* Buttons */
+.btn{border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.btn-p{background:var(--purple);color:#fff}.btn-p:hover{background:#5b2482}
+.btn-o{background:#fff;color:var(--purple);border:1.5px solid var(--purple)}
+.btn-g{background:var(--green);color:#fff}
+.btn-gray{background:#eceef2;color:#444}
+.btn-r{background:var(--red-light);color:var(--red);border:1px solid #f3c1c1}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:6px}
+
+/* Pills / status */
+.pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:600}
+.pill.ok{background:var(--green-light);color:var(--green)}
+.pill.bad{background:var(--red-light);color:var(--red)}
+.pill.warn{background:var(--amber-light);color:var(--amber)}
+.pill.info{background:var(--blue-light);color:var(--blue)}
+.pill.purple{background:var(--purple-light);color:var(--purple)}
+.pill.gray{background:#eceef2;color:#555}
+.pill.yellow{background:var(--yellow-light);color:var(--yellow)}
+
+/* Stage tracker */
+.stages{display:flex;gap:0;align-items:center;flex-wrap:wrap}
+.stage{display:flex;align-items:center}
+.stage .dot{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;transition:.15s}
+.stage .dot.done{background:var(--green);border-color:var(--green);color:#fff}
+.stage .dot.current{border-color:var(--purple);color:var(--purple);box-shadow:0 0 0 3px var(--purple-light)}
+.stage .dot.na{background:#f1f1f4;border-style:dashed}
+.stage .lbl{font-size:10.5px;text-align:center;color:var(--muted);margin-top:3px;max-width:64px}
+.stage .conn{width:26px;height:2px;background:var(--line);margin:0 2px 16px}
+.stage .conn.done{background:var(--green)}
+.stage .wrap{display:flex;flex-direction:column;align-items:center}
+
+/* Tables */
+table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{background:#f4f2fa;color:#4a3a63;text-align:left;padding:7px 8px;border:1px solid var(--line);font-size:11.5px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.tbl td{padding:6px 8px;border:1px solid var(--line);vertical-align:top}
+.tbl tr:nth-child(even) td{background:#fafafd}
+.tbl input,.tbl select{width:100%;min-width:60px;border:1px solid transparent;background:transparent;padding:3px 4px}
+.tbl input:hover,.tbl select:hover{border-color:var(--line);background:#fff}
+.tbl input:focus,.tbl select:focus{border-color:var(--purple);background:#fff}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.tblwrap{overflow-x:auto}
+
+/* Project cards */
+.pcard{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--purple);border-radius:12px;padding:14px 18px;margin-bottom:12px;cursor:pointer;transition:.15s}
+.pcard:hover{box-shadow:0 4px 14px rgba(80,40,120,.12);transform:translateY(-1px)}
+.pcard .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.pcard .code{font-family:Consolas,monospace;font-weight:700;color:var(--purple);font-size:14px}
+.pcard .name{font-weight:600;font-size:15px}
+
+/* Section blocks yellow/purple */
+.sheet{border:1px solid var(--line);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.sheet>.shead{display:flex;align-items:center;gap:10px;padding:10px 14px;font-weight:700;font-size:13.5px;cursor:pointer;user-select:none}
+.sheet.ydept>.shead{background:var(--yellow-light);color:#7a5c00;border-bottom:1px solid #f0e2b0}
+.sheet.pmine>.shead{background:var(--purple-light);color:var(--purple);border-bottom:1px solid var(--purple-mid)}
+.sheet>.sbody{padding:14px;background:#fff}
+.sheet.collapsed>.sbody{display:none}
+.shead .tag{font-size:10px;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:.5px}
+.ydept .tag{background:#e7c855;color:#5b4400}
+.pmine .tag{background:var(--purple);color:#fff}
+.shead .caret{margin-left:auto;transition:.2s}
+.collapsed .shead .caret{transform:rotate(-90deg)}
+
+/* verdict box */
+.verdict{border-radius:10px;padding:12px 16px;margin:10px 0;font-size:13.5px;border:1.5px solid}
+.verdict.ok{background:var(--green-light);border-color:#a5d6a7;color:#1b5e20}
+.verdict.bad{background:var(--red-light);border-color:#ef9a9a;color:#b71c1c}
+.verdict.warn{background:var(--amber-light);border-color:#ffcc80;color:#e65100}
+.verdict ul{margin:6px 0 0 18px}
+
+/* KPI tiles */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.kpi .v{font-size:22px;font-weight:700;color:var(--purple)}
+.kpi .l{font-size:11.5px;color:var(--muted);margin-top:2px}
+
+/* drop zone */
+.drop{border:2px dashed var(--purple-mid);border-radius:14px;padding:34px;text-align:center;background:var(--purple-light);color:var(--purple);font-size:14px;cursor:pointer;transition:.15s}
+.drop.hover{background:#e7d9f5}
+.drop b{font-size:16px}
+
+/* toast */
+#toast{position:fixed;bottom:22px;right:22px;z-index:99;display:flex;flex-direction:column;gap:8px}
+.toastmsg{background:#26203a;color:#fff;border-radius:10px;padding:11px 18px;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,.3);animation:fadein .25s}
+.toastmsg.err{background:#8e2424}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
+
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(20,15,35,.5);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:88vh;overflow:auto;padding:22px}
+
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.toolbar .spacer{flex:1}
+.filter-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.hidden{display:none!important}
+.link{color:var(--purple);cursor:pointer;text-decoration:underline}
+.small{font-size:12px}
+.checkline{display:flex;align-items:center;gap:6px;font-size:13px}
+.checkline input{width:auto}
+
+/* PRINT */
+#printArea{display:none}
+@media print{
+  body>*:not(#printArea){display:none!important}
+  #printArea{display:block!important;font-size:11.5px;color:#000}
+  #printArea .prpage{page-break-after:always;padding:0}
+  #printArea h1{font-size:17px}
+  #printArea h2{font-size:13.5px;background:#eee;padding:4px 8px;margin:12px 0 6px;border-left:4px solid #7030a0}
+  #printArea table{width:100%;border-collapse:collapse;font-size:10.5px}
+  #printArea th,#printArea td{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top}
+  #printArea th{background:#f0ebf7}
+  #printArea .phead{display:flex;justify-content:space-between;border-bottom:2px solid #7030a0;padding-bottom:8px;margin-bottom:10px}
+  #printArea .sig{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:26px;text-align:center;font-size:10px}
+  #printArea .sig div{border-top:1px solid #777;padding-top:4px;margin-top:48px}
+  #printArea .band{background:#d9d2e9;font-weight:700;padding:4px 8px;border:1px solid #888;margin-top:12px;font-size:11px;letter-spacing:.4px}
+  #printArea .lbl-c{background:#efefef;font-weight:700;font-size:9.5px;text-transform:uppercase}
+  #printArea .codebox{float:right;border:1px solid #888;font-size:10px;margin-bottom:6px}
+  #printArea .codebox td,#printArea .codebox th{border:1px solid #888;padding:3px 10px;text-align:center}
+  #printArea .consent{margin-top:18px;font-size:10px}
+  #printArea .consent .row{display:grid;gap:10px;text-align:center;margin-top:8px}
+  #printArea .consent .cell{padding-top:2px}
+  #printArea .consent .line{margin-top:58px;border-top:0}
+  #printArea .vn{font-style:italic;color:#333}
+  @page{size:A4;margin:14mm 11mm}
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🏨 FFE Assessment Hub</h1>
+    <div class="sub">Plaza Hotel Company Limited — Owner assessment of FFE procurement (PA · MC · Asset Codes)</div>
+  </div>
+  <div class="spacer"></div>
+  <button class="hbtn" onclick="saveWorkspace(true)">💾 Save</button>
+  <button class="hbtn" onclick="exportJSON()">⬇ Export JSON</button>
+  <button class="hbtn" onclick="document.getElementById('importJsonFile').click()">⬆ Import JSON</button>
+  <input type="file" id="importJsonFile" accept=".json" class="hidden" onchange="importJSONFile(this)">
+</header>
+<nav id="nav"></nav>
+<main id="main"></main>
+<div id="toast"></div>
+<div id="printArea"></div>
+<script>
+/* =================== REFERENCE DATA (from Asset code.xlsx & form Menu) =================== */
+const UNITS = [
+  {code:'PHCL',en:'Plaza Hotel Ltd.,',vn:'Công ty TNHH Liên Doanh Khách Sạn Plaza',level:'TCT'},
+  {code:'JVC',en:'JVC Office',vn:'Văn phòng đại diện chủ đầu tư',level:'CN/VP'},
+  {code:'CEN',en:'Central Plaza',vn:'Cao ốc văn phòng Central Plaza',level:'CN/VP'},
+  {code:'SOF',en:'Sofitel Saigon Plaza',vn:'Khách sạn Sofitel SG Plaza',level:'CN/VP'},
+  {code:'FOD',en:'Front Office Department',vn:'Bộ phận tiền sảnh',level:'Dept1'},
+  {code:'HKD',en:'House Keeping Department',vn:'Bộ phận quản gia',level:'Dept1'},
+  {code:'FBD',en:'Food & Beverage Department',vn:'Bộ phận F&B',level:'Dept1'},
+  {code:'KIT',en:'Kitchen Department',vn:'Bộ phận bếp',level:'Dept1'},
+  {code:'ENG',en:'Engineering Department',vn:'Bộ phận kỹ thuật',level:'Dept1'},
+  {code:'ADM',en:'Administration & Human Resource Department',vn:'Bộ phận hành chính, nhân sự',level:'Dept1'},
+  {code:'SMD',en:'Sale & Marketing Department',vn:'Bộ phận quảng cáo, bán hàng',level:'Dept1'},
+  {code:'FIN',en:'Finance Department',vn:'Bộ phận tài chính, kế toán',level:'Dept1'},
+  {code:'ITD',en:'IT Department',vn:'Bộ phận IT',level:'Dept2'},
+  {code:'SEC',en:'Security Department',vn:'Bộ phận an ninh',level:'Dept2'}
+];
+const ASSET_GROUPS = [
+  {code:'C2111',en:'Buildings and structures',vn:'Nhà cửa, vật kiến trúc',types:['BUL','STR','INF'],intangible:false},
+  {code:'C2112',en:'Machinery and equipment',vn:'Máy móc và thiết bị',types:['MES','FFP','ITO','KME','FUR','SME','OME'],intangible:false},
+  {code:'C2113',en:'Transportation and transmission vehicles',vn:'Trang thiết bị và phương tiện vận tải',types:['TTV'],intangible:false},
+  {code:'C2114',en:'Office equipment, management tools',vn:'Thiết bị, công cụ quản lý',types:['ITM','OEM'],intangible:false},
+  {code:'C2115',en:'Perennial trees, working & producing animals',vn:'Cây lâu năm, súc vật làm việc',types:['PWP'],intangible:false},
+  {code:'C2118',en:'Other tangible asset',vn:'TSCĐ hữu hình khác',types:['OTA'],intangible:false},
+  {code:'C2131',en:'Land use rights',vn:'Quyền sử dụng đất',types:['LUR'],intangible:true},
+  {code:'C2132',en:'Copyrights',vn:'Quyền phát hành',types:['CPR'],intangible:true},
+  {code:'C2133',en:'Patent',vn:'Bản quyền, bằng sáng chế',types:['PAT'],intangible:true},
+  {code:'C2134',en:'Trademarks, trade names',vn:'Nhãn hiệu độc quyền',types:['TMK'],intangible:true},
+  {code:'C2135',en:'Computer software',vn:'Chương trình, phần mềm',types:['CTP'],intangible:true},
+  {code:'C2136',en:'License & right concession permits',vn:'Giấy phép nhượng quyền',types:['LRP'],intangible:true},
+  {code:'C2138',en:'Other intangible asset',vn:'TSCĐ vô hình khác',types:['OIA'],intangible:true},
+  {code:'C2421',en:'Short-term tools & supplies (CCDC)',vn:'Thiết bị, CCDC ngắn hạn',types:['STU','STG','STG-QR'],intangible:false},
+  {code:'C2422',en:'Long-term tools & supplies (CCDC)',vn:'Thiết bị, CCDC dài hạn',types:['LTU','LTG','LTG-QR'],intangible:false}
+];
+const ASSET_TYPES = {
+  BUL:'Building', STR:'Other structure', INF:'Infrastructure', MES:'M&E Systems',
+  FFP:'Fire Fighting & Prevention', ITO:'IT Equipment (operation)', KME:'Kitchen Machinery & Equipment',
+  FUR:'Furniture, artworks', SME:'Sanitary Machinery & Equipment', OME:'Other Machinery & Equipment',
+  TTV:'Transportation vehicles', ITM:'IT Equipment (management)', OEM:'Other mgmt equipment',
+  PWP:'Perennial trees/animals', OTA:'Other tangible', LUR:'Land use rights', CPR:'Copyrights',
+  PAT:'Patent', TMK:'Trademarks', CTP:'Computer software', LRP:'Licenses', OIA:'Other intangible',
+  STU:'Short-term tools (by code)', LTU:'Long-term tools (by code)', STG:'Short-term tools (by qty)',
+  LTG:'Long-term tools (by qty)', 'STG-QR':'Short-term (shared QR)', 'LTG-QR':'Long-term (shared QR)'
+};
+const RISK_CATEGORIES = ["People's Health & Safety","Technical Issues","Reputation Damage","Incident Acknowledgement","Periodic Internal Assessment","Legal Compliance","HACCP Fail Point","Public Negative Feedback","Employee's Complaint","Financial Efficiency","Operational Inconsistency","Competitive Advantage Lost","Touchpoints","Productivity"];
+const PROCUREMENT_TYPES = ['Competitive Quotation','Direct Appointment','Open Tender','Limited Tender'];
+const MC_CONCLUSIONS = [
+  'The price of the items on the selected quotation is assessed to be acceptable within the allowable variance.',
+  'The price of the items on the selected quotation exceeds the allowable variance. It is recommended to reevaluate the current unit prices in the quotation.',
+  'This is a project where market prices cannot be checked because the items are related to technical factors, have a construction-related nature, or are specialized products with prices not publicly disclosed.'
+];
+const PA_SUGGESTIONS = {Critical:'Need to be processed immediately',High:'Need to be processed ASAP',Medium:'Need to be processed as scheduled',Low:'Consider to be processed next term'};
+const DEFAULT_COMMITTEES = [
+  {member:'Đinh Hoàng Duy',title:'General Manager',rep:'Joint Venture Company Office'},
+  {member:'Nguyễn Trung Khánh',title:'Chief Accountant',rep:'Joint Venture Company Office'},
+  {member:'Tống Quốc Vĩnh',title:'Maintenance Manager',rep:'Joint Venture Company Office'},
+  {member:'Huỳnh Thị Trúc Dịu',title:'Project Assistant',rep:'Joint Venture Company Office'}
+];
+function deriveDocCode(p, prefix){
+  const prCode=(p.pr&&p.pr.code||'').trim();
+  if(/^PR\./i.test(prCode)) return prefix+prCode.slice(2);
+  const pc=(p.code||'').trim(); const parts=pc.split('.');
+  if(parts.length>=2) return prefix+'.'+parts.slice(1).join('.');
+  return '';
+}
+const STAGE_DEFS = [
+  {k:'PR',label:'PR received',who:'dept'},
+  {k:'PA',label:'PA assessment',who:'me'},
+  {k:'QC',label:'QC bid compare',who:'dept'},
+  {k:'MC',label:'Market check',who:'me'},
+  {k:'PO',label:'PO / Contract',who:'dept'},
+  {k:'AH',label:'Asset handover',who:'dept'},
+  {k:'AC',label:'Asset codes / labels',who:'me'},
+  {k:'DONE',label:'Closed',who:'me'}
+];
+function riskLevel(score){ if(score>=16) return 'Critical'; if(score>=12) return 'High'; if(score>=8) return 'Medium'; return 'Low'; }
+
+/* =================== STATE =================== */
+const LS_KEY='ffeHubWorkspace_v1';
+let ws = null;
+function defaultWorkspace(){ return {
+  version:1, updatedAt:new Date().toISOString(),
+  settings:{exrate:26000, usdLimit:50000, overrunPctLimit:10, lowValueVnd:3000000, emergencyRisk:16, mcTolerance:10, pvRate:4.6, jsonbinId:'', jsonbinKey:''},
+  projects:[], capex:[], register:[],
+  refs:{locations:[], itemNames:[], vendors:[]}
+};}
+function loadWorkspace(){ try{ const raw=localStorage.getItem(LS_KEY); ws = raw? JSON.parse(raw) : defaultWorkspace(); }catch(e){ ws = defaultWorkspace(); } if(!ws.settings) ws.settings=defaultWorkspace().settings; if(!ws.refs) ws.refs=defaultWorkspace().refs; }
+function saveWorkspace(notify){ ws.updatedAt=new Date().toISOString(); try{ localStorage.setItem(LS_KEY, JSON.stringify(ws)); if(notify) toast('Workspace saved locally ✓'); }catch(e){ toast('Save failed: '+e.message,true); } }
+
+/* =================== UTILITIES =================== */
+function toast(msg,err){ const t=document.createElement('div'); t.className='toastmsg'+(err?' err':''); t.textContent=msg; document.getElementById('toast').appendChild(t); setTimeout(()=>t.remove(), err?6000:3200); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function num(v){ if(v==null||v==='')return 0; const n=typeof v==='number'?v:parseFloat(String(v).replace(/[,\s]/g,'')); return isNaN(n)?0:n; }
+function fmtVnd(v){ if(v==null||v==='')return ''; return num(v).toLocaleString('en-US',{maximumFractionDigits:0}); }
+function fmtUsd(v){ return num(v).toLocaleString('en-US',{maximumFractionDigits:0}); }
+function fmtPct(v){ return (num(v)*100).toFixed(1)+'%'; }
+function excelDate(serial){ if(serial==null||serial==='')return ''; if(typeof serial==='string' && /\d{4}-\d{2}-\d{2}/.test(serial)) return serial.slice(0,10); const n=num(serial); if(!n||n<20000||n>60000) return String(serial); const d=new Date(Date.UTC(1899,11,30)+n*86400000); return d.toISOString().slice(0,10); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function uid(){ return 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function clean(v){ if(v==null) return ''; const s=String(v).trim(); return (s==='0'&&typeof v!=='number')?'':s; }
+function cellStr(v){ if(v==null||v===0||v==='0') return ''; return String(v).trim(); }
+
+/* =================== XLSX PARSING =================== */
+function sheetGrid(wb, name){
+  const sh = wb.Sheets[name]; if(!sh) return null;
+  return XLSX.utils.sheet_to_json(sh, {header:1, raw:true, defval:null});
+}
+function findCell(grid, pattern, opts){
+  opts=opts||{};
+  const re = pattern instanceof RegExp ? pattern : new RegExp('^\\s*'+pattern.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*$','i');
+  for(let r=opts.fromRow||0;r<grid.length;r++){ const row=grid[r]; if(!row)continue;
+    for(let c=0;c<row.length;c++){ const v=row[c]; if(v!=null && typeof v==='string' && re.test(v.trim())) return {r,c,v}; } }
+  return null;
+}
+function valueBelow(grid, pattern, maxDown){
+  const f=findCell(grid,pattern); if(!f)return null; maxDown=maxDown||3;
+  for(let d=1;d<=maxDown;d++){ const row=grid[f.r+d]; if(!row)continue; const v=row[f.c]; if(v!=null&&v!=='') return v; }
+  return null;
+}
+function valueRight(grid, pattern, maxRight){
+  const f=findCell(grid,pattern); if(!f)return null; maxRight=maxRight||8;
+  const row=grid[f.r];
+  for(let d=1;d<=maxRight;d++){ const v=row[f.c+d]; if(v!=null&&v!=='') return v; }
+  return null;
+}
+function headerCols(grid, headerNames, fromRow){
+  // find a row that contains the first headerName; map each header -> column index
+  const first = findCell(grid, headerNames[0], {fromRow:fromRow||0}); if(!first) return null;
+  const r = first.r; const row = grid[r]; const map={_row:r};
+  headerNames.forEach(h=>{
+    const re=new RegExp('^\\s*'+h.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i');
+    for(let c=0;c<row.length;c++){ const v=row[c]; if(v!=null&&typeof v==='string'&&re.test(v.trim())){ map[h]=c; break; } }
+  });
+  return map;
+}
+function riskFromGrid(grid){
+  const f=findCell(grid,'Posibility'); if(!f) return {p:0,i:0,a:0};
+  for(let d=1;d<=3;d++){ const row=grid[f.r+d]; if(!row)continue;
+    const nums=row.filter(v=>typeof v==='number');
+    if(nums.length>=2){ const p=nums[0],i=nums[1]; const a=nums.length>=3?nums[2]:p*i; return {p,i,a}; } }
+  return {p:0,i:0,a:0};
+}
+
+function parsePR(grid){
+  const pr={};
+  pr.code = clean(valueBelow(grid,'CODE'));
+  const rd = findCell(grid,'REQUEST DATE'); if(rd){ for(let d=1;d<=3;d++){ const row=grid[rd.r+d]; if(row&&row[rd.c]!=null&&row[rd.c]!==''){ pr.requestDate = excelDate(row[rd.c]); break; } } }
+  pr.projectCode = clean(valueBelow(grid,'PROJECT CODE'));
+  pr.projectType = clean(valueBelow(grid,'PROJECT TYPE'));
+  pr.deptCode = clean(valueBelow(grid,'DEPARTMENT CODE'));
+  pr.projectNo = clean(valueBelow(grid,'PROJECT NO.'));
+  pr.budgetYear = clean(valueBelow(grid,'BUDGET YEAR'));
+  pr.subNo = clean(valueBelow(grid,'SUB-PROJECT NO.'));
+  pr.name = clean(valueBelow(grid,'PROJECT NAME'));
+  pr.deptName = clean(valueBelow(grid,'DEPARTMENT NAME'));
+  pr.category = clean(valueBelow(grid,'CATEGORY'));
+  pr.budget = clean(valueBelow(grid,'BUDGET'));
+  pr.investType = clean(valueBelow(grid,'INVESTMENT TYPE'));
+  pr.estValue = num(valueBelow(grid,'ESTIMATED TOTAL VALUE'));
+  const risk = riskFromGrid(grid); pr.possibility=risk.p; pr.impact=risk.i; pr.assessment=risk.a;
+  pr.reason = clean(valueBelow(grid,/^REASON\/CURRENT CONDITION/i));
+  pr.suggestion = clean(valueBelow(grid,'SUGGESTION'));
+  pr.costBenchmark = clean(valueBelow(grid,'COST BENCHMARK'));
+  const sup = findCell(grid,'SUPPLIER'); if(sup){ for(let d=1;d<=3;d++){ const row=grid[sup.r+d]; if(row&&clean(row[sup.c])){ pr.supplier=clean(row[sup.c]); break; } } }
+  pr.procurementType = clean(valueBelow(grid,'PROCUREMENT TYPE'));
+  // items
+  pr.items=[];
+  const hc = headerCols(grid,['Asset Item','Rationale','Technical Standard','Location','Qnt']);
+  if(hc && hc['Asset Item']!=null){
+    const noCol = hc['Asset Item']-1;
+    const row0 = grid[hc._row];
+    let priceCol=null, amtCol=null;
+    for(let c=0;c<row0.length;c++){ const v=row0[c]; if(typeof v==='string'){ if(/unit\s*price/i.test(v)) priceCol=c; else if(/^\s*amount/i.test(v)) amtCol=c; } }
+    for(let r=hc._row+1;r<grid.length;r++){ const row=grid[r]; if(!row)continue;
+      const label = row.map(v=>typeof v==='string'?v:'').join(' ');
+      if(/Estimated Total Amount|Note\/Ghi|CONCLUSION/i.test(label)) break;
+      const item = cellStr(row[hc['Asset Item']]);
+      if(!item) continue;
+      pr.items.push({ item, rationale:cellStr(row[hc['Rationale']]), tech:cellStr(row[hc['Technical Standard']]), location:cellStr(row[hc['Location']]),
+        qty:num(row[hc['Qnt']]), unitPrice:priceCol!=null?num(row[priceCol]):0, amount:amtCol!=null?num(row[amtCol]):0 });
+    }
+  }
+  return pr;
+}
+function parseRR(grid){
+  if(!grid) return null;
+  const rr={};
+  rr.code = clean(valueBelow(grid,'CODE'));
+  rr.level = clean(valueBelow(grid,'REPLACEMENT LEVEL'));
+  rr.after = clean(valueBelow(grid,'AFTER REPLACEMENT'));
+  rr.items=[];
+  const hc = headerCols(grid,['Asset Item','Asset Code','Current condition','Reason','After replacement','Qnt','Unit','Original value']);
+  if(hc && hc['Asset Item']!=null){
+    for(let r=hc._row+1;r<grid.length;r++){ const row=grid[r]; if(!row)continue;
+      const label=row.map(v=>typeof v==='string'?v:'').join(' ');
+      if(/Condition Description|Consent by|Total/i.test(label)) break;
+      const item=cellStr(row[hc['Asset Item']]); if(!item)continue;
+      rr.items.push({item, assetCode:cellStr(row[hc['Asset Code']]), condition:cellStr(row[hc['Current condition']]), reason:cellStr(row[hc['Reason']]), after:cellStr(row[hc['After replacement']]), qty:num(row[hc['Qnt']]), unit:cellStr(row[hc['Unit']]), originalValue:num(row[hc['Original value']])});
+    }
+  }
+  return (rr.items.length||rr.code)?rr:null;
+}
+function parseQC(grid){
+  if(!grid) return null;
+  const qc={};
+  qc.code = clean(valueRight(grid,/^Code:/i));
+  qc.date = excelDate(valueRight(grid,/^Date:/i));
+  qc.projectNo = clean(valueRight(grid,/^Project No\.?:/i));
+  qc.projectName = clean(valueRight(grid,/^Project Name:/i));
+  qc.budget = num(valueRight(grid,/^Budget:/i));
+  qc.estValue = num(valueRight(grid,/^Estimated Project Value:/i));
+  // vendors: row after the "A: Chosen Vendor" header row
+  const a = findCell(grid,/^A: Chosen Vendor/i);
+  qc.vendors=[];
+  if(a){
+    const hdrRow = grid[a.r]; const nameRow = grid[a.r+1]||[];
+    const slots=[];
+    for(let c=0;c<hdrRow.length;c++){ const v=hdrRow[c]; if(typeof v==='string'&&/Vendor/i.test(v)) slots.push({c, role:v.trim()}); }
+    slots.forEach(s=>{ const nm=cellStr(nameRow[s.c]); if(nm && nm!=='[NAME]') qc.vendors.push({name:nm, role:s.role, ability:null,tech:null,finance:null,total:null,amount:null}); });
+    const rows={ability:findCell(grid,/^ABILITY & EXPERIENCE/i,{fromRow:a.r}), tech:findCell(grid,/^TECHNIQUES/i,{fromRow:a.r}), fin:findCell(grid,/^FINANCE/i,{fromRow:a.r}), tot:findCell(grid,/^TOTAL SCORE/i,{fromRow:a.r})};
+    // scores sit in merged cells offset from vendor headers: first numeric = ratio, following numerics = vendor scores in order
+    const scoreRow=f=>{ if(!f)return []; const row=grid[f.r]||[]; const nums=[]; for(let c=f.c+1;c<row.length;c++){ if(typeof row[c]==='number') nums.push(row[c]); } let i=0; while(i<nums.length && nums[i]<=1) i++; return nums.slice(i); };
+    const sc={ability:scoreRow(rows.ability), tech:scoreRow(rows.tech), finance:scoreRow(rows.fin), total:scoreRow(rows.tot)};
+    qc.vendors.forEach((v,i)=>{ v.ability=sc.ability[i]!=null?sc.ability[i]:null; v.tech=sc.tech[i]!=null?sc.tech[i]:null; v.finance=sc.finance[i]!=null?sc.finance[i]:null; v.total=sc.total[i]!=null?sc.total[i]:null; });
+    // amounts from quotation summary Total Amount row
+    const ta=findCell(grid,/^Total Amount/i,{fromRow:a.r});
+    if(ta){ const row=grid[ta.r]; const nums=[]; for(let c=ta.c+1;c<row.length;c++){ if(typeof row[c]==='number') nums.push(row[c]); }
+      qc.vendors.forEach((v,i)=>{ if(nums[i]!=null) v.amount=nums[i]; }); }
+  }
+  const conc=findCell(grid,/^Conclusion/i); if(conc){ for(let d=1;d<=2;d++){ const row=grid[conc.r+d]; if(row&&clean(row[conc.c])){ qc.chosen=clean(row[conc.c]); break;} } }
+  if(!qc.chosen && qc.vendors.length) qc.chosen=qc.vendors[0].name;
+  return (qc.code||qc.vendors.length)?qc:null;
+}
+function parsePOAH(grid, kind){
+  if(!grid) return null;
+  const o={};
+  o.code = clean(valueBelow(grid,'CODE'));
+  const dateLbl = kind==='po' ? 'ORDER DATE' : 'HANDOVER DATE';
+  const dl=findCell(grid,dateLbl); if(dl){ for(let d=1;d<=3;d++){ const row=grid[dl.r+d]; if(row&&row[dl.c]!=null&&row[dl.c]!==''){ o.date=excelDate(row[dl.c]); break; } } }
+  o.supplier = clean(valueBelow(grid,'SUPPLIER'));
+  if(kind==='ah'){ o.evaluation = clean(valueBelow(grid,'PROJECT COMPLETION EVALUATION')); o.detailEval = clean(valueBelow(grid,'DETAILED EVALUATION')); }
+  const SPECS=['Function','Capacity','Brand','Origin','Model','Weight','Length','Width','Heigh','Material','Radius','Fuel','Serial','Shape','Area','Perimeter','Year','Manufacturer','Accessory','Color','Warranty Period'];
+  const hc = headerCols(grid,['Asset Item'].concat(SPECS).concat(['Qnt']));
+  o.items=[];
+  if(hc && hc['Asset Item']!=null){
+    for(let r=hc._row+1;r<grid.length;r++){ const row=grid[r]; if(!row)continue;
+      const joined=row.map(v=>typeof v==='string'?v:'').join(' ');
+      if(/Note\/Ghi|Consent by|^\s*Total/i.test(joined)) break;
+      if(row.some(v=>typeof v==='string'&&/^Total$/i.test(String(v).trim()))) break;
+      const item=cellStr(row[hc['Asset Item']]); if(!item)continue;
+      const it={item, qty: hc['Qnt']!=null?num(row[hc['Qnt']]):0};
+      // unit column right after Qnt
+      if(hc['Qnt']!=null){ for(let c=hc['Qnt']+1;c<=hc['Qnt']+4;c++){ const v=cellStr(row&&row[c]); if(v){ it.unit=v; break; } } }
+      SPECS.forEach(s=>{ if(hc[s]!=null){ it[s.toLowerCase().replace(' ','_')]=cellStr(row[hc[s]]); } });
+      o.items.push(it);
+    }
+  }
+  return (o.code||o.items.length)?o:null;
+}
+function parsePA(grid){
+  if(!grid)return null;
+  const pa={};
+  pa.code=clean(valueBelow(grid,'CODE'));
+  pa.budget=clean(valueBelow(grid,'BUDGET'));
+  pa.comparability=clean(valueBelow(grid,'COMPARABILITY'));
+  pa.riskCategory=clean(valueBelow(grid,'RISK CATEGORY'));
+  pa.budgetedValue=num(valueRight(grid,/^Budgeted Value:/i));
+  pa.projectValue=num(valueRight(grid,/^Project Value:/i));
+  pa.procurementType=clean(valueBelow(grid,'PROCUREMENT TYPE'));
+  pa.suggestion=clean(valueBelow(grid,'SUGGESTION'));
+  return (pa.code||pa.budgetedValue)?pa:null;
+}
+function parseMenuRefs(wb){
+  const grid=sheetGrid(wb,'Menu'); if(!grid)return;
+  let addedLoc=0, addedItem=0;
+  const locSet=new Set(ws.refs.locations.map(l=>l.code));
+  const itemSet=new Set(ws.refs.itemNames);
+  for(let r=1;r<grid.length;r++){ const row=grid[r]; if(!row)continue;
+    const code=row[2], name=row[3]!=null?row[3]:row[1];
+    if(typeof code==='string'&&/^[CS]\w{2,}/.test(code.trim())&&!locSet.has(code.trim())){ ws.refs.locations.push({code:code.trim(),name:clean(row[3]||row[1]||'')}); locSet.add(code.trim()); addedLoc++; }
+    const std=row[12];
+    if(typeof std==='string'&&std.includes('/')&&!itemSet.has(std.trim())&&std.trim().length>2){ ws.refs.itemNames.push(std.trim()); itemSet.add(std.trim()); addedItem++; }
+  }
+  if(addedLoc||addedItem) toast(`References updated: +${addedLoc} locations, +${addedItem} item names`);
+}
+function parseCapexList(wb){
+  const grid=sheetGrid(wb,'Capex List'); if(!grid||grid.length<2)return 0;
+  const hdr=grid[0].map(v=>v==null?'':String(v).trim());
+  const col=n=>hdr.findIndex(h=>h.toLowerCase().startsWith(n.toLowerCase()));
+  const ci={cat:col('Category'),dept:col('Department Code'),deptName:col('Department Name'),date:col('Request Date'),inv:col('Investment Type'),reason:col('Reason'),code:col('Project Code'),name:col('Project Name'),est:col('Estimated Value'),p:col('Posibility'),i:col('Impact'),a:col('Assessment'),risk:col('Risk Level'),item:col('Asset Item'),loc:col('Location'),qty:col('Quantity'),up:col('Unit price'),amt:col('Amount'),sup:col('Supplier'),riskCat:col('Project Category'),area:col('Area Category')};
+  const existing=new Set(ws.capex.map(c=>c.projectCode+'|'+c.projectName));
+  let added=0;
+  for(let r=1;r<grid.length;r++){ const row=grid[r]; if(!row)continue;
+    const code=cellStr(row[ci.code]); const name=cellStr(row[ci.name]); if(!code&&!name)continue;
+    if(existing.has(code+'|'+name))continue;
+    const yearMatch=code.match(/\.(\d{4})\b/);
+    ws.capex.push({ id:uid(), year: yearMatch?yearMatch[1]:'', category:cellStr(row[ci.cat]), dept:cellStr(row[ci.dept]),
+      requestDate:excelDate(row[ci.date]), investType:cellStr(row[ci.inv]), reason:cellStr(row[ci.reason]),
+      projectCode:code, projectName:name, estValue:num(row[ci.est]), possibility:num(row[ci.p]), impact:num(row[ci.i]),
+      assessment:num(row[ci.a]), riskLevel:cellStr(row[ci.risk]), assetItem:cellStr(row[ci.item]), location:cellStr(row[ci.loc]),
+      qty:num(row[ci.qty]), unitPrice:num(row[ci.up]), amount:num(row[ci.amt]), supplier:cellStr(row[ci.sup]),
+      riskCategory:cellStr(row[ci.riskCat]), areaCategory:cellStr(row[ci.area]), approved:true, status:'Approved' });
+    existing.add(code+'|'+name); added++;
+  }
+  return added;
+}
+
+/* ============ main form upload handler ============ */
+function handleFormFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:false});
+      importWorkbook(wb, file.name);
+    }catch(err){ toast('Could not read file: '+err.message, true); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function importWorkbook(wb, fname){
+  const prGrid=sheetGrid(wb,'PR');
+  if(!prGrid){
+    const added=parseCapexList(wb); parseMenuRefs(wb);
+    if(added){ toast(`No PR sheet — imported ${added} CAPEX lines from ${fname}`); saveWorkspace(); route(); return; }
+    toast('This workbook has no PR sheet and no Capex List — nothing imported.',true); return;
+  }
+  const pr=parsePR(prGrid);
+  const rr=parseRR(sheetGrid(wb,'RR'));
+  const qc=parseQC(sheetGrid(wb,'QC'));
+  const po=parsePOAH(sheetGrid(wb,'PO'),'po');
+  const ah=parsePOAH(sheetGrid(wb,'AH'),'ah');
+  const paSheet=parsePA(sheetGrid(wb,'PA'));
+  parseMenuRefs(wb);
+  const capexAdded=parseCapexList(wb);
+  // find existing project by projectCode+sub
+  const key=(pr.projectCode||fname);
+  let p=ws.projects.find(x=>x.key===key);
+  const isNew=!p;
+  if(!p){ p={id:uid(), key, stages:{}, createdAt:todayStr()}; ws.projects.push(p); }
+  p.fileName=fname;
+  p.pr=pr; if(rr)p.rr=rr; if(qc)p.qc=Object.assign(p.qc||{},qc); if(po)p.po=po; if(ah)p.ah=ah;
+  p.code=pr.projectCode||p.code; p.name=pr.name||p.name; p.dept=pr.deptCode; p.deptName=pr.deptName;
+  // seed stages
+  p.stages.PR=p.stages.PR||{done:true,date:pr.requestDate||todayStr()};
+  if(qc) p.stages.QC=p.stages.QC||{done:true,date:qc.date||todayStr()};
+  if(po) p.stages.PO=p.stages.PO||{done:true,date:po.date||todayStr()};
+  if(ah) p.stages.AH=p.stages.AH||{done:true,date:ah.date||todayStr()};
+  // build PA recommendation
+  buildPA(p, paSheet);
+  if(qc) buildMC(p);
+  if(ah) buildALR(p);
+  saveWorkspace();
+  toast((isNew?'Imported new project ':'Updated project ')+ (p.code||'') + (capexAdded?` (+${capexAdded} CAPEX lines)`:''));
+  state.view='project'; state.projectId=p.id; route();
+}
+
+/* ============ PURPLE BUILDERS ============ */
+function capexMatch(p){
+  if(!p.pr) return null;
+  const code=(p.pr.projectCode||'').trim();
+  if(!code) return null;
+  // exact, or same dept+no different year
+  let m=ws.capex.find(c=>c.projectCode&&code.startsWith(c.projectCode));
+  if(m) return m;
+  const parts=code.split('.'); // FFE.KIT.02.2026
+  if(parts.length>=3){ const pref=parts[0]+'.'+parts[1]+'.'+parts[2]; m=ws.capex.find(c=>c.projectCode&&c.projectCode.startsWith(pref)); }
+  return m||null;
+}
+function buildPA(p, imported){
+  const pr=p.pr, s=ws.settings;
+  const old=p.pa||{};
+  const cx=capexMatch(p);
+  const pa={
+    code: old.code || (imported&&imported.code) || deriveDocCode(p,'PA'),
+    date: old.date|| (imported&&imported.date) || todayStr(),
+    committees: (old.committees&&old.committees.length&&old.committees.some(c=>c.member))?old.committees:DEFAULT_COMMITTEES.map(c=>Object.assign({},c)),
+    budget: pr.budget|| (imported&&imported.budget) ||'Budgeted',
+    comparability: old.comparability||(imported&&imported.comparability)||'Comparable',
+    riskCategory: old.riskCategory||(imported&&imported.riskCategory)||(cx&&cx.riskCategory)||'',
+    budgetedValue: old.budgetedValue!=null?old.budgetedValue:((imported&&imported.budgetedValue)||(cx?cx.estValue:0)),
+    projectValue: old.projectValue!=null&&old.projectValue!==0?old.projectValue:((imported&&imported.projectValue)||pr.estValue||0),
+    exrate: old.exrate||s.exrate,
+    suggestion: old.suggestion||PA_SUGGESTIONS[riskLevel(pr.assessment)]||'',
+    procurementType: old.procurementType||(imported&&imported.procurementType)||pr.procurementType||'Competitive Quotation',
+    marketNote: old.marketNote||'The specifications of the requested items can be found in the market.',
+    results: old.results&&old.results.length?old.results:(pr.items||[]).map(it=>({item:it.item,qty:it.qty,location:it.location,spec:it.tech,condition:'',notes:''})),
+    emergency: old.emergency||false,
+    decision: old.decision||'', decisionNotes: old.decisionNotes||''
+  };
+  p.pa=pa;
+  evaluatePA(p);
+}
+function evaluatePA(p){
+  const s=ws.settings, pa=p.pa, pr=p.pr;
+  const ex=num(pa.exrate)||s.exrate;
+  const diff=num(pa.projectValue)-num(pa.budgetedValue);
+  const diffUsd=diff/ex;
+  const valUsd=num(pa.projectValue)/ex;
+  const overPct=num(pa.budgetedValue)>0? diff/num(pa.budgetedValue) : null;
+  const notes=[]; let ok=true;
+  if((pa.budget||'').toLowerCase()==='budgeted'){
+    if(diff<=0){ notes.push(`Within budget (difference ${fmtVnd(diff)} VND).`); }
+    else {
+      const pctOk= overPct!=null && overPct < s.overrunPctLimit/100;
+      const amtOk= diffUsd < s.usdLimit;
+      if(pctOk||amtOk){ notes.push(`Overrun ${overPct!=null?fmtPct(overPct):'n/a'} / ~$${fmtUsd(diffUsd)} — acceptable (rule: overrun <${s.overrunPctLimit}% OR overrun < $${fmtUsd(s.usdLimit)}).`); }
+      else { ok=false; notes.push(`Overrun ${fmtPct(overPct)} (~$${fmtUsd(diffUsd)}) exceeds both limits (<${s.overrunPctLimit}% or <$${fmtUsd(s.usdLimit)}). Requires BOM/BOD approval or re-scope.`); }
+    }
+  } else {
+    // Unbudgeted
+    const riskOk=num(pr.assessment)>=s.emergencyRisk;
+    const amtOk=valUsd<s.usdLimit;
+    if(pa.emergency&&riskOk&&amtOk){ notes.push(`Unbudgeted but qualifies: emergency ✓, risk ${pr.assessment} ≥ ${s.emergencyRisk} ✓, value ~$${fmtUsd(valUsd)} < $${fmtUsd(s.usdLimit)} ✓.`); }
+    else { ok=false;
+      if(!pa.emergency) notes.push('Unbudgeted and not marked as emergency.');
+      if(!riskOk) notes.push(`Risk score ${pr.assessment} below emergency threshold (≥${s.emergencyRisk}).`);
+      if(!amtOk) notes.push(`Project value ~$${fmtUsd(valUsd)} exceeds $${fmtUsd(s.usdLimit)} limit for unbudgeted items.`);
+    }
+  }
+  if(!pr.reason) { notes.push('⚠ No rationale/current condition provided in PR — request justification.'); }
+  if(!num(pr.assessment)) { notes.push('⚠ Risk assessment missing in PR.'); }
+  pa.autoVerdict = ok?'QUALIFIED':'NOT QUALIFIED';
+  pa.autoNotes = notes;
+  pa.diff=diff; pa.diffUsd=diffUsd; pa.overPct=overPct;
+  return ok;
+}
+function buildMC(p){
+  const s=ws.settings; const old=p.mc||{};
+  const qc=p.qc||{}; const chosen=qc.chosen||'';
+  const chosenVendor=(qc.vendors||[]).find(v=>v.name===chosen)||(qc.vendors||[])[0];
+  const rows=(old.rows&&old.rows.length)?old.rows:(p.pr.items||[]).map(it=>({
+    item:it.item, qty:it.qty, specA:it.tech, priceA:it.unitPrice, refCode:'', specB:'', priceB:0, specC:'', priceC:0 }));
+  p.mc={ code:old.code||deriveDocCode(p,'MC'), date:old.date||todayStr(), vendorA:old.vendorA||chosen, vendorB:old.vendorB||'', vendorC:old.vendorC||'',
+    riskTolerance:old.riskTolerance!=null?old.riskTolerance:s.mcTolerance, pvRate:old.pvRate!=null?old.pvRate:s.pvRate,
+    years:old.years||0, rows, conclusion:old.conclusion||'', estValue: old.estValue|| (chosenVendor?chosenVendor.amount:0) || (qc.estValue||0) };
+}
+function mcEval(p){
+  const mc=p.mc; if(!mc)return;
+  let subA=0,subB=0,subC=0;
+  mc.rows.forEach(r=>{
+    if(num(r.priceBRaw)) r.priceB=fvPrice(r.priceBRaw, mc.pvRate, mc.years);
+    r.amtA=num(r.priceA)*num(r.qty); r.amtB=num(r.priceB)*num(r.qty); r.amtC=num(r.priceC)*num(r.qty);
+    subA+=r.amtA; subB+=r.amtB; subC+=r.amtC;
+    r.dAB=num(r.priceB)?(num(r.priceA)-num(r.priceB))/num(r.priceB):null;
+    r.dAC=num(r.priceC)?(num(r.priceA)-num(r.priceC))/num(r.priceC):null; });
+  mc.subA=subA; mc.subB=subB; mc.subC=subC;
+  mc.dAB=subB?(subA-subB)/subB:null; mc.dAC=subC?(subA-subC)/subC:null;
+  const tol=num(mc.riskTolerance)/100;
+  const worst=Math.max(mc.dAB!=null?mc.dAB:-1, mc.dAC!=null?mc.dAC:-1);
+  if(mc.dAB==null&&mc.dAC==null){ mc.autoConclusion=MC_CONCLUSIONS[2]; mc.autoStatus='nocheck'; }
+  else if(worst<=tol){ mc.autoConclusion=MC_CONCLUSIONS[0]; mc.autoStatus='ok'; }
+  else { mc.autoConclusion=MC_CONCLUSIONS[1]; mc.autoStatus='over'; }
+}
+function fvPrice(pv, ratePct, years){ return num(pv)*Math.pow(1+num(ratePct)/100, num(years)); }
+
+/* ============ ASSET CODE / ALR ============ */
+function guessType(p, item){
+  const dept=(p.dept||'').toUpperCase(); const nm=(item.item||'').toLowerCase();
+  if(/phần mềm|software|hệ điều hành|quyền|license|giấy phép/i.test(nm)) return {group:'C2135',type:'CTP'};
+  if(dept==='KIT'||/bếp|lò |nồi |tủ hấp|steamer|oven|fryer|refrigerat|tủ lạnh|tủ mát|freezer|dough|máy rửa/i.test(nm)) return {group:'C2422',type:'LTU'};
+  return {group:'C2422',type:'LTU'};
+}
+function nextSeq(unit, group, type, year){
+  // Sequence (5th index) continues from the master register: highest serial for the same
+  // [Unit] + [Type] across ALL years and group variants (incl. legacy codes like HKD.C212.OME.0000.00054), then +1.
+  const u=String(unit||'').trim().toUpperCase(), t=String(type||'').trim().toUpperCase();
+  let max=0;
+  const scan=code=>{ if(!code)return; const parts=String(code).trim().toUpperCase().split('.').map(s=>s.trim());
+    if(parts.length<4 || parts[0]!==u) return;
+    if(!parts.slice(1,-1).includes(t)) return; // type can sit in any middle segment
+    const n=parseInt(parts[parts.length-1],10); if(!isNaN(n)&&n>max)max=n; };
+  ws.register.forEach(a=>{ scan(a.assetCode); scan(a.assetCode2); });
+  ws.projects.forEach(pr=>{ (pr.alr&&pr.alr.rows||[]).forEach(r=>{ scan(r.assetCode); (r.codes||[]).forEach(scan); }); });
+  return max+1;
+}
+function makeCode(unit,group,type,year,seq){ return [unit,group,type,year,String(seq).padStart(5,'0')].join('.'); }
+function labelRecommend(row){
+  const s=ws.settings;
+  const g=ASSET_GROUPS.find(x=>x.code===row.group);
+  if(g&&g.intangible) return {label:false, why:'Intangible asset'};
+  if(num(row.unitPrice)>0 && num(row.unitPrice)<s.lowValueVnd) return {label:false, why:`Low value < ${fmtVnd(s.lowValueVnd)} VND`};
+  if(row.remote) return {label:false, why:'Remote/inaccessible location'};
+  return {label:true, why:''};
+}
+function buildALR(p){
+  if(!p.ah||!p.ah.items||!p.ah.items.length){ return; }
+  const old=p.alr||{};
+  const year=(p.ah.date||todayStr()).slice(0,4);
+  const unitDefault=(p.dept||'').toUpperCase()||'SOF';
+  const prItems=p.pr&&p.pr.items||[];
+  const rows=(old.rows&&old.rows.length)?old.rows:p.ah.items.map((it,i)=>{
+    const g=guessType(p,it);
+    const prMatch=prItems.find(x=>x.item===it.item)||prItems[i]||{};
+    return { item:it.item, qty:it.qty||1, unit:unitDefault, group:g.group, type:g.type, year,
+      location:prMatch.location||'', unitPrice:prMatch.unitPrice||0, remote:false, labelOverride:null,
+      spec:[it.brand,it.capacity,it.model,it.origin].filter(Boolean).join(', '),
+      function:it.function||'',capacity:it.capacity||'',brand:it.brand||'',origin:it.origin||'',model:it.model||'',
+      weight:it.weight||'',length:it.length||'',width:it.width||'',heigh_depth:it['heigh_/depth']||it.heigh||'',material:it.material||'',
+      serial:it.serial||'',yearMade:it.year||'',manufacturer:it.manufacturer||'',accessory:it.accessory||'',color:it.color||'',
+      warranty:it.warranty_period||'', assetCode:'' };
+  });
+  p.alr={date:old.date||todayStr(), rows};
+}
+function assignCodes(p){
+  if(!p.alr){ toast('No AH data yet — upload the form with the AH sheet filled.',true); return; }
+  // group rows by unit/group/type/year and assign sequences; one code per physical unit if qty>1? -> per row expand
+  const expanded=[];
+  p.alr.rows.forEach(r=>{
+    const q=Math.max(1,Math.round(num(r.qty)||1));
+    if(!r.assetCode || r.qty!==r._codedQty){
+      let seq=nextSeq(r.unit,r.group,r.type,r.year);
+      const codes=[];
+      for(let i=0;i<q;i++){ codes.push(makeCode(r.unit,r.group,r.type,r.year,seq)); seq++; }
+      r.assetCode=codes[0]; r.codes=codes; r._codedQty=r.qty;
+    }
+  });
+  saveWorkspace(); toast('Asset codes assigned ✓'); route();
+}
+</script>
+<script>
+/* =================== ROUTING / NAV =================== */
+const state={view:'dashboard', projectId:null, capexYear:'', regFilter:''};
+const TABS=[
+  {k:'dashboard',label:'📋 Projects'},
+  {k:'capex',label:'💰 CAPEX Plan'},
+  {k:'register',label:'🏷️ Asset Register'},
+  {k:'refs',label:'📚 References'},
+  {k:'settings',label:'⚙️ Settings & Sync'}
+];
+function route(){
+  const nav=document.getElementById('nav');
+  nav.innerHTML=TABS.map(t=>{
+    let badge='';
+    if(t.k==='dashboard')badge=`<span class="badge">${ws.projects.length}</span>`;
+    if(t.k==='capex')badge=`<span class="badge">${ws.capex.length}</span>`;
+    if(t.k==='register')badge=`<span class="badge">${ws.register.length}</span>`;
+    return `<button class="${state.view===t.k||(state.view==='project'&&t.k==='dashboard')?'active':''}" onclick="go('${t.k}')">${t.label}${badge}</button>`;
+  }).join('');
+  const main=document.getElementById('main');
+  if(state.view==='dashboard') main.innerHTML=renderDashboard();
+  else if(state.view==='project') main.innerHTML=renderProject();
+  else if(state.view==='capex') main.innerHTML=renderCapex();
+  else if(state.view==='register') main.innerHTML=renderRegister();
+  else if(state.view==='refs') main.innerHTML=renderRefs();
+  else if(state.view==='settings') main.innerHTML=renderSettings();
+  bindDrops();
+}
+function go(v){ state.view=v; route(); }
+function openProject(id){ state.view='project'; state.projectId=id; route(); window.scrollTo(0,0); }
+function proj(){ return ws.projects.find(p=>p.id===state.projectId); }
+
+/* =================== DASHBOARD =================== */
+function stageState(p){
+  const done=k=>p.stages&&p.stages[k]&&p.stages[k].done;
+  let current=null;
+  for(const s of STAGE_DEFS){ if(!done(s.k)){ current=s.k; break; } }
+  return {done,current};
+}
+function stageBar(p, interactive){
+  const {done,current}=stageState(p);
+  return `<div class="stages">${STAGE_DEFS.map((s,i)=>{
+    const d=done(s.k); const cur=current===s.k;
+    const dot=`<div class="wrap"><div class="dot ${d?'done':cur?'current':''}" title="${s.label}${d&&p.stages[s.k].date?' — '+p.stages[s.k].date:''}" ${interactive?`onclick="event.stopPropagation();toggleStage('${p.id}','${s.k}')"`:''}>${d?'✓':i+1}</div><div class="lbl">${s.label}</div></div>`;
+    const conn=i<STAGE_DEFS.length-1?`<div class="conn ${d?'done':''}"></div>`:'';
+    return `<div class="stage">${dot}${conn}</div>`;
+  }).join('')}</div>`;
+}
+function toggleStage(pid,k){
+  const p=ws.projects.find(x=>x.id===pid); if(!p)return;
+  p.stages[k]=p.stages[k]||{};
+  p.stages[k].done=!p.stages[k].done;
+  p.stages[k].date=p.stages[k].done?todayStr():'';
+  saveWorkspace(); route();
+}
+function renderDashboard(){
+  const ps=ws.projects.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const open=ps.filter(p=>!(p.stages.DONE&&p.stages.DONE.done));
+  const closed=ps.filter(p=>p.stages.DONE&&p.stages.DONE.done);
+  const kpi=(v,l)=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  const waitingMe=open.filter(p=>{const c=stageState(p).current; return c==='PA'||c==='MC'||c==='AC';}).length;
+  return `
+  <div class="drop" id="dropZone">
+    <b>📥 Drop the FFE Procurement form here</b> (or click to browse)<br>
+    <span class="small">Reads the yellow sheets (PR · RR · QC · PO · AH) and auto-fills your purple sheets (PA · MC · Asset Label). Also picks up Capex List & Menu references.</span>
+    <input type="file" id="formFile" accept=".xlsx,.xlsm" multiple class="hidden">
+  </div>
+  <div style="height:14px"></div>
+  <div class="kpis">
+    ${kpi(open.length,'Open projects')}
+    ${kpi(waitingMe,'Waiting on my assessment')}
+    ${kpi(open.filter(p=>p.pa&&p.pa.autoVerdict==='NOT QUALIFIED').length,'Flagged not qualified')}
+    ${kpi(closed.length,'Completed')}
+  </div>
+  ${ps.length===0?'<div class="card"><p class="muted">No projects yet. Upload a submitted FFE form to begin.</p></div>':''}
+  ${open.map(pcard).join('')}
+  ${closed.length?`<h3 style="margin:18px 0 8px;color:var(--muted)">Completed</h3>${closed.map(pcard).join('')}`:''}`;
+}
+function pcard(p){
+  const pa=p.pa||{};
+  const verdict=pa.autoVerdict==='QUALIFIED'?'<span class="pill ok">PA: Qualified</span>':pa.autoVerdict==='NOT QUALIFIED'?'<span class="pill bad">PA: Not qualified</span>':'';
+  const mcp=p.mc&&p.mc.autoStatus?(p.mc.autoStatus==='ok'?'<span class="pill ok">MC: Price OK</span>':p.mc.autoStatus==='over'?'<span class="pill bad">MC: Over variance</span>':'<span class="pill gray">MC: Not checkable</span>'):'';
+  const risk=p.pr?`<span class="pill ${p.pr.assessment>=16?'bad':p.pr.assessment>=12?'warn':'info'}">Risk ${p.pr.assessment||'?'} · ${riskLevel(p.pr.assessment)}</span>`:'';
+  return `<div class="pcard" onclick="openProject('${p.id}')">
+    <div class="top">
+      <span class="code">${esc(p.code||p.key)}</span>
+      <span class="name">${esc(p.name||'')}</span>
+      <span class="pill purple">${esc(p.dept||'')}</span>
+      <span class="pill yellow">${esc(p.pr&&p.pr.budget||'')}</span>
+      ${risk} ${verdict} ${mcp}
+      <span class="spacer" style="flex:1"></span>
+      <span class="muted">${p.pr?fmtVnd(p.pr.estValue)+' VND':''}</span>
+      <button class="btn btn-r btn-sm" onclick="event.stopPropagation();delProject('${p.id}')">🗑</button>
+    </div>
+    ${stageBar(p,true)}
+  </div>`;
+}
+function delProject(id){ if(!confirm('Delete this project from the tracker?'))return; ws.projects=ws.projects.filter(p=>p.id!==id); saveWorkspace(); route(); }
+
+/* =================== PROJECT DETAIL =================== */
+function sheetBlock(cls, tag, title, id, body, collapsed){
+  return `<div class="sheet ${cls} ${collapsed?'collapsed':''}" id="sh_${id}">
+    <div class="shead" onclick="this.parentElement.classList.toggle('collapsed')"><span class="tag">${tag}</span> ${title} <span class="caret">▼</span></div>
+    <div class="sbody">${body}</div></div>`;
+}
+function fld(label,val,attrs){ return `<div class="field"><label>${label}</label><input ${attrs||''} value="${esc(val==null?'':val)}"></div>`; }
+function fldRO(label,val){ return `<div class="field"><label>${label}</label><input readonly style="background:#f6f6f9" value="${esc(val==null?'':val)}"></div>`; }
+function renderProject(){
+  const p=proj(); if(!p) return '<div class="card">Project not found. <span class="link" onclick="go(\'dashboard\')">Back</span></div>';
+  const pr=p.pr||{};
+  return `
+  <div class="toolbar">
+    <button class="btn btn-gray btn-sm" onclick="go('dashboard')">← Back</button>
+    <h2 style="font-size:17px"><span class="mono" style="color:var(--purple)">${esc(p.code||'')}</span> — ${esc(p.name||'')}</h2>
+    <span class="spacer"></span>
+    <button class="btn btn-o" onclick="printReport('${p.id}')">🖨 Print / PDF report</button>
+    <button class="btn btn-p" onclick="document.getElementById('reupload').click()">⬆ Re-upload form</button>
+    <input type="file" id="reupload" accept=".xlsx,.xlsm" class="hidden" onchange="if(this.files[0])handleFormFile(this.files[0])">
+  </div>
+  <div class="card">${stageBar(p,true)}</div>
+  ${sheetBlock('ydept','DEPT','PR — Purchase Request','pr',renderPRView(p),false)}
+  ${p.rr?sheetBlock('ydept','DEPT','RR — Replacement Request','rr',renderRRView(p),true):''}
+  ${sheetBlock('pmine','MINE','PA — Project Assessment (auto-recommended)','pa',renderPAView(p),false)}
+  ${p.qc?sheetBlock('ydept','DEPT','QC — Scoring Tender / Bid Comparison','qc',renderQCView(p),true):sheetBlock('ydept','DEPT','QC — Scoring Tender (not received yet)','qc','<p class="muted">Upload the form again once the department completes the QC sheet.</p>',true)}
+  ${sheetBlock('pmine','MINE','MC — Market Check / Price Verification','mc',renderMCView(p),!p.qc)}
+  ${p.po?sheetBlock('ydept','DEPT','PO — Purchase Order','po',renderPOView(p),true):''}
+  ${p.ah?sheetBlock('ydept','DEPT','AH — Asset Handover','ah',renderAHView(p),true):sheetBlock('ydept','DEPT','AH — Asset Handover (not received yet)','ah','<p class="muted">Upload the form again once the AH sheet is completed. Asset codes are generated from AH.</p>',true)}
+  ${sheetBlock('pmine','MINE','ALR — Asset Codes & Label Receipt','alr',renderALRView(p),!p.ah)}
+  `;
+}
+function renderPRView(p){
+  const pr=p.pr||{};
+  return `<div class="grid g4">
+    ${fldRO('PR Code',pr.code)}${fldRO('Request date',pr.requestDate)}${fldRO('Department',pr.deptCode+' — '+(pr.deptName||''))}${fldRO('Budget year',pr.budgetYear)}
+    ${fldRO('Category',pr.category)}${fldRO('Budget',pr.budget)}${fldRO('Investment type',pr.investType)}${fldRO('Estimated value (VND)',fmtVnd(pr.estValue))}
+    ${fldRO('Risk P × I = Score',(pr.possibility||'?')+' × '+(pr.impact||'?')+' = '+(pr.assessment||'?')+' ('+riskLevel(pr.assessment)+')')}
+    ${fldRO('Suggestion',pr.suggestion)}${fldRO('Procurement type (PR)',pr.procurementType)}${fldRO('Cost benchmark',pr.costBenchmark+(pr.supplier?' — '+pr.supplier:''))}
+  </div>
+  <h3>Reason / current condition</h3><p class="small" style="background:#fffdf3;border:1px solid #f0e6c0;border-radius:8px;padding:10px">${esc(pr.reason||'—')}</p>
+  <h3>Requested items</h3>
+  <div class="tblwrap"><table class="tbl"><tr><th>#</th><th>Asset item</th><th>Rationale</th><th>Technical standard</th><th>Location</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr>
+  ${(pr.items||[]).map((it,i)=>`<tr><td>${i+1}</td><td>${esc(it.item)}</td><td class="small">${esc(it.rationale)}</td><td class="small">${esc(it.tech)}</td><td>${esc(it.location)}</td><td class="num">${it.qty||''}</td><td class="num">${fmtVnd(it.unitPrice)}</td><td class="num">${fmtVnd(it.amount)}</td></tr>`).join('')}
+  <tr><td colspan="7" style="text-align:right;font-weight:700">Estimated total</td><td class="num" style="font-weight:700">${fmtVnd((pr.items||[]).reduce((s,x)=>s+num(x.amount),0)||pr.estValue)}</td></tr></table></div>`;
+}
+function renderRRView(p){
+  const rr=p.rr;
+  return `<div class="grid g3">${fldRO('RR Code',rr.code)}${fldRO('Replacement level',rr.level)}${fldRO('After replacement',rr.after)}</div>
+  <div class="tblwrap"><table class="tbl"><tr><th>#</th><th>Asset item</th><th>Asset code</th><th>Condition</th><th>Reason</th><th>After</th><th>Qty</th><th>Original value</th></tr>
+  ${rr.items.map((it,i)=>`<tr><td>${i+1}</td><td>${esc(it.item)}</td><td class="mono small">${esc(it.assetCode)}</td><td>${esc(it.condition)}</td><td>${esc(it.reason)}</td><td>${esc(it.after)}</td><td class="num">${it.qty}</td><td class="num">${fmtVnd(it.originalValue)}</td></tr>`).join('')}</table></div>
+  <p class="muted small" style="margin-top:6px">💡 Items marked “Liquidation” should flow to the liquidation list; “Reuse/Spare” stay in the register with updated location/status.</p>`;
+}
+function paSet(field,val){ const p=proj(); p.pa[field]=val; evaluatePA(p); saveWorkspace(); route(); }
+function renderPAView(p){
+  const pa=p.pa||{}; const s=ws.settings; const pr=p.pr||{};
+  evaluatePA(p);
+  const ex=num(pa.exrate)||s.exrate;
+  const v=pa.autoVerdict==='QUALIFIED';
+  const cx=capexMatch(p);
+  return `
+  <div class="grid g4">
+    <div class="field"><label>PA code</label><input value="${esc(pa.code||'')}" onchange="paSet('code',this.value)"></div>
+    <div class="field"><label>PA date</label><input type="date" value="${esc(pa.date)}" onchange="paSet('date',this.value)"></div>
+    <div class="field"><label>Budget</label><select onchange="paSet('budget',this.value)">${['Budgeted','Unbudgeted'].map(o=>`<option ${pa.budget===o?'selected':''}>${o}</option>`).join('')}</select></div>
+    <div class="field"><label>Comparability</label><select onchange="paSet('comparability',this.value)">${['Comparable','Uncomparable'].map(o=>`<option ${pa.comparability===o?'selected':''}>${o}</option>`).join('')}</select></div>
+    <div class="field"><label>Risk category</label><select onchange="paSet('riskCategory',this.value)"><option value=""></option>${RISK_CATEGORIES.map(o=>`<option ${pa.riskCategory===o?'selected':''}>${o}</option>`).join('')}</select></div>
+    <div class="field"><label>Budgeted value (VND) ${cx?'<span class="pill info" title="Matched CAPEX line">CAPEX: '+esc(cx.projectCode)+'</span>':''}</label><input value="${fmtVnd(pa.budgetedValue)}" onchange="paSet('budgetedValue',num(this.value))"></div>
+    <div class="field"><label>Project value (VND)</label><input value="${fmtVnd(pa.projectValue)}" onchange="paSet('projectValue',num(this.value))"></div>
+    <div class="field"><label>Exchange rate</label><input value="${esc(pa.exrate)}" onchange="paSet('exrate',num(this.value))"></div>
+    <div class="field"><label>Procurement type</label><select onchange="paSet('procurementType',this.value)">${PROCUREMENT_TYPES.map(o=>`<option ${pa.procurementType===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  </div>
+  <div class="grid g4" style="margin-top:10px">
+    ${fldRO('Budgeted ~USD','$'+fmtUsd(num(pa.budgetedValue)/ex))}
+    ${fldRO('Project ~USD','$'+fmtUsd(num(pa.projectValue)/ex))}
+    ${fldRO('Difference',fmtVnd(pa.diff)+' VND (~$'+fmtUsd(pa.diffUsd)+')')}
+    ${fldRO('Overrun %',pa.overPct!=null?fmtPct(pa.overPct):'n/a (no budget)')}
+  </div>
+  ${(pa.budget==='Unbudgeted')?`<div class="checkline" style="margin-top:8px"><input type="checkbox" id="emg" ${pa.emergency?'checked':''} onchange="paSet('emergency',this.checked)"><label for="emg" style="text-transform:none;font-size:13px;margin:0">Emergency case (required for unbudgeted items)</label></div>`:''}
+  <div class="verdict ${v?'ok':'bad'}">
+    <b>${v?'✅ QUALIFIED to proceed to Call for Quotation':'⛔ NOT QUALIFIED under current rules'}</b>
+    <ul>${(pa.autoNotes||[]).map(n=>`<li>${esc(n)}</li>`).join('')}</ul>
+    <div style="margin-top:8px" class="grid g2">
+      <div class="field"><label>My decision (override / confirm)</label><select onchange="paSet('decision',this.value)">${['','Proceed to quotation','Return for clarification','Reject','Escalate to BOM/BOD'].map(o=>`<option ${pa.decision===o?'selected':''}>${o||'—'}</option>`).join('')}</select></div>
+      <div class="field"><label>Decision notes</label><input value="${esc(pa.decisionNotes)}" onchange="paSet('decisionNotes',this.value)"></div>
+    </div>
+  </div>
+  <div class="grid g2">
+    <div class="field"><label>Suggestion (per risk matrix: ${riskLevel(pr.assessment)})</label><input value="${esc(pa.suggestion)}" onchange="paSet('suggestion',this.value)"></div>
+    <div class="field"><label>Market note</label><input value="${esc(pa.marketNote)}" onchange="paSet('marketNote',this.value)"></div>
+  </div>
+  <h3>Assessment committees</h3>
+  <div class="tblwrap"><table class="tbl"><tr><th style="width:30px">#</th><th>Member</th><th>Title</th><th>Representative</th><th style="width:36px"></th></tr>
+  ${(pa.committees||[]).map((c,i)=>`<tr><td>${i+1}</td>
+    <td><input value="${esc(c.member)}" onchange="proj().pa.committees[${i}].member=this.value;saveWorkspace()"></td>
+    <td><input value="${esc(c.title)}" onchange="proj().pa.committees[${i}].title=this.value;saveWorkspace()"></td>
+    <td><input value="${esc(c.rep)}" onchange="proj().pa.committees[${i}].rep=this.value;saveWorkspace()"></td>
+    <td><button class="btn btn-r btn-sm" onclick="proj().pa.committees.splice(${i},1);saveWorkspace();route()">🗑</button></td></tr>`).join('')}
+  </table></div>
+  <button class="btn btn-gray btn-sm" style="margin-top:6px" onclick="proj().pa.committees.push({member:'',title:'',rep:'Joint Venture Company Office'});saveWorkspace();route()">＋ Add member</button>
+  <h3>Assessment results (items)</h3>
+  <div class="tblwrap"><table class="tbl"><tr><th>#</th><th>Asset item</th><th>Qty</th><th>Location</th><th>Specifications</th><th>Current condition</th><th>Notes</th></tr>
+  ${(pa.results||[]).map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.item)}</td><td class="num">${r.qty||''}</td>
+    <td><input value="${esc(r.location)}" onchange="proj().pa.results[${i}].location=this.value;saveWorkspace()"></td>
+    <td class="small">${esc(r.spec)}</td>
+    <td><select onchange="proj().pa.results[${i}].condition=this.value;saveWorkspace()">${['','Like new','Poor','Damaged','New request'].map(o=>`<option ${r.condition===o?'selected':''}>${o}</option>`).join('')}</select></td>
+    <td><input value="${esc(r.notes)}" onchange="proj().pa.results[${i}].notes=this.value;saveWorkspace()"></td></tr>`).join('')}
+  </table></div>
+  <div class="toolbar" style="margin-top:10px">
+    <button class="btn btn-o btn-sm" onclick="printPAForm('${p.id}')">🖨 Print PA (form format)</button>
+    <button class="btn btn-g btn-sm" onclick="toggleStage('${p.id}','PA')">${p.stages.PA&&p.stages.PA.done?'↺ Reopen PA stage':'✔ Mark PA complete'}</button>
+  </div>`;
+}
+function renderQCView(p){
+  const qc=p.qc;
+  return `<div class="grid g4">${fldRO('QC code',qc.code)}${fldRO('Date',qc.date)}${fldRO('Budget (VND)',fmtVnd(qc.budget))}${fldRO('Estimated project value',fmtVnd(qc.estValue))}</div>
+  <div class="tblwrap"><table class="tbl"><tr><th>Vendor</th><th>Ability & Experience (10%)</th><th>Techniques (60%)</th><th>Finance (30%)</th><th>Total score</th><th>Quoted amount</th></tr>
+  ${(qc.vendors||[]).map(v=>`<tr ${v.name===qc.chosen?'style="background:var(--green-light)"':''}><td>${esc(v.name)} ${v.name===qc.chosen?'<span class="pill ok">Chosen</span>':''}</td><td class="num">${v.ability!=null?v.ability.toFixed(1):''}</td><td class="num">${v.tech!=null?v.tech.toFixed(1):''}</td><td class="num">${v.finance!=null?v.finance.toFixed(1):''}</td><td class="num" style="font-weight:700">${v.total!=null?v.total.toFixed(1):''}</td><td class="num">${fmtVnd(v.amount)}</td></tr>`).join('')}
+  </table></div>`;
+}
+function mcSet(field,val){ const p=proj(); p.mc[field]=val; mcEval(p); saveWorkspace(); route(); }
+function mcRow(i,field,val){ const p=proj(); p.mc.rows[i][field]=val; mcEval(p); saveWorkspace(); route(); }
+function renderMCView(p){
+  if(!p.mc) buildMC(p);
+  const mc=p.mc; mcEval(p);
+  const stPill= mc.autoStatus==='ok'?'<span class="pill ok">Within tolerance</span>': mc.autoStatus==='over'?'<span class="pill bad">Exceeds tolerance</span>':'<span class="pill gray">No comparison data</span>';
+  return `
+  <div class="grid g4">
+    <div class="field"><label>MC code</label><input value="${esc(mc.code||'')}" onchange="mcSet('code',this.value)"></div>
+    <div class="field"><label>MC date</label><input type="date" value="${esc(mc.date)}" onchange="mcSet('date',this.value)"></div>
+    <div class="field"><label>Risk tolerance %</label><input value="${esc(mc.riskTolerance)}" onchange="mcSet('riskTolerance',num(this.value))"></div>
+    <div class="field"><label>Vendor A (chosen)</label><input value="${esc(mc.vendorA)}" onchange="mcSet('vendorA',this.value)"></div>
+    <div class="field"><label>Est. project value</label><input value="${fmtVnd(mc.estValue)}" onchange="mcSet('estValue',num(this.value))"></div>
+    <div class="field"><label>Vendor B (previous/historical)</label><input value="${esc(mc.vendorB)}" onchange="mcSet('vendorB',this.value)"></div>
+    <div class="field"><label>Vendor C (market ref)</label><input value="${esc(mc.vendorC)}" onchange="mcSet('vendorC',this.value)"></div>
+    <div class="field"><label>Time-value rate %/yr</label><input value="${esc(mc.pvRate)}" onchange="mcSet('pvRate',num(this.value))"></div>
+    <div class="field"><label>Years since historical purchase</label><input value="${esc(mc.years)}" onchange="mcSet('years',num(this.value))"></div>
+  </div>
+  <p class="muted small" style="margin:8px 0">💡 For historical prices: enter the old price in “Price B (raw)” and years — the future-value price B = PV×(1+rate)^years is used for comparison. Use the register lookup 🔍 to pull a historical asset price by name.</p>
+  <div class="tblwrap"><table class="tbl">
+    <tr><th>#</th><th>Asset item</th><th>Qty</th><th>Spec A</th><th>Price A (chosen)</th><th>Ref asset code</th><th>Price B raw (historical)</th><th>Price B adjusted</th><th>Price C (market)</th><th>Δ(A−B)/B</th><th>Δ(A−C)/C</th><th></th></tr>
+    ${mc.rows.map((r,i)=>{ const adjB=num(r.priceB); const dAB=r.dAB, dAC=r.dAC;
+      const cls=x=>x==null?'':(x>num(mc.riskTolerance)/100?'style="color:var(--red);font-weight:700"':'style="color:var(--green)"');
+      return `<tr><td>${i+1}</td><td>${esc(r.item)}</td><td class="num">${r.qty}</td>
+      <td class="small">${esc(r.specA||'')}</td>
+      <td><input class="num" value="${fmtVnd(r.priceA)}" onchange="mcRow(${i},'priceA',num(this.value))"></td>
+      <td><input value="${esc(r.refCode||'')}" onchange="mcRow(${i},'refCode',this.value)"></td>
+      <td><input class="num" value="${fmtVnd(r.priceBRaw||'')}" onchange="mcRow(${i},'priceBRaw',num(this.value))"></td>
+      <td class="num">${adjB?fmtVnd(adjB):''}</td>
+      <td><input class="num" value="${fmtVnd(r.priceC||'')}" onchange="mcRow(${i},'priceC',num(this.value))"></td>
+      <td class="num" ${cls(dAB)}>${dAB!=null?fmtPct(dAB):''}</td>
+      <td class="num" ${cls(dAC)}>${dAC!=null?fmtPct(dAC):''}</td>
+      <td><button class="btn btn-gray btn-sm" title="Search register for historical price" onclick="regLookup(${i})">🔍</button></td></tr>`; }).join('')}
+  </table></div>
+  <div class="verdict ${mc.autoStatus==='ok'?'ok':mc.autoStatus==='over'?'bad':'warn'}" style="margin-top:10px">
+    <b>Auto conclusion ${stPill}</b><br><span class="small">${esc(mc.autoConclusion||'')}</span>
+    <div class="field" style="margin-top:8px"><label>Final conclusion (editable)</label>
+      <select onchange="mcSet('conclusion',this.value)"><option value=""></option>${MC_CONCLUSIONS.map(o=>`<option ${mc.conclusion===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  </div>
+  <div class="toolbar" style="margin-top:8px">
+    <button class="btn btn-o btn-sm" onclick="printMCForm('${p.id}')">🖨 Print MC (form format)</button>
+    <button class="btn btn-g btn-sm" onclick="toggleStage('${p.id}','MC')">${p.stages.MC&&p.stages.MC.done?'↺ Reopen MC stage':'✔ Mark MC complete'}</button>
+  </div>`;
+}
+function regLookup(rowIdx){
+  const p=proj(); const item=p.mc.rows[rowIdx].item;
+  const q=(item||'').split('/')[0].trim().toLowerCase();
+  const hits=ws.register.filter(a=>(a.name||'').toLowerCase().includes(q)||(a.item||'').toLowerCase().includes(q)).slice(0,15);
+  if(!hits.length){ toast('No historical asset matching "'+q+'" in the register. Import your master file in Asset Register tab first.',true); return; }
+  const body=`<h2>Historical prices — “${esc(item)}”</h2>
+  <table class="tbl" style="margin-top:10px"><tr><th>Asset code</th><th>Name</th><th>Unit price</th><th>Purchase date</th><th></th></tr>
+  ${hits.map((h,i)=>`<tr><td class="mono small">${esc(h.assetCode)}</td><td>${esc(h.name||h.item)}</td><td class="num">${fmtVnd(h.unitPrice)}</td><td>${esc(h.purchaseDate||'')}</td>
+  <td><button class="btn btn-p btn-sm" onclick="pickHist(${rowIdx},'${esc(h.assetCode)}',${num(h.unitPrice)},'${esc(h.purchaseDate||'')}')">Use</button></td></tr>`).join('')}</table>`;
+  showModal(body);
+}
+function pickHist(rowIdx,code,price,pdate){
+  const p=proj(); const r=p.mc.rows[rowIdx];
+  r.refCode=code; r.priceBRaw=price;
+  if(pdate){ const y=new Date().getFullYear()-parseInt(pdate.slice(0,4),10); if(y>0)p.mc.years=y; }
+  closeModal(); mcEval(p); saveWorkspace(); route();
+}
+function renderPOView(p){
+  const po=p.po;
+  return `<div class="grid g3">${fldRO('PO code',po.code)}${fldRO('Order date',po.date)}${fldRO('Supplier',po.supplier)}</div>
+  ${specTable(po.items)}`;
+}
+function renderAHView(p){
+  const ah=p.ah;
+  return `<div class="grid g4">${fldRO('AH code',ah.code)}${fldRO('Handover date',ah.date)}${fldRO('Supplier',ah.supplier)}${fldRO('Completion evaluation',ah.evaluation)}</div>
+  ${specTable(ah.items)}`;
+}
+function specTable(items){
+  const cols=['function','capacity','brand','origin','model','material','serial','color','warranty_period'];
+  return `<div class="tblwrap"><table class="tbl"><tr><th>#</th><th>Asset item</th>${cols.map(c=>`<th>${c.replace('_',' ')}</th>`).join('')}<th>Qty</th><th>Unit</th></tr>
+  ${(items||[]).map((it,i)=>`<tr><td>${i+1}</td><td>${esc(it.item)}</td>${cols.map(c=>`<td class="small">${esc(it[c]||'')}</td>`).join('')}<td class="num">${it.qty||''}</td><td>${esc(it.unit||'')}</td></tr>`).join('')}</table></div>`;
+}
+</script>
+<script>
+/* =================== ALR VIEW =================== */
+function alrSet(i,field,val){ const p=proj(); p.alr.rows[i][field]=val; if(['unit','group','type','year','qty'].includes(field)){ p.alr.rows[i].assetCode=''; p.alr.rows[i].codes=null; } saveWorkspace(); route(); }
+function alrCode(i,val){ const p=proj(); const r=p.alr.rows[i]; r.assetCode=val.trim().toUpperCase(); r.codes=null; r._codedQty=r.qty; saveWorkspace(); route(); }
+function renderALRView(p){
+  if(!p.alr&&p.ah) buildALR(p);
+  if(!p.alr) return '<p class="muted">Asset codes are generated from the AH (Asset Handover) sheet. Upload the completed form first.</p>';
+  const rows=p.alr.rows;
+  const typeOpts=g=>{ const grp=ASSET_GROUPS.find(x=>x.code===g); return (grp?grp.types:Object.keys(ASSET_TYPES)); };
+  return `
+  <p class="muted small">Code rule: <b class="mono">[Unit].[Group].[Type].[Year].[00001]</b> — the 5-digit sequence continues from the highest number in the master register for the same <b>Unit + Type</b> (across all years, legacy formats included). Import your master file in the Asset Register tab before generating. Labels are skipped for intangibles, unit price &lt; ${fmtVnd(ws.settings.lowValueVnd)} VND, or remote/unreachable locations.</p>
+  <div class="tblwrap"><table class="tbl">
+  <tr><th>#</th><th>Asset item</th><th>Qty</th><th>Unit code</th><th>Group</th><th>Type</th><th>Year</th><th>Location</th><th>Unit price</th><th>Remote?</th><th>Label</th><th>Asset code(s)</th></tr>
+  ${rows.map((r,i)=>{ const rec=labelRecommend(r); const lbl=r.labelOverride!=null?r.labelOverride:rec.label;
+    return `<tr><td>${i+1}</td><td>${esc(r.item)}</td>
+    <td><input class="num" style="width:52px" value="${r.qty}" onchange="alrSet(${i},'qty',num(this.value))"></td>
+    <td><select onchange="alrSet(${i},'unit',this.value)">${UNITS.map(u=>`<option ${r.unit===u.code?'selected':''}>${u.code}</option>`).join('')}</select></td>
+    <td><select onchange="alrSet(${i},'group',this.value)">${ASSET_GROUPS.map(g=>`<option value="${g.code}" ${r.group===g.code?'selected':''}>${g.code}</option>`).join('')}</select></td>
+    <td><select onchange="alrSet(${i},'type',this.value)">${typeOpts(r.group).map(t=>`<option ${r.type===t?'selected':''}>${t}</option>`).join('')}</select></td>
+    <td><input style="width:62px" value="${esc(r.year)}" onchange="alrSet(${i},'year',this.value)"></td>
+    <td><input style="min-width:90px" list="locList" value="${esc(r.location)}" onchange="alrSet(${i},'location',this.value)"></td>
+    <td><input class="num" value="${fmtVnd(r.unitPrice)}" onchange="alrSet(${i},'unitPrice',num(this.value))"></td>
+    <td style="text-align:center"><input type="checkbox" ${r.remote?'checked':''} onchange="alrSet(${i},'remote',this.checked)"></td>
+    <td style="text-align:center"><span class="pill ${lbl?'ok':'gray'}" title="${esc(rec.why)}" style="cursor:pointer" onclick="alrSet(${i},'labelOverride',${lbl?'false':'true'})">${lbl?'🏷 Yes':'No'}</span>${rec.why?`<div class="muted" style="font-size:10px">${esc(rec.why)}</div>`:''}</td>
+    <td class="mono small" style="min-width:210px">${r.codes&&r.codes.length>1?r.codes.join('<br>')+`<div><input class="mono" style="width:100%" value="${esc(r.assetCode||'')}" onchange="alrCode(${i},this.value)"></div>`:`<input class="mono" style="width:100%" placeholder="${esc(makeCode(r.unit,r.group,r.type,r.year,nextSeq(r.unit,r.group,r.type,r.year)))}" value="${esc(r.assetCode||'')}" onchange="alrCode(${i},this.value)"><div class="muted" style="font-size:10px">next: ${esc(makeCode(r.unit,r.group,r.type,r.year,nextSeq(r.unit,r.group,r.type,r.year)))}</div>`}</td></tr>`; }).join('')}
+  </table></div>
+  <datalist id="locList">${ws.refs.locations.slice(0,900).map(l=>`<option value="${esc(l.code)}">${esc(l.name)}</option>`).join('')}</datalist>
+  <div class="toolbar" style="margin-top:12px">
+    <button class="btn btn-p" onclick="assignCodes(proj())">⚡ Generate asset codes</button>
+    <button class="btn btn-g" onclick="compileToRegister('${p.id}')">📥 Append to Asset Register (master)</button>
+    <button class="btn btn-o" onclick="exportBatch('${p.id}')">⬇ Export this batch only (.xlsx)</button>
+    <span class="spacer"></span>
+    <button class="btn btn-g btn-sm" onclick="toggleStage('${p.id}','AC')">${p.stages.AC&&p.stages.AC.done?'↺ Reopen codes stage':'✔ Mark codes complete'}</button>
+    <button class="btn btn-g btn-sm" onclick="toggleStage('${p.id}','DONE')">${p.stages.DONE&&p.stages.DONE.done?'↺ Reopen project':'🏁 Close project'}</button>
+  </div>`;
+}
+function alrToAssets(p){
+  const out=[];
+  (p.alr.rows||[]).forEach(r=>{
+    const rec=labelRecommend(r); const lbl=r.labelOverride!=null?r.labelOverride:rec.label;
+    const codes=r.codes&&r.codes.length?r.codes:(r.assetCode?[r.assetCode]:[]);
+    codes.forEach(code=>{
+      out.push({ assetCode:code, name:r.item, catCode:r.type, dept:p.dept, projectCode:p.code, subProjectCode:p.pr&&p.pr.projectCode||'',
+        projectName:p.name, location:r.location, unitPrice:num(r.unitPrice), qty:1, unitMeasure:'pcs',
+        handoverDate:p.ah&&p.ah.date||'', purchaseDate:p.ah&&p.ah.date||'', supplier:p.ah&&p.ah.supplier||'',
+        function:r.function||'',capacity:r.capacity||'',brand:r.brand||'',origin:r.origin||'',model:r.model||'',
+        weight:r.weight||'',length:r.length||'',width:r.width||'',heigh_depth:r.heigh_depth||'',material:r.material||'',
+        serial:r.serial||'',yearMade:r.yearMade||'',manufacturer:r.manufacturer||'',accessory:r.accessory||'',color:r.color||'',
+        warranty:r.warranty||'', label:lbl, labelWhy:rec.why });
+    });
+  });
+  return out;
+}
+function compileToRegister(pid){
+  const p=ws.projects.find(x=>x.id===pid);
+  if(!p.alr.rows.some(r=>r.assetCode)){ toast('Generate asset codes first.',true); return; }
+  const assets=alrToAssets(p);
+  const existing=new Set(ws.register.map(a=>a.assetCode));
+  let added=0;
+  assets.forEach(a=>{ if(!existing.has(a.assetCode)){ ws.register.push(a); existing.add(a.assetCode); added++; } });
+  saveWorkspace(); toast(`Appended ${added} asset(s) to the register (${assets.length-added} already existed).`); route();
+}
+
+/* =================== ASSET DATA EXPORT FORMATS =================== */
+const ASSET_DATA_HEADERS=['Department Code','Handover Date','Project Code','Sub-Project Code','Project Name','Asset Code','Asset Item','Location','Unit Price','Quantity','Function','Capacity','Brand','Origin','Model','Weight','Length','Width','Heigh/Depth','Material','Radius','Fuel','Serial','Shape','Area','Perimeter','Year','Manufacturer','Accessory','Color','Warranty Period','Label'];
+function assetToRow(a){
+  return [a.dept||'',a.handoverDate||'',a.projectCode||'',a.subProjectCode||'',a.projectName||'',a.assetCode||'',a.name||'',a.location||'',num(a.unitPrice),a.qty||1,a.function||'',a.capacity||'',a.brand||'',a.origin||'',a.model||'',a.weight||'',a.length||'',a.width||'',a.heigh_depth||'',a.material||'','','',a.serial||'','','','',a.yearMade||'',a.manufacturer||'',a.accessory||'',a.color||'',a.warranty||'', a.label?'TRUE':'FALSE'];
+}
+const BEETRACK_HEADERS=['STT (*)','Asset ID','Mã Sản Phẩm','Mã Danh Mục (*)','Tên (*)','Tên Khác','Mô Tả','Mã Tài Sản','Mã Tài Sản Cha','Mã Dự Án','Mã Vạch','Biển Số Xe','Số Lượng Ban Đầu','Số Lượng','Đơn Vị Tính','Số Seri','Mã Vị Trí (*)','Mã Phòng','Mã Phòng Ban','Mã Phòng Ban Quản Lý','Mã Công Ty Thành Viên (*)','Mã Người Dùng','Mã Thiết Bị','Mã Xuất Xứ','Mã Nhà Cung Cấp','Mã Nhà Sản Xuất','Số Hóa Đơn','Giá Ngoại Tệ','Ngoại Tệ','Tỉ Giá','Đơn Giá','Giá Thanh Lý','Hoá Đơn Thanh Lý','Có Tính Khấu Hao','Thời Gian Khấu Hao','Giá Trị Còn Lại','Năm Sản Xuất','Ngày Mua','Ngày Sử Dụng','Ngày Tính Khấu Hao'];
+function assetToBeetrack(a,i){
+  return [i+1,'','',a.catCode||'LTU',a.name||'',(a.model||a.brand)?[a.brand,a.model].filter(Boolean).join(' '):'','',a.assetCode||'','',a.projectCode||'','','',1,1,a.unitMeasure||'pcs',a.serial||'',a.location||'','',a.dept||'','','SOF','','','',a.supplier||'','','','', 'VND','',num(a.unitPrice),'','','','','',a.yearMade||'',a.purchaseDate||'',a.handoverDate||'',''];
+}
+function exportBatch(pid){
+  const p=ws.projects.find(x=>x.id===pid);
+  const assets=alrToAssets(p);
+  if(!assets.length){ toast('Generate asset codes first.',true); return; }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([ASSET_DATA_HEADERS].concat(assets.map(assetToRow))),'Asset Data');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([BEETRACK_HEADERS].concat(assets.map(assetToBeetrack))),'Beetrack Import');
+  XLSX.writeFile(wb, `Assets_${(p.code||'batch').replace(/[^\w.]/g,'_')}_${todayStr()}.xlsx`);
+}
+function exportRegister(){
+  if(!ws.register.length){ toast('Register is empty.',true); return; }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([ASSET_DATA_HEADERS].concat(ws.register.map(assetToRow))),'Asset Data');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([BEETRACK_HEADERS].concat(ws.register.map(assetToBeetrack))),'Beetrack Import');
+  XLSX.writeFile(wb, `Asset_Master_${todayStr()}.xlsx`);
+}
+function importMasterFile(input){
+  const file=input.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      let added=0;
+      const existing=new Set(ws.register.map(a=>a.assetCode));
+      wb.SheetNames.forEach(sn=>{
+        const grid=sheetGrid(wb,sn); if(!grid||grid.length<2)return;
+        const hdr=grid[0].map(v=>v==null?'':String(v).trim());
+        const find=names=>{ for(const n of names){ const i=hdr.findIndex(h=>h.toLowerCase()===n.toLowerCase()||h.toLowerCase().startsWith(n.toLowerCase())); if(i>=0)return i; } return -1; };
+        const cCode=find(['Mã Tài Sản','Asset Code']); if(cCode<0)return;
+        const cName=find(['Tên (*)','Asset Item','Tên']), cCat=find(['Mã Danh Mục','Category']), cLoc=find(['Mã Vị Trí','Location']),
+          cPrice=find(['Đơn Giá','Unit Price','Giá Đơn Vị']), cDate=find(['Ngày Mua','Purchase','Handover Date']),
+          cDept=find(['Mã Phòng Ban','Department Code']), cDesc=find(['Tên Khác','Mô Tả']), cProj=find(['Mã Dự Án','Project Code']);
+        for(let r=1;r<grid.length;r++){ const row=grid[r]; if(!row)continue;
+          const code=cellStr(row[cCode]); if(!code||existing.has(code))continue;
+          // legacy secondary code sometimes sits in another column (e.g. FBD.T.000.1999.001395) — keep it for sequence continuity
+          let code2=''; for(let c=0;c<row.length;c++){ const v=cellStr(row[c]); if(v&&v!==code&&/^[A-Z]{2,4}(\.[\w-]{1,6}){3}\.\d{4,6}$/.test(v)){ code2=v; break; } }
+          ws.register.push({ assetCode:code, assetCode2:code2, name:cellStr(cName>=0?row[cName]:''), desc:cellStr(cDesc>=0?row[cDesc]:''), catCode:cellStr(cCat>=0?row[cCat]:''),
+            location:cellStr(cLoc>=0?row[cLoc]:''), unitPrice:num(cPrice>=0?row[cPrice]:0), purchaseDate:excelDate(cDate>=0?row[cDate]:''),
+            dept:cellStr(cDept>=0?row[cDept]:''), projectCode:cellStr(cProj>=0?row[cProj]:''), imported:true });
+          existing.add(code); added++;
+        }
+      });
+      saveWorkspace(); toast(`Imported ${added} assets into the register (sequence counters now continue from these).`); route();
+    }catch(err){ toast('Import failed: '+err.message,true); }
+  };
+  reader.readAsArrayBuffer(file);
+  input.value='';
+}
+function renderRegister(){
+  const q=(state.regFilter||'').toLowerCase();
+  const rows=ws.register.filter(a=>!q||JSON.stringify(a).toLowerCase().includes(q));
+  return `<div class="card">
+    <h2>🏷️ Asset Register (master)</h2>
+    <p class="muted small">Import your existing master file so new asset codes continue the numbering; new handovers can be appended here, then export the full master — or export each batch separately from the project page.</p>
+    <div class="toolbar">
+      <button class="btn btn-o" onclick="document.getElementById('masterFile').click()">⬆ Import master file (.xlsx)</button>
+      <input type="file" id="masterFile" accept=".xlsx,.xlsm" class="hidden" onchange="importMasterFile(this)">
+      <button class="btn btn-p" onclick="exportRegister()">⬇ Export full master (.xlsx)</button>
+      <button class="btn btn-r btn-sm" onclick="if(confirm('Clear ALL assets from the in-app register? (Does not touch your Excel files)')){ws.register=[];saveWorkspace();route();}">Clear register</button>
+      <span class="spacer"></span>
+      <input id="regSearch" placeholder="🔍 Search..." value="${esc(state.regFilter)}" oninput="state.regFilter=this.value;debounceRoute('regSearch')">
+      <span class="muted">${rows.length} / ${ws.register.length}</span>
+    </div>
+    <div class="tblwrap"><table class="tbl"><tr><th>Asset code</th><th>Name</th><th>Cat</th><th>Location</th><th>Dept</th><th>Unit price</th><th>Purchase date</th><th>Project</th><th>Label</th></tr>
+    ${rows.slice(0,400).map(a=>`<tr><td class="mono small">${esc(a.assetCode)}</td><td>${esc(a.name||'')}<div class="muted" style="font-size:10.5px">${esc(a.desc||'')}</div></td><td>${esc(a.catCode||'')}</td><td>${esc(a.location||'')}</td><td>${esc(a.dept||'')}</td><td class="num">${fmtVnd(a.unitPrice)}</td><td>${esc(a.purchaseDate||a.handoverDate||'')}</td><td class="small">${esc(a.projectCode||'')}</td><td>${a.label===false?'No':a.label===true?'🏷':''}</td></tr>`).join('')}
+    </table>${rows.length>400?'<p class="muted small">Showing first 400 — refine your search.</p>':''}</div>
+  </div>`;
+}
+let _rt=null;
+function debounceRoute(focusId){
+  clearTimeout(_rt);
+  _rt=setTimeout(()=>{ route();
+    if(focusId){ const el=document.getElementById(focusId); if(el){ el.focus(); const n=el.value.length; try{el.setSelectionRange(n,n);}catch(e){} } }
+  },350);
+}
+
+/* =================== CAPEX TAB =================== */
+function renderCapex(){
+  const years=[...new Set(ws.capex.map(c=>c.year).filter(Boolean))].sort().reverse();
+  const y=state.capexYear||years[0]||'';
+  const rows=ws.capex.filter(c=>!y||c.year===y);
+  const total=rows.reduce((s,c)=>s+num(c.estValue||c.amount),0);
+  return `<div class="card">
+    <h2>💰 Approved CAPEX — annual plan</h2>
+    <div class="toolbar">
+      <select onchange="state.capexYear=this.value;route()"><option value="">All years</option>${years.map(yy=>`<option ${yy===y?'selected':''}>${yy}</option>`).join('')}</select>
+      <button class="btn btn-o" onclick="document.getElementById('capexFile').click()">⬆ Import Capex List (.xlsx)</button>
+      <input type="file" id="capexFile" accept=".xlsx,.xlsm" class="hidden" onchange="if(this.files[0]){const f=this.files[0];const rd=new FileReader();rd.onload=e=>{const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});const n=parseCapexList(wb);saveWorkspace();toast('Imported '+n+' CAPEX lines');route();};rd.readAsArrayBuffer(f);this.value='';}">
+      <button class="btn btn-gray btn-sm" onclick="exportCapex()">⬇ Export (.xlsx)</button>
+      <span class="spacer"></span>
+      <span class="pill purple">Total: ${fmtVnd(total)} VND</span>
+      <span class="pill info">${rows.length} lines</span>
+    </div>
+    <div class="tblwrap"><table class="tbl"><tr><th>Project code</th><th>Project name</th><th>Dept</th><th>Type</th><th>Risk</th><th>Est. value</th><th>Asset item</th><th>Status</th><th>Linked project</th><th></th></tr>
+    ${rows.map((c,i)=>{ const linked=ws.projects.find(p=>p.code&&c.projectCode&&p.code.startsWith(c.projectCode));
+      return `<tr><td class="mono small">${esc(c.projectCode)}</td><td>${esc(c.projectName)}</td><td>${esc(c.dept)}</td><td>${esc(c.investType)}</td>
+      <td><span class="pill ${c.assessment>=16?'bad':c.assessment>=12?'warn':'info'}">${c.assessment||''} ${esc(c.riskLevel||'')}</span></td>
+      <td class="num">${fmtVnd(c.estValue||c.amount)}</td><td class="small">${esc(c.assetItem||'')}</td>
+      <td><select onchange="ws.capex.find(x=>x.id==='${c.id}').status=this.value;saveWorkspace()">${['Approved','In progress','Completed','Deferred','Cancelled'].map(o=>`<option ${c.status===o?'selected':''}>${o}</option>`).join('')}</select></td>
+      <td>${linked?`<span class="link" onclick="openProject('${linked.id}')">${esc(linked.code)}</span>`:'<span class="muted">—</span>'}</td>
+      <td><button class="btn btn-r btn-sm" onclick="ws.capex=ws.capex.filter(x=>x.id!=='${c.id}');saveWorkspace();route()">🗑</button></td></tr>`;}).join('')}
+    </table></div>
+    ${!ws.capex.length?'<p class="muted" style="margin-top:8px">Import the “Capex List” sheet from any FFE form or a standalone capex workbook — it is detected automatically when you upload forms too.</p>':''}
+  </div>`;
+}
+function exportCapex(){
+  const rows=ws.capex;
+  const hdr=['Year','Category','Department Code','Request Date','Investment Type','Project Code','Project Name','Estimated Value','Posibility','Impact','Assessment','Risk Level','Asset Item','Location','Quantity','Unit price','Amount','Supplier','Risk Category','Area Category','Status'];
+  const data=rows.map(c=>[c.year,c.category,c.dept,c.requestDate,c.investType,c.projectCode,c.projectName,num(c.estValue),c.possibility,c.impact,c.assessment,c.riskLevel,c.assetItem,c.location,c.qty,c.unitPrice,c.amount,c.supplier,c.riskCategory,c.areaCategory,c.status]);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([hdr].concat(data)),'Capex List');
+  XLSX.writeFile(wb,`Capex_List_${todayStr()}.xlsx`);
+}
+
+/* =================== REFS TAB =================== */
+function renderRefs(){
+  return `<div class="grid g2">
+  <div class="card"><h2>🏢 Management units (asset code prefix)</h2>
+    <table class="tbl"><tr><th>Code</th><th>EN</th><th>VN</th></tr>${UNITS.map(u=>`<tr><td class="mono">${u.code}</td><td>${u.en}</td><td>${u.vn}</td></tr>`).join('')}</table></div>
+  <div class="card"><h2>📦 Asset groups & types</h2>
+    <table class="tbl"><tr><th>Group</th><th>Name</th><th>Types</th></tr>${ASSET_GROUPS.map(g=>`<tr><td class="mono">${g.code}${g.intangible?' <span class="pill gray">intangible</span>':''}</td><td>${g.en}</td><td class="small">${g.types.map(t=>`<b>${t}</b> ${ASSET_TYPES[t]||''}`).join(' · ')}</td></tr>`).join('')}</table></div>
+  <div class="card"><h2>📍 Locations (${ws.refs.locations.length})</h2>
+    <p class="muted small">Auto-collected from the Menu sheet of uploaded forms.</p>
+    <div style="max-height:340px;overflow:auto"><table class="tbl"><tr><th>Code</th><th>Name</th></tr>${ws.refs.locations.slice(0,800).map(l=>`<tr><td class="mono">${esc(l.code)}</td><td>${esc(l.name)}</td></tr>`).join('')}</table></div></div>
+  <div class="card"><h2>🏷 Standardized item names (${ws.refs.itemNames.length})</h2>
+    <div style="max-height:340px;overflow:auto" class="small">${ws.refs.itemNames.map(n=>`<div>${esc(n)}</div>`).join('')||'<p class="muted">Upload a form to collect the standardized name list from its Menu sheet.</p>'}</div></div>
+  </div>`;
+}
+
+/* =================== SETTINGS & SYNC =================== */
+function setSet(k,v){ ws.settings[k]=v; saveWorkspace(); }
+function renderSettings(){
+  const s=ws.settings;
+  return `<div class="grid g2">
+  <div class="card"><h2>⚙️ Assessment rules</h2>
+    <div class="grid g2">
+      <div class="field"><label>Exchange rate (VND/USD)</label><input value="${s.exrate}" onchange="setSet('exrate',num(this.value))"></div>
+      <div class="field"><label>USD limit ($)</label><input value="${s.usdLimit}" onchange="setSet('usdLimit',num(this.value))"></div>
+      <div class="field"><label>Budget overrun limit (%)</label><input value="${s.overrunPctLimit}" onchange="setSet('overrunPctLimit',num(this.value))"></div>
+      <div class="field"><label>Emergency risk threshold (≥)</label><input value="${s.emergencyRisk}" onchange="setSet('emergencyRisk',num(this.value))"></div>
+      <div class="field"><label>Low-value label threshold (VND)</label><input value="${s.lowValueVnd}" onchange="setSet('lowValueVnd',num(this.value))"></div>
+      <div class="field"><label>Market check tolerance (%)</label><input value="${s.mcTolerance}" onchange="setSet('mcTolerance',num(this.value))"></div>
+      <div class="field"><label>Time-value rate (%/yr)</label><input value="${s.pvRate}" onchange="setSet('pvRate',num(this.value))"></div>
+    </div>
+    <p class="muted small" style="margin-top:8px">Rules applied: <b>Budgeted</b> → accept if overrun &lt; ${s.overrunPctLimit}% OR overrun &lt; $${fmtUsd(s.usdLimit)}. <b>Unbudgeted</b> → only emergency + risk ≥ ${s.emergencyRisk} + value &lt; $${fmtUsd(s.usdLimit)}.</p>
+  </div>
+  <div class="card"><h2>☁️ JSONBin.io — team sync</h2>
+    <p class="muted small">Create a free bin at jsonbin.io, paste the Bin ID and your X-Master-Key (or X-Access-Key). Push uploads this workspace; Pull replaces local data with the bin content. Share the bin with teammates to work together.</p>
+    <div class="grid g2">
+      <div class="field"><label>Bin ID</label><input value="${esc(s.jsonbinId)}" onchange="setSet('jsonbinId',this.value.trim())"></div>
+      <div class="field"><label>API Key</label><input type="password" value="${esc(s.jsonbinKey)}" onchange="setSet('jsonbinKey',this.value.trim())"></div>
+    </div>
+    <div class="toolbar" style="margin-top:10px">
+      <button class="btn btn-p" onclick="jsonbinPush()">☁ Push to bin</button>
+      <button class="btn btn-o" onclick="jsonbinPull()">⬇ Pull from bin</button>
+      <button class="btn btn-gray" onclick="jsonbinCreate()">＋ Create new bin</button>
+    </div>
+    <p class="muted small" id="binStatus" style="margin-top:8px">Last local save: ${esc(ws.updatedAt||'')}</p>
+  </div>
+  <div class="card"><h2>🗂 Data</h2>
+    <div class="toolbar">
+      <button class="btn btn-o" onclick="exportJSON()">⬇ Export workspace .json</button>
+      <button class="btn btn-o" onclick="document.getElementById('importJsonFile').click()">⬆ Import workspace .json</button>
+      <button class="btn btn-r" onclick="if(confirm('Reset EVERYTHING (projects, capex, register, refs)?')){ws=defaultWorkspace();saveWorkspace();route();}">Reset all</button>
+    </div>
+    <p class="muted small">Data lives in this browser (localStorage) and in your JSON exports / JSONBin. The HTML file itself holds no data, so you can share the file freely.</p>
+  </div>
+  </div>`;
+}
+async function jsonbinPush(){
+  const s=ws.settings;
+  if(!s.jsonbinId||!s.jsonbinKey){ toast('Enter Bin ID and API key first.',true); return; }
+  try{
+    const res=await fetch(`https://api.jsonbin.io/v3/b/${s.jsonbinId}`,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':s.jsonbinKey,'X-Access-Key':s.jsonbinKey},body:JSON.stringify(ws)});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    toast('Pushed to JSONBin ✓');
+  }catch(e){ toast('Push failed: '+e.message,true); }
+}
+async function jsonbinPull(){
+  const s=ws.settings;
+  if(!s.jsonbinId||!s.jsonbinKey){ toast('Enter Bin ID and API key first.',true); return; }
+  if(!confirm('Pull will REPLACE local data with the bin content. Continue?'))return;
+  try{
+    const res=await fetch(`https://api.jsonbin.io/v3/b/${s.jsonbinId}/latest`,{headers:{'X-Master-Key':s.jsonbinKey,'X-Access-Key':s.jsonbinKey}});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const j=await res.json();
+    const incoming=j.record||j;
+    const keep={jsonbinId:s.jsonbinId,jsonbinKey:s.jsonbinKey};
+    ws=incoming; ws.settings=Object.assign(defaultWorkspace().settings, ws.settings||{}, keep);
+    saveWorkspace(); toast('Pulled workspace from JSONBin ✓'); route();
+  }catch(e){ toast('Pull failed: '+e.message,true); }
+}
+async function jsonbinCreate(){
+  const s=ws.settings;
+  if(!s.jsonbinKey){ toast('Enter your X-Master-Key first.',true); return; }
+  try{
+    const res=await fetch('https://api.jsonbin.io/v3/b',{method:'POST',headers:{'Content-Type':'application/json','X-Master-Key':s.jsonbinKey,'X-Bin-Name':'FFE-Assessment-Hub'},body:JSON.stringify(ws)});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const j=await res.json();
+    s.jsonbinId=j.metadata.id; saveWorkspace(); route();
+    toast('Bin created ✓ ID saved: '+s.jsonbinId);
+  }catch(e){ toast('Create failed: '+e.message,true); }
+}
+function exportJSON(){
+  const blob=new Blob([JSON.stringify(ws,null,1)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`FFE_Hub_${todayStr()}.json`; a.click();
+}
+function importJSONFile(input){
+  const f=input.files[0]; if(!f)return;
+  const rd=new FileReader();
+  rd.onload=e=>{ try{ const incoming=JSON.parse(e.target.result);
+    if(!incoming.projects){ toast('Not a valid workspace file.',true); return; }
+    if(!confirm('Replace local workspace with this file?'))return;
+    ws=incoming; ws.settings=Object.assign(defaultWorkspace().settings,ws.settings||{}); saveWorkspace(); route(); toast('Workspace imported ✓');
+  }catch(err){ toast('Import failed: '+err.message,true);} };
+  rd.readAsText(f); input.value='';
+}
+
+/* =================== PRINT REPORT =================== */
+function printReport(pid){
+  const p=ws.projects.find(x=>x.id===pid); if(!p)return;
+  const pr=p.pr||{}, pa=p.pa||{}, mc=p.mc||{}, qc=p.qc||{};
+  const ex=num(pa.exrate)||ws.settings.exrate;
+  const assets=p.alr?alrToAssets(p):[];
+  const stagesHtml=STAGE_DEFS.map(s=>{ const st=p.stages[s.k]||{}; return `<td style="text-align:center">${st.done?'✔ '+(st.date||''):'—'}</td>`; }).join('');
+  const html=`
+  <div class="prpage">
+    <div class="phead">
+      <div><b>PLAZA HOTEL COMPANY LIMITED</b><br>17 Lê Duẩn, Phường Sài Gòn, TP.HCM</div>
+      <div style="text-align:right"><h1>FFE ASSESSMENT REPORT</h1><span class="mono">${esc(p.code||'')}</span> · Printed ${todayStr()}</div>
+    </div>
+    <h2>1. Project overview</h2>
+    <table><tr><th style="width:20%">Project</th><td>${esc(p.name||'')}</td><th style="width:16%">Department</th><td>${esc(pr.deptCode||'')} — ${esc(pr.deptName||'')}</td></tr>
+    <tr><th>Category / Type</th><td>${esc(pr.category||'')} / ${esc(pr.investType||'')}</td><th>Budget</th><td>${esc(pa.budget||pr.budget||'')}</td></tr>
+    <tr><th>Request date</th><td>${esc(pr.requestDate||'')}</td><th>Risk</th><td>${pr.possibility||''} × ${pr.impact||''} = <b>${pr.assessment||''}</b> (${riskLevel(pr.assessment)})</td></tr>
+    <tr><th>Reason</th><td colspan="3">${esc(pr.reason||'')}</td></tr></table>
+    <h2>2. Stage tracking</h2>
+    <table><tr>${STAGE_DEFS.map(s=>`<th>${s.label}</th>`).join('')}</tr><tr>${stagesHtml}</tr></table>
+    <h2>3. Project Assessment (PA) — ${esc(pa.date||'')}</h2>
+    <table>
+      <tr><th>Budgeted value</th><td class="num">${fmtVnd(pa.budgetedValue)} VND (~$${fmtUsd(num(pa.budgetedValue)/ex)})</td>
+          <th>Project value</th><td class="num">${fmtVnd(pa.projectValue)} VND (~$${fmtUsd(num(pa.projectValue)/ex)})</td></tr>
+      <tr><th>Difference</th><td class="num">${fmtVnd(pa.diff)} VND (~$${fmtUsd(pa.diffUsd)})</td><th>Overrun</th><td>${pa.overPct!=null?fmtPct(pa.overPct):'n/a'}</td></tr>
+      <tr><th>Verdict</th><td><b>${esc(pa.autoVerdict||'')}</b>${pa.decision?' — Decision: '+esc(pa.decision):''}</td><th>Procurement type</th><td>${esc(pa.procurementType||'')}</td></tr>
+      <tr><th>Notes</th><td colspan="3">${(pa.autoNotes||[]).map(esc).join('<br>')}${pa.decisionNotes?'<br><b>My notes:</b> '+esc(pa.decisionNotes):''}</td></tr>
+    </table>
+    ${qc.vendors&&qc.vendors.length?`<h2>4. Bid comparison (QC)</h2>
+    <table><tr><th>Vendor</th><th>Ability</th><th>Techniques</th><th>Finance</th><th>Total</th><th>Amount (VND)</th></tr>
+    ${qc.vendors.map(v=>`<tr><td>${esc(v.name)}${v.name===qc.chosen?' ★ chosen':''}</td><td class="num">${v.ability!=null?v.ability.toFixed(1):''}</td><td class="num">${v.tech!=null?v.tech.toFixed(1):''}</td><td class="num">${v.finance!=null?v.finance.toFixed(1):''}</td><td class="num"><b>${v.total!=null?v.total.toFixed(1):''}</b></td><td class="num">${fmtVnd(v.amount)}</td></tr>`).join('')}</table>`:''}
+    ${mc.rows&&mc.rows.length?`<h2>5. Market check (MC) — ${esc(mc.date||'')}</h2>
+    <table><tr><th>Item</th><th>Qty</th><th>Price A (chosen)</th><th>Ref code</th><th>Price B (adj. historical)</th><th>Price C (market)</th><th>Δ(A−B)/B</th><th>Δ(A−C)/C</th></tr>
+    ${mc.rows.map(r=>`<tr><td>${esc(r.item)}</td><td class="num">${r.qty}</td><td class="num">${fmtVnd(r.priceA)}</td><td>${esc(r.refCode||'')}</td><td class="num">${fmtVnd(r.priceB)}</td><td class="num">${fmtVnd(r.priceC)}</td><td class="num">${r.dAB!=null?fmtPct(r.dAB):''}</td><td class="num">${r.dAC!=null?fmtPct(r.dAC):''}</td></tr>`).join('')}</table>
+    <p><b>Conclusion:</b> ${esc(mc.conclusion||mc.autoConclusion||'')}</p>`:''}
+    ${assets.length?`<h2>6. Asset codes & labels (ALR)</h2>
+    <table><tr><th>Asset code</th><th>Item</th><th>Location</th><th>Unit price</th><th>Label</th></tr>
+    ${assets.map(a=>`<tr><td class="mono">${esc(a.assetCode)}</td><td>${esc(a.name)}</td><td>${esc(a.location)}</td><td class="num">${fmtVnd(a.unitPrice)}</td><td>${a.label?'Yes':'No — '+esc(a.labelWhy)}</td></tr>`).join('')}</table>`:''}
+    <div class="sig"><div>Prepared by<br>Người lập</div><div>Head of Department<br>Trưởng bộ phận</div><div>JVC Chief Accountant<br>Kế toán trưởng</div><div>JVC General Manager<br>Tổng Giám đốc</div></div>
+  </div>`;
+  document.getElementById('printArea').innerHTML=html;
+  setTimeout(()=>window.print(),80);
+}
+
+/* =================== FORM-FORMAT PRINTS (PA / MC as in the Excel form) =================== */
+function letterhead(titleEn,titleVn,code,date){
+  return `<table class="codebox"><tr><th>CODE</th><th>DATE</th></tr><tr><td class="mono">${esc(code||'')}</td><td>${esc(date||'')}</td></tr></table>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #7030a0;padding-bottom:8px;clear:none">
+    <div style="font-size:10px"><b>PLAZA HOTEL COMPANY LIMITED</b><br>CÔNG TY TNHH LDKS PLAZA<br>17 Lê Duẩn, Phường Sài Gòn, TP.HCM</div>
+    <div style="text-align:right"><div style="font-size:16px;font-weight:700">${esc(titleEn)}</div><div class="vn" style="font-size:12px">${esc(titleVn)}</div></div>
+  </div>`;
+}
+function consentBlock(cols){
+  return `<div class="consent">${cols.length>1?'<b>Consent by:</b>':''}
+    <div class="row" style="grid-template-columns:repeat(${cols.length},1fr)">
+      ${cols.map(c=>`<div class="cell"><div class="line"></div><b>${esc(c[0])}</b><br><span class="vn">${esc(c[1])}</span></div>`).join('')}
+    </div></div>`;
+}
+function usdOf(v,ex){ return num(v)/(num(ex)||ws.settings.exrate); }
+function printPAForm(pid){
+  const p=ws.projects.find(x=>x.id===pid); if(!p||!p.pa)return;
+  const pa=p.pa, pr=p.pr||{}; evaluatePA(p);
+  const ex=num(pa.exrate)||ws.settings.exrate;
+  const ratio=num(pa.budgetedValue)?(pa.diff/num(pa.budgetedValue)):null;
+  const html=`<div class="prpage">
+  ${letterhead('PROJECT ASSESSMENT','BIÊN BẢN THẨM DUYỆT DỰ ÁN',pa.code,pa.date)}
+  <div class="band">ASSESSMENT COMMITTEES</div>
+  <table><tr><th style="width:28px">No.</th><th>Member</th><th>Title</th><th>Representative</th></tr>
+  ${(pa.committees||[]).filter(c=>c.member).map((c,i)=>`<tr><td>${i+1}</td><td>${esc(c.member)}</td><td>${esc(c.title)}</td><td>${esc(c.rep)}</td></tr>`).join('')}</table>
+  <div class="band">GENERAL INFORMATION</div>
+  <table>
+    <tr><td class="lbl-c">Project Code</td><td class="lbl-c">Project Type</td><td class="lbl-c">Budget</td><td class="lbl-c">Comparability</td><td class="lbl-c">Risk Category</td><td class="lbl-c">Requested Date</td></tr>
+    <tr><td class="mono">${esc(pr.projectCode||'')}</td><td>${esc(pr.projectType||'')}</td><td>${esc(pa.budget||'')}</td><td>${esc(pa.comparability||'')}</td><td>${esc(pa.riskCategory||'')}</td><td>${esc(pr.requestDate||'')}</td></tr>
+    <tr><td class="lbl-c" colspan="2">Project Name</td><td class="lbl-c" colspan="4">Reason / Current Condition</td></tr>
+    <tr><td colspan="2">${esc(p.name||'')}</td><td colspan="4">${esc(pr.reason||'')}</td></tr>
+  </table>
+  <div class="band">RISK-ASSESSMENT</div>
+  <table><tr><td class="lbl-c" style="width:18%">Posibility</td><td class="lbl-c" style="width:18%">Impact</td><td class="lbl-c" style="width:18%">Assessment</td><td class="lbl-c">Risk Level</td></tr>
+  <tr><td style="text-align:center">${pr.possibility||''}</td><td style="text-align:center">× ${pr.impact||''}</td><td style="text-align:center">= <b>${pr.assessment||''}</b></td><td><b>${riskLevel(pr.assessment)}</b></td></tr></table>
+  <div class="band">DETAILED INFORMATION</div>
+  <table>
+    <tr><td class="lbl-c" style="width:24%">Budgeted Value</td><td class="num">${fmtVnd(pa.budgetedValue)} VND</td><td style="width:6%;text-align:center">~</td><td class="num">${fmtUsd(usdOf(pa.budgetedValue,ex))} USD</td></tr>
+    <tr><td class="lbl-c">Project Value</td><td class="num">${fmtVnd(pa.projectValue)} VND</td><td style="text-align:center">~</td><td class="num">${fmtUsd(usdOf(pa.projectValue,ex))} USD</td></tr>
+    <tr><td class="lbl-c">Difference</td><td class="num">${fmtVnd(pa.diff)} VND</td><td style="text-align:center">~</td><td class="num">${fmtUsd(pa.diffUsd)} USD</td></tr>
+    <tr><td class="lbl-c">Ratio / Exrate</td><td class="num">${ratio!=null?fmtPct(ratio):'n/a'}</td><td style="text-align:center"></td><td class="num">Exrate: ${fmtVnd(ex)}</td></tr>
+  </table>
+  <div class="band">ASSESSMENT RESULTS</div>
+  <table><tr><th style="width:24px">No.</th><th>Asset Item</th><th style="width:44px">Picture</th><th style="width:34px">Qnt</th><th>Location</th><th style="width:26%">Specifications</th><th>Current Condition</th><th style="width:20%">Notes</th></tr>
+  ${(pa.results||[]).map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.item)}</td><td></td><td style="text-align:center">${r.qty||''}</td><td>${esc(r.location||'')}</td><td>${esc(r.spec||'')}</td><td>${esc(r.condition||'')}</td><td>${esc(r.notes||'')}</td></tr>`).join('')}</table>
+  <div class="band">CONCLUSION</div>
+  <table>
+    <tr><td class="lbl-c" style="width:50%">Suggestion</td><td class="lbl-c">Procurement Type</td></tr>
+    <tr><td>${esc(pa.suggestion||'')}</td><td>${esc(pa.procurementType||'')}</td></tr>
+    <tr><td colspan="2">${esc(pa.marketNote||'')}</td></tr>
+    ${pa.decision?`<tr><td class="lbl-c">Assessment decision</td><td>${esc(pa.decision)}${pa.decisionNotes?' — '+esc(pa.decisionNotes):''}</td></tr>`:''}
+  </table>
+  ${consentBlock([['Prepared by','Người lập'],['Head of Department','Trưởng bộ phận'],['JVC Chief Accountant','Kế toán trưởng'],['JVC General Manager','Tổng Giám đốc JVC']])}
+  </div>`;
+  document.getElementById('printArea').innerHTML=html;
+  setTimeout(()=>window.print(),80);
+}
+function printMCForm(pid){
+  const p=ws.projects.find(x=>x.id===pid); if(!p||!p.mc)return;
+  const mc=p.mc; mcEval(p);
+  const ex=ws.settings.exrate;
+  const hasB=mc.rows.some(r=>num(r.priceB)), hasC=mc.rows.some(r=>num(r.priceC));
+  const refCodes=[...new Set(mc.rows.map(r=>r.refCode).filter(Boolean))].join(', ');
+  const html=`<style>@page{size:A4 landscape}</style><div class="prpage">
+  ${letterhead('MARKET CHECK','THẨM ĐỊNH GIÁ',mc.code,mc.date)}
+  <div class="band">GENERAL INFORMATION</div>
+  <table>
+    <tr><td class="lbl-c" style="width:22%">Project No.</td><td class="mono">${esc(p.pr&&p.pr.projectCode||'')}</td><td class="lbl-c" style="width:22%">Project Name</td><td>${esc(p.name||'')}</td></tr>
+    <tr><td class="lbl-c">Estimated Project Value</td><td class="num">${fmtVnd(mc.estValue)} VND ~ ${fmtUsd(usdOf(mc.estValue,ex))} USD</td><td class="lbl-c">Risk Tolerance</td><td>${esc(mc.riskTolerance)}% &nbsp;&nbsp; (Time-value rate: ${esc(mc.pvRate)}%/yr, n=${esc(mc.years)}; Exrate: ${fmtVnd(ex)})</td></tr>
+  </table>
+  <div class="band">DETAILED INFORMATION — UNIT PRICE</div>
+  <table>
+    <tr><th rowspan="2" style="width:22px">No.</th><th rowspan="2">Asset Item</th><th rowspan="2" style="width:30px">Qnt.</th>
+      <th colspan="3">A: Chosen Vendor — ${esc(mc.vendorA||'')}</th>
+      <th colspan="3">B: Previous Vendor ${esc(mc.vendorB||'')}${refCodes?' — '+esc(refCodes):''}</th>
+      <th colspan="2">C: Market Price / Preference ${esc(mc.vendorC||'')}</th>
+      <th colspan="2">Difference</th></tr>
+    <tr><th style="width:14%">Spec.</th><th>Unit Price</th><th>Amount</th><th style="width:10%">Spec.</th><th>Unit Price (adj.)</th><th>Amount</th><th>Unit Price</th><th>Amount</th><th>(A−B)/B</th><th>(A−C)/C</th></tr>
+    ${mc.rows.map((r,i)=>{ const nz=v=>num(v)?fmtVnd(v):'';
+      return `<tr><td>${i+1}</td><td>${esc(r.item)}</td><td style="text-align:center">${r.qty||''}</td>
+      <td>${esc(r.specA||'')}</td><td class="num">${nz(r.priceA)}</td><td class="num">${nz(r.amtA)}</td>
+      <td>${esc(r.specB||'')}</td><td class="num">${nz(r.priceB)}</td><td class="num">${nz(r.amtB)}</td>
+      <td class="num">${nz(r.priceC)}</td><td class="num">${nz(r.amtC)}</td>
+      <td class="num">${r.dAB!=null?fmtPct(r.dAB):''}</td><td class="num">${r.dAC!=null?fmtPct(r.dAC):''}</td></tr>`;}).join('')}
+    <tr><td colspan="4" style="text-align:right;font-weight:700">Subtotal</td><td></td><td class="num" style="font-weight:700">${fmtVnd(mc.subA)}</td><td></td><td></td><td class="num" style="font-weight:700">${hasB?fmtVnd(mc.subB):''}</td><td></td><td class="num" style="font-weight:700">${hasC?fmtVnd(mc.subC):''}</td><td class="num" style="font-weight:700">${hasB&&mc.dAB!=null?fmtPct(mc.dAB):''}</td><td class="num" style="font-weight:700">${hasC&&mc.dAC!=null?fmtPct(mc.dAC):''}</td></tr>
+  </table>
+  <div class="band">CONCLUSION</div>
+  <table><tr><td>${esc(mc.conclusion||mc.autoConclusion||'')}</td></tr></table>
+  ${consentBlock([['Prepared by','Người lập']])}
+  </div>`;
+  document.getElementById('printArea').innerHTML=html;
+  setTimeout(()=>window.print(),80);
+}
+
+/* =================== MODAL / DND / INIT =================== */
+function showModal(inner){
+  const bg=document.createElement('div'); bg.className='modal-bg'; bg.id='modalBg';
+  bg.innerHTML=`<div class="modal">${inner}<div style="margin-top:14px;text-align:right"><button class="btn btn-gray" onclick="closeModal()">Close</button></div></div>`;
+  bg.addEventListener('click',e=>{ if(e.target===bg)closeModal(); });
+  document.body.appendChild(bg);
+}
+function closeModal(){ const m=document.getElementById('modalBg'); if(m)m.remove(); }
+function bindDrops(){
+  const dz=document.getElementById('dropZone');
+  if(dz){
+    const fi=document.getElementById('formFile');
+    dz.onclick=()=>fi.click();
+    fi.onchange=()=>{ [...fi.files].forEach(handleFormFile); fi.value=''; };
+    dz.ondragover=e=>{e.preventDefault();dz.classList.add('hover');};
+    dz.ondragleave=()=>dz.classList.remove('hover');
+    dz.ondrop=e=>{e.preventDefault();dz.classList.remove('hover');[...e.dataTransfer.files].forEach(handleFormFile);};
+  }
+}
+window.addEventListener('DOMContentLoaded',()=>{
+  loadWorkspace();
+  if(typeof XLSX==='undefined') toast('⚠ Excel library could not load — check internet connection. Upload/exports need it once per session.',true);
+  route();
+});
+</script>
+</body>
+</html>
