@@ -1,0 +1,2848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSP Executive Analytics — Sofitel Saigon Plaza</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --navy:#0B1F3A; --side:#2b3f5e; --side2:#243755; --sideline:#3a4f70; --gold:#C9A227; --gold2:#e8a33d;
+  --grey:#6B7280; --grey2:#9CA3AF; --line:#e2e6ee; --bg:#f1f3f7; --panel:#ffffff;
+  --ink:#1f2937; --green:#1e7e4f; --red:#c0392b; --amber:#b7791f; --blue:#2e5f9e;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:"Segoe UI",Arial,sans-serif;font-size:13px}
+h1,h2,h3{font-weight:600}
+#app{display:flex;min-height:100vh}
+/* ---------- sidebar ---------- */
+#side{width:232px;flex:0 0 232px;background:var(--side);color:#dbe2ee;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+#side .logo{padding:18px 16px 12px;font-size:16px;font-weight:800;letter-spacing:.6px;color:#fff;line-height:1.25;border-bottom:1px solid var(--sideline)}
+#side .logo small{display:block;color:#9fb0ca;font-weight:400;font-size:10.5px;margin-top:5px;letter-spacing:0}
+.navgroup{padding:14px 16px 5px;font-size:10.5px;letter-spacing:1.2px;color:#8ea0bd;text-transform:uppercase}
+#tabs{display:flex;flex-direction:column}
+#tabs button{display:block;width:100%;text-align:left;background:none;border:none;border-left:4px solid transparent;color:#c9d3e4;padding:9px 16px;font-size:13px;cursor:pointer;border-radius:0}
+#tabs button:hover{background:var(--side2);color:#fff}
+#tabs button.on{background:var(--side2);border-left-color:var(--gold2);color:#fff;font-weight:700}
+.sidefoot{margin-top:auto;padding:12px 16px;border-top:1px solid var(--sideline);font-size:10.5px;color:#9fb0ca}
+/* ---------- content ---------- */
+#content{flex:1;min-width:0;display:flex;flex-direction:column}
+#hdr{background:#fff;border-bottom:1px solid var(--line);padding:8px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;position:sticky;top:0;z-index:50}
+#hdr .pagetitle{font-size:16px;font-weight:700;color:var(--navy);margin-right:auto}
+.ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+select,button,.btn{background:#fff;color:var(--ink);border:1px solid #cfd6e2;padding:5px 10px;border-radius:5px;font-size:12px;cursor:pointer}
+button:hover,.btn:hover{border-color:var(--navy)}
+button.on{background:var(--navy);color:#fff;font-weight:700;border-color:var(--navy)}
+.seg{display:flex;border:1px solid #cfd6e2;border-radius:5px;overflow:hidden}
+.seg button{border:none;border-radius:0}
+/* ---------- dropzone ---------- */
+#drop{margin:10px 16px 0;border:2px dashed #c3cbda;border-radius:8px;padding:12px;text-align:center;color:var(--grey);background:#fff;transition:.2s}
+#drop.hot{border-color:var(--gold);background:#fdf8ea;color:var(--gold)}
+#drop b{color:var(--navy)}
+main{padding:12px 16px 60px}
+section.tab{display:none}section.tab.on{display:block}
+section.tab.printshow{display:block}
+.printhead{display:none}
+/* ---------- cards / grids ---------- */
+.kgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:14px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--navy);border-radius:8px;padding:9px 11px;box-shadow:0 1px 2px rgba(15,30,58,.06)}
+.kpi.g{border-left-color:var(--green)}.kpi.r{border-left-color:var(--red)}.kpi.a{border-left-color:var(--gold2)}
+.kpi .t{font-size:10px;color:var(--grey);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:19px;font-weight:800;margin:2px 0;color:var(--navy)}
+.kpi .s{font-size:10.5px;color:var(--grey)}
+.kpi .s b.up{color:var(--green)}.kpi .s b.dn{color:var(--red)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(15,30,58,.06)}
+.panel h3{color:var(--navy);font-size:13px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.cols{display:grid;gap:14px}.cols.c2{grid-template-columns:1fr 1fr}.cols.c3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:1100px){.cols.c2,.cols.c3{grid-template-columns:1fr}}
+.chartbox{position:relative;height:280px}
+.chartbox.tall{height:340px}
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#f3f5f9;color:#4b5563;text-align:right;padding:5px 7px;font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.4px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+main table thead th{cursor:pointer;user-select:none}
+th.sa::after{content:' ▲';color:var(--gold2)}th.sd::after{content:' ▼';color:var(--gold2)}
+.tblflt{border:1px solid #cfd6e2;border-radius:5px;padding:3px 8px;font-size:11.5px;margin-left:8px;width:160px;vertical-align:middle}
+tr.seggrp td{background:#eef2f8;font-weight:700;color:var(--navy)}
+tr.segsub td{font-weight:600;color:#374151;background:#f7f9fc}
+/* heatmap grids */
+.heatwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+table.heat td{text-align:center;padding:3px 4px;font-size:11px;border:1px solid #fff}
+table.heat th{text-align:center}
+table.heat td:first-child{text-align:left;font-weight:600;background:#f3f5f9}
+.heatbtn.on{background:var(--navy);color:#fff;font-weight:700}
+td{padding:4px 7px;text-align:right;border-bottom:1px solid #eef1f6;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:hover td{background:#f8f9fc}
+td.pos{color:var(--green)}td.neg{color:var(--red)}td.warn{color:var(--amber)}
+tr.tot td{border-top:2px solid var(--navy);font-weight:700;color:var(--navy)}
+tr.bad td{background:#fdeeec}
+.tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700}
+.tag.g{background:#e3f3ea;color:var(--green)}.tag.r{background:#fbe4e1;color:var(--red)}.tag.a{background:#faf0dc;color:var(--amber)}
+/* ---------- alerts ---------- */
+.alert{border-left:5px solid var(--grey);background:#fff;border:1px solid var(--line);border-left-width:5px;border-radius:6px;padding:8px 12px;margin-bottom:7px}
+.alert.crit{border-left-color:var(--red)}.alert.warn{border-left-color:var(--gold2)}.alert.info{border-left-color:var(--blue)}.alert.good{border-left-color:var(--green)}
+.alert .h{font-weight:700;font-size:12.5px;color:var(--ink)}
+.alert .h .sev{font-size:9.5px;padding:1px 6px;border-radius:8px;margin-right:6px;vertical-align:1px;color:#fff}
+.alert.crit .sev{background:var(--red)}.alert.warn .sev{background:var(--gold2)}.alert.info .sev{background:var(--blue)}.alert.good .sev{background:var(--green)}
+.alert .d{color:var(--grey);font-size:11.5px;margin-top:2px}
+.na{color:var(--grey2);cursor:help;border-bottom:1px dotted var(--grey2)}
+.small{font-size:11px;color:var(--grey)}
+#toasts{position:fixed;right:14px;bottom:14px;z-index:99}
+.toast{background:#fff;border:1px solid var(--navy);border-left:5px solid var(--green);border-radius:6px;padding:8px 14px;margin-top:6px;font-size:12px;box-shadow:0 4px 14px rgba(15,30,58,.2)}
+.toast.err{border-left-color:var(--red)}
+#warnbadge{background:var(--red);color:#fff;border-radius:9px;padding:0 6px;font-size:10px;margin-left:4px;display:none}
+/* ---------- print ---------- */
+@page{size:A4 landscape;margin:8mm}
+@media print{
+  body{background:#fff;color:#111;font-size:10px}
+  #side,#hdr,#drop,#toasts,.noprint{display:none!important}
+  .printhead{display:block;font-size:14px;font-weight:700;color:#0B1F3A;margin:0 0 8px;border-bottom:2px solid #C9A227;padding-bottom:4px}
+  section.tab{display:block!important;page-break-after:always}
+  .panel,.kpi{box-shadow:none;break-inside:avoid}
+  th{background:#eee;color:#333}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+<!-- ================= SIDEBAR ================= -->
+<aside id="side">
+  <div class="logo">SOFITEL SAIGON PLAZA<small data-i18n="subtitle">Owner / BOD Revenue &amp; Profit Analytics — 284 keys</small></div>
+  <div id="tabs">
+    <div class="navgroup" data-i18n="grpOverview">Overview</div>
+    <button data-tab="cockpit" class="on" data-i18n="tabCockpit">BOD Cockpit</button>
+    <button data-tab="forecast" data-i18n="tabForecast">Forecast</button>
+    <div class="navgroup" data-i18n="grpOps">Operations</div>
+    <button data-tab="rooms" data-i18n="tabRooms">Rooms</button>
+    <button data-tab="seg" data-i18n="tabSeg">Segmentation</button>
+    <button data-tab="fnb" data-i18n="tabFnb">F&amp;B</button>
+    <button data-tab="other" data-i18n="tabOther">Other Ops</button>
+    <button data-tab="undist" data-i18n="tabUndist">Undistributed</button>
+    <button data-tab="reva" data-i18n="tabRevA">Revenue Analysis</button>
+    <div class="navgroup" data-i18n="grpMarket">Market</div>
+    <button data-tab="market" data-i18n="tabMarket">Market — STR</button>
+    <button data-tab="heat" data-i18n="tabHeat">Patterns &amp; Heatmaps</button>
+    <button data-tab="bench" data-i18n="tabBench">Benchmark — HotStats</button>
+    <div class="navgroup" data-i18n="grpGroup">Group</div>
+    <button data-tab="conso" data-i18n="tabConso">Consolidated</button>
+    <button data-tab="eng" data-i18n="tabEng">Engineering</button>
+    <button data-tab="dq">Data Quality <span id="warnbadge">0</span></button>
+  </div>
+  <div class="sidefoot" data-i18n="sideFoot">Data stays in this browser. Export JSON regularly as backup.</div>
+</aside>
+
+<!-- ================= CONTENT ================= -->
+<div id="content">
+<div id="hdr">
+  <div class="pagetitle" id="pageTitle">BOD Cockpit</div>
+  <div class="ctl">
+    <select id="selMonth" title="Month"></select>
+    <div class="seg"><button id="btnMTD" class="on">MTD</button><button id="btnYTD">YTD</button></div>
+    <div class="seg"><button id="btnVND" class="on">VND</button><button id="btnUSD">USD</button></div>
+    <div class="seg"><button id="btnEN" class="on">EN</button><button id="btnVI">VI</button></div>
+    <button id="btnExport" title="Backup all stored months to a JSON file" data-i18n="export">💾 Backup JSON</button>
+    <button id="btnImport" title="Restore history from a JSON backup" data-i18n="import">📂 Restore JSON</button>
+    <button id="btnXlsx" title="Export every tab of the current view to a multi-sheet Excel file" data-i18n="xlsx">⬇ Export Excel</button>
+    <button id="btnPrint" title="Print all tabs as an A4-landscape board pack (choose 'Save as PDF' in the dialog)" data-i18n="printPdf">🖨 Print / PDF</button>
+    <button id="btnClear" data-i18n="clearMonth">Clear month</button>
+    <input type="file" id="fileImport" accept=".json" style="display:none">
+  </div>
+</div>
+
+<!-- ================= DROP ZONE ================= -->
+<div id="drop">
+  <b data-i18n="dropTitle">Drag &amp; drop workbooks here</b> — P&amp;L VND/USD · Monthly/Weekly/Daily STAR · HotStats · Consolidated FS
+  <span class="small" data-i18n="dropNote">(parsed 100% in your browser — data never leaves this machine)</span>
+  <input type="file" id="fileIn" multiple accept=".xlsx,.xls" style="display:none">
+  <div class="small" style="margin-top:4px"><a href="#" id="pickFiles" style="color:var(--gold)" data-i18n="orClick">…or click to choose files</a></div>
+</div>
+
+<main>
+  <section class="tab on" id="tab-cockpit"></section>
+  <section class="tab" id="tab-rooms"></section>
+  <section class="tab" id="tab-seg"></section>
+  <section class="tab" id="tab-fnb"></section>
+  <section class="tab" id="tab-other"></section>
+  <section class="tab" id="tab-undist"></section>
+  <section class="tab" id="tab-market"></section>
+  <section class="tab" id="tab-bench"></section>
+  <section class="tab" id="tab-conso"></section>
+  <section class="tab" id="tab-forecast"></section>
+  <section class="tab" id="tab-heat"></section>
+  <section class="tab" id="tab-reva"></section>
+  <section class="tab" id="tab-eng"></section>
+  <section class="tab" id="tab-dq"></section>
+</main>
+</div><!-- /content -->
+</div><!-- /app -->
+<div id="toasts"></div>
+
+<script>
+"use strict";
+/* =====================================================================
+ *  SSP EXECUTIVE ANALYTICS — single-file dashboard
+ *  ---------------------------------------------------------------
+ *  ADAPTER LAYER PHILOSOPHY
+ *  All row/column positions are discovered at parse time:
+ *    findRow(grid, regex [, mustHaveValueAtCol])  -> row index
+ *    headerCols(rowArray, regex)                  -> array of col indexes
+ *  NOTHING is hard-coded to a cell address. If Accor moves a row,
+ *  edit ONE regex in MAP below. Any label not found is pushed to
+ *  parseWarnings and rendered in the Data Quality tab.
+ * ===================================================================== */
+
+/* ---------------------------------------------------------------
+ * MAP — every label regex used by the parsers. EDIT HERE ONLY.
+ * --------------------------------------------------------------- */
+const MAP = {
+  /* file-type detection: a workbook matches a type when it contains
+     ALL sheets in `all` (regex, tested against trimmed sheet names) */
+  detect: [
+    { type:'pnl',        all:[/^Summary P&L$/i, /^Rooms$/i, /^F&B Total$/i] },
+    { type:'starMonthly',all:[/^Glance$/i, /^Summary$/i, /^Comp$/i] },
+    { type:'starWeekly', all:[/^SummaryComb$/i] },
+    { type:'starDaily',  all:[/^Running MTD$/i] },
+    { type:'hotstats',   all:[/^Operating Statement$/i] },
+    { type:'fs',         all:[/^FS\d{2}\.\d{2}$/i] },
+    /* revenue-analysis workbooks (Revenue analysis\Report\*.xlsx) */
+    { type:'keyacct',    all:[/^Key Account$/i] },
+    { type:'ota',        all:[/^Booking com$/i] },
+    { type:'nor1',       all:[/^Nor1$/i] },
+    { type:'fnbdisc',    all:[/^FNB Discounts$/i] },
+    { type:'fnbsum',     all:[/^Meal Periods$/i, /^Monthly Data$/i] },
+    { type:'upsell',     all:[/^Upselling$/i] },
+    { type:'bookstay',   all:[/^Booked vs Stayed$/i] },
+    { type:'rf',         all:[/^SUM FY\d{2} Forecast$/i] },
+    { type:'cf',         all:[/^FY \d{4}$/i, /^P&L \d{4}$/i] },
+  ],
+
+  /* Engineering PDF hot-spot dictionaries (mention counting) */
+  engSys: [
+    ['HVAC / Chiller / Cooling', /chiller|cooling|hvac|a\/?c\b|air.?con|fcu|ahu|steam|boiler/i],
+    ['Plumbing / Water / Drain', /water|drain|pipe|sewer|clog|leak|pump|valve|toilet|faucet|shower/i],
+    ['Electrical / Lighting',    /light|led|electric|lamp|power|breaker|socket|outlet/i],
+    ['Lifts',                    /\blift|elevator|schindler/i],
+    ['Kitchen / Refrigeration',  /kitchen|refrigerat|freezer|fridge|blast chiller|ice (cube|maker)|oven|stove/i],
+    ['Fire & Safety',            /fire|smoke|alarm|sprinkler|extinguisher/i],
+    ['Pool & Gym',               /pool|gym|fitness|sauna|jacuzzi/i],
+    ['Carpentry / Paint / Finishes', /paint|timber|wood|carpentr|tile|grout|wall|ceiling|door|furniture|repaint/i],
+    ['IT / TV / CCTV',           /\btv\b|camera|cctv|wifi|network/i],
+  ],
+  engCritical: /leak|broken|fail|not reach|not work|damage|clog|crack|burst|overheat|shutdown|flood/i,
+
+  /* room hierarchy for upgrade-level math (rank 1 = lowest room).
+     Booked/stayed names like "Luxury Club King" are matched to the LONGEST
+     base name in this list (King/Twin/Queen suffixes ignored). */
+  roomRanks: ['Classic','Superior','Luxury','Superior Club','Luxury Club',
+              'Junior Suite','GM Apartment','Prestige Suite','Presidential'],
+
+  /* ---- Summary P&L (P&L workbook) ---- */
+  pnlSummary: {
+    sheet: /^Summary P&L$/i,
+    monthTitle: /For The Month ending of\s+(.+)/i,
+    /* header row that contains both MTD and YTD → column blocks discovered
+       on the row below it (ACTUAL / BUDGET / Variance / LY / Variance) */
+    stats: {
+      occ:        /^Occupancy %/i,
+      adr:        /^Average Room Rate/i,
+      revpar:     /^RevPAR/i,
+      asp:        /^A\.S\.P\. per Guest/i,
+      roomsAvail: /Rooms Available/i,
+      roomsSold:  /Rooms Sold \(excl/i,
+      roomsOcc:   /Rooms Occupied \(Incl/i,
+      guests:     /^Number of Guests/i,
+      staff:      /^Number of Staff$/i,
+    },
+    /* revenue INCL service charge block (matches FS + USALI VN practice) */
+    revInclAnchor: /^Revenue Incl Service Charges/i,
+    revExclAnchor: /^Revenue Excl Service Charges/i,
+    rev: {
+      rooms:   /^Rooms$/i,
+      food:    /^Food$/i,
+      bev:     /^Beverage$/i,
+      otherFb: /^Other F&B Revenue/i,
+      totalFb: /^Total Food & Beverage/i,
+      spa:     /^Spa & Health Club/i,
+      golf:    /^Golf Operations/i,
+      laundry: /^Guest Laundry/i,
+      comms:   /^Guest Communications/i,
+      minibar: /^Minibar$/i,
+      otherOp: /^Other Operating Depts/i,
+      misc:    /^Miscellaneous$/i,
+      totalIncl:/^Total Revenue Incl Service Charges/i,
+      totalExcl:/^Total Revenue Excl Service Charges/i,
+    },
+    scCollected: /^Service Charge Collected/i,
+    deptProfitRows: {   /* inside "Department Profit" block */
+      rooms:/^Rooms$/i, fnb:/^Food & Beverage$/i, spa:/^Spa & Health Club/i,
+      golf:/^Golf/i, laundry:/^Guest Laundry/i, comms:/^Guest Communications/i,
+      minibar:/^Minibar$/i, otherOp:/^Other Operating Depts/i, misc:/^Miscellaneous$/i,
+    },
+    deptProfitAnchor: /^Department Profit$/i,       /* header of the block  */
+    deptProfitTotal:  /^Department Profit$/i,       /* row WITH values      */
+    undistPayrollAnchor: /^Payroll & Related Incl Service Charges$/i,
+    undistOtherAnchor:   /^Other Expenses$/i,
+    undist: {
+      ag:    /^Admin & General/i,
+      it:    /^Information & Telecom/i,
+      sm:    /^Sales & Marketing/i,
+      pomec: /^Property Opn & Maintenance/i,
+      energy:/^Energy$/i,
+    },
+    gop:        /^Gross Operating Profit$/i,
+    baseFee:    /^Base Management Fee/i,
+    incFee:     /^Incentive Management Fee/i,
+    ibfc:       /^Income Before Fixed Charges/i,
+    ffe:        /^FF&E Reserve/i,
+    insurance:  /^Insurance\/Tax\/Other/i,
+    rent:       /^Rent\/Lease/i,
+    ebitda:     /^EBITDA$/i,
+    netProfit:  /^Profit Before Taxes/i,
+    payrollExcl:/^Total Payroll Excl\. Service Charge/i,
+    payrollIncl:/^Total Payroll Incl\. Service Charge/i,
+  },
+
+  /* ---- Department sheets (Rooms + generic) — cols found from header
+        row containing ACTUAL twice: MTD block then YTD block ---- */
+  deptSheet: {
+    headerCell: /^ACTUAL$/i,
+    rooms: {
+      sheet: /^Rooms$/i,
+      arrivals:  /No of arrivals/i,
+      dof:       /Double Occupancy Factor/i,
+      alos:      /Average Leng?t?h of Stay/i,
+      netRev:    /^Total Net Room Revenue \(excl/i,
+      totalRev:  /^Total Room Revenue$/i,
+      sc:        /^Service Charge \/ Surcharge/i,
+      payrollIncl:/^Total Salary & Wages \(incl/i,
+      otherExp:  /^Total Other Expenses$/i,
+      totalExp:  /^Total Expenses$/i,
+      deptProfit:/DEPARTMENTAL PROFIT/i,
+      porPay:    /^Payroll Costs POR/i,
+      porOther:  /^Other Expenses POR/i,
+      porTotal:  /^Total Room Expenses POR/i,
+      porProfit: /^Department Profit POR/i,
+    },
+    /* detail cost-line extraction: rows between these two anchors */
+    expenseAnchor: /^Other Expenses$/i,
+    expenseEnd:    /^Total Other Expenses$/i,
+    /* F&B outlet sheets: [sheet-name regex, display name] */
+    outlets: [
+      [/^F&B-Mezz$/i,            'Mezz'],
+      [/^F&B-Le 17 Bistro$/i,    'Le 17 Bistro'],
+      [/^F&B - ST25 by Koto$/i,  'ST25 by Koto'],
+      [/^F&B-Boudoir$/i,         'Boudoir'],
+      [/^F&B-Pool$/i,            'Pool'],
+      [/^F&B-Minibar$/i,         'F&B Minibar'],
+      [/^F&B-Room Service$/i,    'Room Service'],
+      [/^F&B-Banquet$/i,         'Banquet'],
+      [/^F&B-Le Sucré$/i,        'Le Sucré'],
+    ],
+    outletRows: {
+      seats:     /^Number of Seats/i,
+      covers:    /^Total Covers$/i,
+      foodRev:   /^Net Revenue Food \(excl/i,
+      bevRev:    /^Net Revenue Beverage \(excl/i,
+      otherRev:  /^Other Revenue \(excl/i,
+      totalRev:  /^Total Net Revenue \(excl/i,
+      costFood:  /^Cost of Food Sold/i,
+      costBev:   /^Cost of Beverage$/i,
+      costTotal: /^Total Cost of Sales$/i,
+      payrollIncl:/^Total Salary & Wages \(incl/i,
+      otherExp:  /^Total Other Expenses$/i,
+      deptProfit:/DEPARTMENTAL PROFIT/i,
+    },
+    /* other operating department sheets */
+    otherDepts: [
+      [/^Spa & Health Club$/i,   'Spa & Health Club'],
+      [/^Club Millésime$/i,      'Club Millésime'],
+      [/^Guest Laundry$/i,       'Guest Laundry'],
+      [/^Guest Communications$/i,'Guest Communications'],
+      [/^Transportation$/i,      'Transportation'],
+      [/^Business Centre$/i,     'Business Centre'],
+      [/^Souvenir Shop$/i,       'Souvenir Shop'],
+      [/^Minibar$/i,             'Minibar'],
+      [/^Minor Dept$/i,          'Minor Dept'],
+      [/^Miscellaneous$/i,       'Miscellaneous'],
+    ],
+    genericRows: {
+      totalRev:  /^Total( Net)? Revenue( \(excl.*)?$|^Total .*Revenue$/i,
+      payrollIncl:/^Total Salary & Wages \(incl/i,
+      otherExp:  /^Total Other Expenses$/i,
+      deptProfit:/DEPARTMENTAL PROFIT/i,
+    },
+  },
+
+  /* ---- Tracking Segmentation (P&L workbook) ----
+     header row: Main Group | Segment | Sub-Segment | (name) | then 6 blocks of
+     Rooms/Rev/ARR = MTD Act/Bud/LY then YTD Act/Bud/LY. Rows classified by
+     which of cols B/C/D/E are filled; 'Subtotal' and '<Group> Total' rows kept. */
+  seg: {
+    sheet: /^Tracking Segmentation\s*$/i,
+    headerCell: /^Main Group$/i,
+    roomsCol: /^Rooms$/i,
+    grand1: /^Grand Total \(Incl\. Comp/i,   /* incl comp&HU, excl SC */
+    grand2: /^Grand Total \(Excl\. Comp/i,   /* excl comp&HU, incl SC — ties to P&L */
+  },
+
+  /* ---- F&B outlet meal-period blocks ----
+     each meal has 3 rows above "<Meal> Covers": Guest Capture Ratio /
+     Guest in house Covers / Non-Guest Covers; revenue rows sit under
+     "Food Revenue:" / "Beverage Revenue:" anchors (first = excl SC block) */
+  meals: {
+    list: [ ['breakfast',/^Breakfast Covers$/i,/^Breakfast$/i,'Breakfast'],
+            ['lunch',    /^Lunch Covers$/i,    /^Lunch$/i,    'Lunch'],
+            ['dinner',   /^Dinner Covers$/i,   /^Dinner$/i,   'Dinner'] ],
+    foodAnchor: /^Food Revenue:/i,
+    bevAnchor:  /^Beverage Revenue:/i,
+    capture: /Capture Ratio/i, inhouse: /in house Covers/i, walkin: /Non-Guest Covers/i,
+  },
+
+  /* ---- STAR monthly ---- */
+  star: {
+    glance: /^Glance$/i, summary:/^Summary$/i, comp:/^Comp$/i, dow:/^Day of Week$/i,
+    segIdx: /^Segmentation Indexes$/i,
+    monthOf: /For the Month of:\s*([A-Za-z]+ \d{4})/i,
+    entities: {
+      prop:   /^Sofitel Saigon Plaza/i,
+      market: /^Market:/i,
+      mclass: /^MarketClass:/i,
+      submkt: /^Submarket:/i,
+      subcls: /^SubmarketCollapsedClass:/i,
+      comp:   /^Competitive Set:/i,
+    },
+    blocks: { occ:/^Occupancy \(%\)/i, adr:/^Average Daily Rate$/i, revpar:/^RevPAR$/i },
+    compBlocks: { occ:/^Occupancy \(%\)$/i, adr:/^ADR$/i, revpar:/^RevPAR$/i },
+    compRows: { prop:/^My Property$/i, comp:/^Competitive Set$/i, idx:/^Index/i, rank:/^Rank$/i },
+    census: /^Competitive Set: Competitors/i,
+  },
+
+  /* ---- HotStats Operating Statement ---- */
+  hotstats: {
+    sheet:/^Operating Statement$/i,
+    monthRe:/^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}$/,
+    rows: [
+      /* key, label regex, section */
+      ['occ',       /^Occupancy %$/i,                          'Rooms'],
+      ['adr',       /^Average Daily Rate$/i,                   'Rooms'],
+      ['revpar',    /^RevPAR$/i,                               'Rooms'],
+      ['netRevpar', /^Net RevPAR$/i,                           'Rooms'],
+      ['rmCos',     /^Rooms Cost of Sales$/i,                  'Rooms'],
+      ['rmLabor',   /^Total Labor Costs & Related Expenses$/i, 'Rooms'],
+      ['rmOther',   /^Total Other Expenses$/i,                 'Rooms'],
+      ['rmProfit',  /^Rooms Profit$/i,                         'Rooms'],
+      ['fbRev',     /^Total Food & Beverage Revenue$/i,        'F&B'],
+      ['fbOtherRev',/^Total Other Revenue$/i,                  'F&B'],
+      ['fbCos',     /^Total Cost of Food & Beverage Sales$/i,  'F&B'],
+      ['fbLabor',   /^Total Labor Costs & Related Expenses$/i, 'F&B'],
+      ['fbOtherExp',/^Total Other Expenses$/i,                 'F&B'],
+      ['fbProfit',  /^Food\s+& Beverage Profit$/i,             'F&B'],
+      ['minorRev',  /^Total Other & Minor Operated Revenue$/i, 'Minor'],
+      ['minorProfit',/^Total Other & Minor Operated Profit$/i, 'Minor'],
+      ['totRev',    /^Total Operating Revenue$/i,              'Total'],
+      ['deptProfit',/^Total Operating Departments Profit$/i,   'Total'],
+      ['agLabor',   /^Total Labor Costs & Related Expenses$/i, 'A&G'],
+      ['agTotal',   /^Total Labor & Other Expenses$/i,         'A&G'],
+      ['itTotal',   /^Total Labor & Other Expenses$/i,         'I&T'],
+      ['smOther',   /^Total Other Expenses$/i,                 'S&M'],
+      ['smTotal',   /^Total Labor & Other Expenses$/i,         'S&M'],
+      ['pmTotal',   /^Total Labor & Other Expenses$/i,         'P&M'],
+      ['utilities', /^Utilities Expenses$/i,                   'Utilities'],
+      ['payroll',   /^Total Hotel Payroll$/i,                  'Ratios'],
+      ['gop',       /^Gross Operating Profit$/i,               'Ratios'],
+      ['flow',      /^Hotel Flow Through\/Flex$/i,             'Ratios'],
+    ],
+    sections: { Rooms:/^Rooms Department$/i, 'F&B':/^Food & Beverage Department$/i,
+      Minor:/^Other & Minor Operated Departments$/i, Total:/^Miscellaneous Income$/i,
+      'A&G':/^Admin & General$/i, 'I&T':/^I&T Systems$/i, 'S&M':/^Sales & Marketing$/i,
+      'P&M':/^Property & Maintenance$/i, Utilities:/^Utilities$/i, Ratios:/^Financial Ratios$/i },
+  },
+
+  /* ---- Consolidated FS ---- */
+  fs: {
+    sheetRe:/^FS(\d{2})\.(\d{2})$/i,
+    rows: {
+      roomsAvail:/^Total Rooms Available/i,
+      roomsOcc:  /^Total Rooms Occupied/i,
+      arr:       /^Average Room Rental/i,
+      totalRev:  /^TOTAL REVENUE/i,
+      roomRev:   /^Revenue$/i,             /* first Revenue after Room Department */
+      roomProfit:/^Room profit/i,
+      fbRev:     /^F&B revenue$/i,
+      fbProfit:  /^F&B profit/i,
+      minorRev:  /^Revenue$/i,             /* first Revenue after Minor Operated  */
+      minorProfit:/^Minor Operated Profit/i,
+      totOpProfit:/^TOTAL OPERATING PROFIT/i,
+      overheads: /^Total overheads/i,
+      mgmtFee:   /^Management Fee/i,
+      incFee:    /^Incentive Fee/i,
+      hotelGop:  /^HOTEL GOP/i,
+      centralGop:/^CENTRAL GOP/i,
+      pbfc:      /^Profit Before fixed charges/i,
+      fixed:     /^Total Fixed Charges/i,
+      finNet:    /^Total Interest and Financial/i,
+      npBeforeDep:/^Net Profit Before Dep/i,
+      dep:       /^Depreciation and Amortisation/i,
+      pbt:       /^Income Before Income Tax/i,
+      tax:       /^Corporate income tax/i,
+      npat:      /^Income after Income Tax/i,
+      fx:        /Reference average exchange rate/i,
+    },
+    roomDeptAnchor:/^Room Department$/i,
+    minorAnchor:/^Minor Operated Department$/i,
+  },
+};
+
+/* thresholds used by the insight rule engine */
+const TH = {
+  foodCost:.32, bevCost:.25, costJumpPts:2, flowMin:.45, deptProfitDropPts:3,
+  payrollJumpPts:1.5, energyPorJump:.10, ariLow:97, mpiHigh:103, ariVeryLow:95,
+  scRate:.05, budgetOccGapPts:20, idxLow:90,
+};
+
+/* =====================================================================
+ *  UTILITIES
+ * ===================================================================== */
+const $  = s=>document.querySelector(s);
+const $$ = s=>[...document.querySelectorAll(s)];
+const num = v => (typeof v==='number' && isFinite(v)) ? v : (v!=null && v!=='' && isFinite(+String(v).replace(/,/g,''))? +String(v).replace(/,/g,'') : null);
+const nz  = v => num(v)===null?0:num(v);
+const div = (a,b)=> (num(a)!==null && num(b) ? a/b : null);
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function monthKeyFromText(t){                       // "May 2026" -> "2026-05"
+  if(!t) return null;
+  const m=String(t).trim().match(/([A-Za-z]+)\s+(\d{4})/);
+  if(!m) return null;
+  const i=MONTHS.findIndex(x=>x.toLowerCase().startsWith(m[1].toLowerCase().slice(0,3)));
+  return i<0?null:`${m[2]}-${String(i+1).padStart(2,'0')}`;
+}
+function fmtMonthKey(k){ if(!k) return '—'; const [y,m]=k.split('-'); return MONTHS[+m-1].slice(0,3)+' '+y; }
+
+let state = {
+  month:null, period:'MTD', cur:'VND', lang:'en', heatMetric:'revpar', benchMetric:'gop',
+  store:{ months:{}, pace:{} },   // persisted
+  warnings:[],                    // parse warnings of the LAST ingest batch (also persisted per month)
+  charts:{},
+};
+
+/* ---------- number formatting (currency aware) ---------- */
+function fx(){ // VND per USD for the selected month
+  const m=state.store.months[state.month]||{};
+  if(m.fs && m.fs.fxRate) return m.fs.fxRate;
+  if(m.pnlVND && m.pnlUSD){
+    const a=g(m.pnlVND,'rev.totalIncl','MTD','act'), b=g(m.pnlUSD,'rev.totalIncl','MTD','act');
+    if(a&&b) return a/b;
+  }
+  return 26000; // documented fallback — flagged in DQ tab when used
+}
+function cv(v){ return v==null?null : (state.cur==='USD'? v/fx() : v); }  // convert a VND figure to display currency
+function money(v,dec){ // compact money in display currency
+  if(v==null||!isFinite(v)) return na();
+  const x=cv(v);
+  const abs=Math.abs(x);
+  if(state.cur==='VND'){
+    if(abs>=1e9) return (x/1e9).toLocaleString('en',{maximumFractionDigits:dec??2})+' bn';
+    if(abs>=1e6) return (x/1e6).toLocaleString('en',{maximumFractionDigits:1})+' M';
+    return x.toLocaleString('en',{maximumFractionDigits:0});
+  }
+  if(abs>=1e6) return '$'+(x/1e6).toLocaleString('en',{maximumFractionDigits:2})+' M';
+  if(abs>=1e3) return '$'+(x/1e3).toLocaleString('en',{maximumFractionDigits:1})+' K';
+  return '$'+x.toLocaleString('en',{maximumFractionDigits:0});
+}
+function moneyRaw(v){ if(v==null) return na(); const x=cv(v); return x.toLocaleString('en',{maximumFractionDigits:0}); }
+function pct(v,dec=1){ return v==null||!isFinite(v)?na():(v*100).toLocaleString('en',{maximumFractionDigits:dec})+'%'; }
+function pts(v,dec=1){ return v==null||!isFinite(v)?na():(v>0?'+':'')+(v).toLocaleString('en',{maximumFractionDigits:dec})+' pts'; }
+function idx(v){ return v==null||!isFinite(v)?na():v.toLocaleString('en',{maximumFractionDigits:1}); }
+function n1(v,dec=1){ return v==null||!isFinite(v)?na():v.toLocaleString('en',{maximumFractionDigits:dec}); }
+function na(tip){ return `<span class="na" title="${tip||t('naTip')}">N/A</span>`; }
+function varPct(a,b){ return (num(a)!==null&&num(b))? (a-b)/Math.abs(b) : null; }
+function cls(v){ return v==null?'':(v>0?'pos':v<0?'neg':''); }
+function toast(msg,err){ const d=document.createElement('div'); d.className='toast'+(err?' err':''); d.textContent=msg; $('#toasts').appendChild(d); setTimeout(()=>d.remove(),6000); }
+
+/* =====================================================================
+ *  GRID / ADAPTER HELPERS  (the layer to extend when formats change)
+ * ===================================================================== */
+function grid(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
+function cellStr(v){ return v==null?'':String(v).trim(); }
+/* find first row whose ANY of first 6 cells matches re; optionally require
+   a numeric value at column `valCol`; optionally start at row `from` */
+function findRow(gd,re,valCol,from=0){
+  for(let r=from;r<gd.length;r++){
+    const row=gd[r]; if(!row) continue;
+    for(let c=0;c<Math.min(6,row.length);c++){
+      if(re.test(cellStr(row[c]))){
+        if(valCol==null || num(row[valCol])!==null) return r;
+      }
+    }
+  }
+  return -1;
+}
+/* all rows matching (for repeated labels) */
+function findRows(gd,re,maxCol=4){
+  const out=[];
+  for(let r=0;r<gd.length;r++){ const row=gd[r]; if(!row) continue;
+    for(let c=0;c<Math.min(maxCol,row.length);c++) if(re.test(cellStr(row[c]))){ out.push(r); break; } }
+  return out;
+}
+/* columns in a row matching regex */
+function rowCols(rowArr,re){
+  const out=[]; (rowArr||[]).forEach((v,c)=>{ if(re.test(cellStr(v))) out.push(c); }); return out;
+}
+function W(warns,msg){ warns.push(msg); }
+
+/* =====================================================================
+ *  PARSERS
+ * ===================================================================== */
+function detectType(wb){
+  const names=wb.SheetNames.map(s=>s.trim());
+  for(const d of MAP.detect){
+    if(d.all.every(re=>names.some(n=>re.test(n)))) return d.type;
+  }
+  return null;
+}
+function sheetByRe(wb,re){
+  const n=wb.SheetNames.find(s=>re.test(s.trim()));
+  return n?wb.Sheets[n]:null;
+}
+
+/* ---------- P&L workbook (VND or USD auto-detected) ---------- */
+function parsePnl(wb){
+  const warns=[];
+  const ws=sheetByRe(wb,MAP.pnlSummary.sheet);
+  if(!ws) throw new Error('Summary P&L sheet not found');
+  const gd=grid(ws);
+
+  /* month from title cell */
+  let monthKey=null;
+  for(let r=0;r<8;r++){ const s=cellStr((gd[r]||[])[1]); const m=s.match(MAP.pnlSummary.monthTitle); if(m){ monthKey=monthKeyFromText(m[1]); break; } }
+  if(!monthKey) W(warns,'P&L: month not found in Summary P&L title — using file order');
+
+  /* --- column blocks: scan the row holding "MTD" and the row below it --- */
+  let hdrRow=-1;
+  for(let r=0;r<20;r++){ if(rowCols(gd[r]||[],/^MTD$/i).length && rowCols(gd[r]||[],/^YTD$/i).length){ hdrRow=r; break; } }
+  if(hdrRow<0) throw new Error('Summary P&L: MTD/YTD header row not found');
+  const mtdCol=rowCols(gd[hdrRow],/^MTD$/i)[0], ytdCol=rowCols(gd[hdrRow],/^YTD$/i)[0];
+  const lab=gd[hdrRow+1]||[];
+  const acts=rowCols(lab,/^ACTUAL$/i), buds=rowCols(lab,/^BUDGET$/i), lys=rowCols(lab,/^LY$/i);
+  const blk={ MTD:{}, YTD:{} };
+  blk.MTD.act = acts.find(c=>c>=mtdCol&&c<ytdCol); blk.YTD.act = acts.find(c=>c>=ytdCol);
+  blk.MTD.bud = buds.find(c=>c>=mtdCol&&c<ytdCol); blk.YTD.bud = buds.find(c=>c>=ytdCol);
+  blk.MTD.ly  = lys.find(c=>c>=mtdCol&&c<ytdCol);  blk.YTD.ly  = lys.find(c=>c>=ytdCol);
+  for(const p of ['MTD','YTD']) for(const k of ['act','bud','ly'])
+    if(blk[p][k]==null) W(warns,`Summary P&L: ${p} ${k.toUpperCase()} column block not found`);
+
+  /* helper: read one label into {act,bud,ly} × {MTD,YTD} (+ % col which sits at col+1) */
+  const readRow=(re,opt={})=>{
+    const r=findRow(gd,re, opt.mustVal? blk.MTD.act:null, opt.from||0);
+    if(r<0){ if(!opt.silent) W(warns,'Summary P&L row not found: '+re); return null; }
+    const o={_row:r};
+    for(const p of ['MTD','YTD']){ o[p]={};
+      for(const k of ['act','bud','ly']){ const c=blk[p][k]; o[p][k]= c==null?null:num(gd[r][c]); o[p][k+'Pct']= c==null?null:num(gd[r][c+1]); } }
+    return o;
+  };
+
+  const out={ monthKey, currency:null, warns, stats:{}, rev:{}, dp:{}, undist:{}, fnbOutlets:[], depts:{}, sum:{} };
+
+  /* stats */
+  for(const[k,re] of Object.entries(MAP.pnlSummary.stats)) out.stats[k]=readRow(re,{mustVal:true});
+  /* currency: VND ADR ~ millions, USD ~ hundreds */
+  const adr=out.stats.adr?.MTD?.act;
+  out.currency = adr!=null && adr<100000 ? 'USD':'VND';
+
+  /* revenue (INCL SC block) + excl for SC check */
+  const incAt=findRow(gd,MAP.pnlSummary.revInclAnchor);
+  if(incAt<0) W(warns,'Summary P&L: "Revenue Incl Service Charges" anchor not found');
+  for(const[k,re] of Object.entries(MAP.pnlSummary.rev)) out.rev[k]=readRow(re,{from:Math.max(incAt,0),mustVal:false,silent:k==='totalExcl'});
+  const exAt=findRow(gd,MAP.pnlSummary.revExclAnchor);
+  /* Total Revenue EXCL SC sits BEFORE the Incl-SC anchor — re-read from top */
+  out.rev.totalExcl = readRow(MAP.pnlSummary.rev.totalExcl,{from:0});
+  out.rev.roomsExcl = exAt>=0 ? readRow(/^Rooms$/i,{from:exAt}) : null;
+  out.rev.sc = readRow(MAP.pnlSummary.scCollected);
+
+  /* department profit block */
+  const dpAnchors=findRows(gd,MAP.pnlSummary.deptProfitAnchor);
+  const dpHdr=dpAnchors.find(r=>num(gd[r]?.[blk.MTD.act])===null);   // block header (no value)
+  const dpTot=dpAnchors.find(r=>num(gd[r]?.[blk.MTD.act])!==null);   // total row (has value)
+  if(dpHdr!=null) for(const[k,re] of Object.entries(MAP.pnlSummary.deptProfitRows)) out.dp[k]=readRow(re,{from:dpHdr,silent:true});
+  out.dp.total = dpTot!=null ? readRow(MAP.pnlSummary.deptProfitTotal,{mustVal:true,from:dpHdr||0}) : null;
+  if(!out.dp.total) W(warns,'Summary P&L: Department Profit total row not found');
+
+  /* undistributed: payroll-incl block + other-expenses block AFTER dept profit */
+  const from=dpTot||0;
+  const payAnchor=findRows(gd,MAP.pnlSummary.undistPayrollAnchor).find(r=>r>from);
+  const othAnchor=findRows(gd,MAP.pnlSummary.undistOtherAnchor).find(r=>r>(payAnchor||from));
+  for(const[k,re] of Object.entries(MAP.pnlSummary.undist)){
+    out.undist[k]={ pay: payAnchor? readRow(re,{from:payAnchor,silent:true}):null,
+                    oth: othAnchor? readRow(re,{from:othAnchor,silent:true}):null };
+    if(!out.undist[k].pay && !out.undist[k].oth && k!=='energy') W(warns,'Summary P&L: undistributed dept not found: '+k);
+  }
+
+  /* summary bottom rows */
+  const S=MAP.pnlSummary;
+  for(const k of ['gop','baseFee','incFee','ibfc','ffe','insurance','rent','ebitda','netProfit','payrollExcl','payrollIncl'])
+    out.sum[k]=readRow(S[k],{mustVal:k==='gop'});
+
+  /* ---- Rooms department sheet ---- */
+  const rws=sheetByRe(wb,MAP.deptSheet.rooms.sheet);
+  if(rws){ const rgd=grid(rws);
+    out.depts.rooms=parseDeptSheet(rgd,MAP.deptSheet.rooms,warns,'Rooms');
+    out.depts.rooms.expenses=parseExpenseLines(rgd,out.depts.rooms._cols,warns,'Rooms');
+  } else W(warns,'Rooms department sheet not found');
+
+  /* ---- F&B outlet sheets ---- */
+  for(const [re,name] of MAP.deptSheet.outlets){
+    const ws2=sheetByRe(wb,re);
+    if(!ws2){ W(warns,'Outlet sheet not found: '+name); continue; }
+    const gd2=grid(ws2);
+    const o=parseDeptSheet(gd2,MAP.deptSheet.outletRows,warns,name);
+    o.meals=parseOutletMeals(gd2,o._cols);
+    o.name=name; out.fnbOutlets.push(o);
+  }
+
+  /* ---- Tracking Segmentation ---- */
+  out.seg=parseSegmentation(wb,warns);
+  /* ---- other operating departments ---- */
+  out.otherDepts=[];
+  for(const [re,name] of MAP.deptSheet.otherDepts){
+    const ws2=sheetByRe(wb,re);
+    if(!ws2) continue;                       // optional sheets — no warning
+    const o=parseDeptSheet(grid(ws2),MAP.deptSheet.genericRows,warns,name);
+    o.name=name; out.otherDepts.push(o);
+  }
+  return out;
+}
+
+/* generic department-sheet parser.
+   Layout: header row has ACTUAL twice (MTD block, YTD block);
+   each block = ACTUAL,%,BUDGET,%[,LY,%]. Values live 0–2 cols right of label. */
+function parseDeptSheet(gd,rowsMap,warns,name){
+  let hdr=-1;
+  for(let r=0;r<20;r++){ if(rowCols(gd[r]||[],MAP.deptSheet.headerCell).length>=1){ hdr=r; break; } }
+  const o={_cols:null};
+  if(hdr<0){ W(warns,name+': ACTUAL header row not found'); return o; }
+  const acts=rowCols(gd[hdr],/^ACTUAL$/i), buds=rowCols(gd[hdr],/^BUDGET$/i),
+        lys=rowCols(gd[hdr],/^(LY|LAST YEAR)$/i);
+  const c={ act:acts[0], bud:buds[0], ly:lys[0], yact:acts[1], ybud:buds[1], yly:lys[1] };
+  o._cols=c;
+  for(const[k,re] of Object.entries(rowsMap)){
+    if(k==='sheet') continue;
+    const r=findRow(gd,re,null,hdr);
+    if(r<0){ o[k]=null; continue; }
+    /* value may be on label col+offset — take the block columns directly */
+    const row=gd[r];
+    const pick=cc=>cc==null?null:num(row[cc]);
+    const pickPct=cc=>cc==null?null:num(row[cc+1]);
+    o[k]={ MTD:{act:pick(c.act),bud:pick(c.bud),ly:pick(c.ly),actPct:pickPct(c.act),budPct:pickPct(c.bud),lyPct:pickPct(c.ly)},
+           YTD:{act:pick(c.yact),bud:pick(c.ybud),ly:pick(c.yly),actPct:pickPct(c.yact),budPct:pickPct(c.ybud),lyPct:pickPct(c.yly)} };
+  }
+  return o;
+}
+
+/* ---------- Tracking Segmentation ---------- */
+function parseSegmentation(wb,warns){
+  const ws=sheetByRe(wb,MAP.seg.sheet);
+  if(!ws){ W(warns,'Tracking Segmentation sheet not found'); return null; }
+  const gd=grid(ws);
+  const hdr=findRow(gd,MAP.seg.headerCell);
+  if(hdr<0){ W(warns,'Segmentation: "Main Group" header not found'); return null; }
+  const rcols=rowCols(gd[hdr],MAP.seg.roomsCol);           // 6 blocks: MTD A/B/LY, YTD A/B/LY
+  if(rcols.length<6) W(warns,`Segmentation: expected 6 "Rooms" column blocks, found ${rcols.length}`);
+  const blocks=['mtdAct','mtdBud','mtdLy','ytdAct','ytdBud','ytdLy'];
+  const out={rows:[],grand:{}};
+  let group=null,segment=null;
+  for(let r=hdr+1;r<gd.length;r++){
+    const row=gd[r]; if(!row) continue;
+    const b=cellStr(row[1]),c=cellStr(row[2]),dd=cellStr(row[3]),e=cellStr(row[4]);
+    if(!b&&!c&&!dd&&!e) continue;
+    const vals={};
+    blocks.forEach((k,i)=>{ const col=rcols[i]; if(col==null) return;
+      vals[k]={rn:num(row[col]),rev:num(row[col+1]),arr:num(row[col+2])}; });
+    if(MAP.seg.grand1.test(dd)||MAP.seg.grand1.test(c)){ out.grand.exclSC={label:dd||c,vals}; continue; }
+    if(MAP.seg.grand2.test(dd)||MAP.seg.grand2.test(c)){ out.grand.inclSC={label:dd||c,vals}; continue; }
+    if(/^Service Charge$/i.test(dd)||/^Service Charge$/i.test(c)) continue;
+    if(b&&/Total$/i.test(b)){ out.rows.push({type:'grouptotal',group:b.replace(/\s*Total$/i,''),name:b,vals}); continue; }
+    if(b) group=b;
+    if(c&&!/^Subtotal$/i.test(c)) segment=c;
+    if(/^Subtotal$/i.test(c)){ out.rows.push({type:'segtotal',group,segment,name:segment+' — subtotal',vals}); continue; }
+    if(dd&&e) out.rows.push({type:'sub',group,segment,code:dd,name:e,vals});
+  }
+  if(!out.rows.length) W(warns,'Segmentation: no data rows parsed');
+  return out;
+}
+
+/* ---------- F&B outlet meal-period blocks ---------- */
+function parseOutletMeals(gd,c){
+  if(!c) return null;
+  const out={}; const M=MAP.meals;
+  const fr=findRow(gd,M.foodAnchor), br=findRow(gd,M.bevAnchor);
+  const read=r=>r<0?null:{MTD:{act:num(gd[r]?.[c.act]),bud:num(gd[r]?.[c.bud]),ly:num(gd[r]?.[c.ly])},
+                          YTD:{act:num(gd[r]?.[c.yact]),bud:num(gd[r]?.[c.ybud])}};
+  for(const [key,covRe,mealRe] of M.list){
+    const cr=findRow(gd,covRe); if(cr<0) continue;
+    const m={covers:read(cr)};
+    for(let r=Math.max(0,cr-4);r<cr;r++){
+      const s=cellStr((gd[r]||[])[2])||cellStr((gd[r]||[])[3]);
+      if(M.capture.test(s)) m.capture=read(r);
+      else if(M.inhouse.test(s)) m.inhouse=read(r);
+      else if(M.walkin.test(s)) m.walkin=read(r);
+    }
+    if(fr>=0){ const r=findRow(gd,mealRe,null,fr); if(r>=0&&r<fr+6) m.foodRev=read(r); }
+    if(br>=0){ const r=findRow(gd,mealRe,null,br); if(r>=0&&r<br+6) m.bevRev=read(r); }
+    out[key]=m;
+  }
+  return Object.keys(out).length?out:null;
+}
+
+/* ---------- department cost-line detail (rows between Other Expenses … Total) ---------- */
+function parseExpenseLines(gd,c,warns,name){
+  if(!c) return [];
+  const a=findRow(gd,MAP.deptSheet.expenseAnchor);
+  if(a<0){ W(warns,name+': Other Expenses anchor not found'); return []; }
+  const end=findRow(gd,MAP.deptSheet.expenseEnd,null,a);
+  const lines=[];
+  for(let r=a+1;r<(end<0?Math.min(a+40,gd.length):end);r++){
+    const row=gd[r]||[];
+    const label=cellStr(row[2])||cellStr(row[1]); if(!label) continue;
+    const v={label,
+      MTD:{act:num(row[c.act]),bud:num(row[c.bud]),ly:num(row[c.ly])},
+      YTD:{act:num(row[c.yact]),bud:num(row[c.ybud])}};
+    if(v.MTD.act!==null||v.MTD.bud!==null||v.MTD.ly!==null) lines.push(v);
+  }
+  return lines;
+}
+
+/* ---------- STAR monthly ---------- */
+function parseStarMonthly(wb){
+  const warns=[]; const out={warns, monthKey:null, glance:{}, summary:{}, comp:{}, dow:[], census:{}};
+  const gws=sheetByRe(wb,MAP.star.glance); if(!gws) throw new Error('STAR Glance sheet missing');
+  const gg=grid(gws);
+  for(let r=0;r<8;r++){ const s=cellStr((gg[r]||[])[1]); const m=s.match(MAP.star.monthOf); if(m){ out.monthKey=monthKeyFromText(m[1]); break; } }
+
+  /* Glance: rows "Current Month/Year To Date/Running 3/12" ×2 (levels then %chg).
+     Each row: 9 numbers = occ my/comp/mpi, adr my/comp/ari, revpar my/comp[/rgi] */
+  const per={ 'Current Month':'cm','Year To Date':'ytd','Running 3 Month':'r3','Running 12 Month':'r12' };
+  let pass=0;
+  for(let r=0;r<gg.length;r++){
+    const s=cellStr((gg[r]||[])[3])||cellStr((gg[r]||[])[2]);
+    if(per[s]){
+      const nums=(gg[r]||[]).map(num).filter(v=>v!==null);
+      const key=per[s]+(pass>=4?'Chg':'');
+      if(nums.length>=8) out.glance[key]={ occ:{my:nums[0],comp:nums[1],idx:nums[2]}, adr:{my:nums[3],comp:nums[4],idx:nums[5]}, revpar:{my:nums[6],comp:nums[7],idx:nums[8]??(nums[6]/nums[7]*100)} };
+      pass++;
+    }
+  }
+  if(!out.glance.cm) W(warns,'STAR Glance: current-month block not parsed');
+
+  /* Summary: per metric block, per entity row: [cm,chg,ytd,chg,r3,chg,r12,chg] */
+  const sws=sheetByRe(wb,MAP.star.summary);
+  if(sws){ const sg=grid(sws);
+    for(const [mk,mre] of Object.entries(MAP.star.blocks)){
+      const br=findRow(sg,mre); if(br<0){ W(warns,'STAR Summary: block missing '+mk); continue; }
+      out.summary[mk]={};
+      for(const [ek,ere] of Object.entries(MAP.star.entities)){
+        const r=findRow(sg,ere,null,br); if(r<0||r>br+12) continue;
+        const nums=(sg[r]||[]).map(num).filter(v=>v!==null);
+        if(nums.length>=8) out.summary[mk][ek]={cm:nums[0],cmChg:nums[1],ytd:nums[2],ytdChg:nums[3],r3:nums[4],r3Chg:nums[5],r12:nums[6],r12Chg:nums[7]};
+      }
+    }
+    /* census: comp set rooms  */
+    const cr=findRow(sg,MAP.star.census, null, findRow(sg,/Census\/Sample/i));
+    if(cr>=0){ const nums=(sg[cr]||[]).map(num).filter(v=>v!==null); if(nums.length>=2) out.census={props:nums[0],rooms:nums[1]}; }
+  } else W(warns,'STAR Summary sheet missing');
+
+  /* Comp: 18-month history per metric: months row then My/Comp/Index/Rank rows */
+  const cws=sheetByRe(wb,MAP.star.comp);
+  if(cws){ const cg=grid(cws);
+    for(const [mk,mre] of Object.entries(MAP.star.compBlocks)){
+      const br=findRow(cg,mre,null,15); if(br<0) continue;
+      const yearRow=cg[br]||[], mRow=cg[br+1]||[];
+      /* months: fill year across, months named in the next row */
+      const months=[]; let curYear=null;
+      for(let c=0;c<mRow.length;c++){
+        const y=num(yearRow[c]); if(y&&y>2000) curYear=y;
+        const nm=cellStr(mRow[c]); const mi=MONTHS.findIndex(x=>x.slice(0,3).toLowerCase()===nm.toLowerCase().slice(0,3));
+        if(mi>=0&&curYear!=null) months.push({c,key:`${curYear + (mi===11&&months.length===0?0:0)}-${String(mi+1).padStart(2,'0')}`});
+        else if(mi>=0) months.push({c,key:null});
+      }
+      /* fix year rollover: years appear only at their first month */
+      let yr=null; let lastMi=-1;
+      for(const m of months){ const mi=+((m.key||'0-1').split('-')[1]); if(m.key){ yr=+m.key.split('-')[0]; lastMi=mi; } }
+      const rows={};
+      for(const [rk,rre] of Object.entries(MAP.star.compRows)){
+        const r=findRow(cg,rre,null,br); if(r>=0&&r<=br+8) rows[rk]=cg[r];
+      }
+      out.comp[mk]={ months:months.map(m=>m.key), cols:months.map(m=>m.c),
+        my:months.map(m=>num(rows.prop?.[m.c])), comp:months.map(m=>num(rows.comp?.[m.c])),
+        idx:months.map(m=>num(rows.idx?.[m.c])), rank:months.map(m=>cellStr(rows.rank?.[m.c])) };
+    }
+  } else W(warns,'STAR Comp sheet missing');
+
+  /* Day of Week */
+  const dws=sheetByRe(wb,MAP.star.dow);
+  if(dws){ const dg=grid(dws);
+    const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    for(const d of days){
+      const r=findRow(dg,new RegExp('^'+d+'$','i')); if(r<0) continue;
+      const row=dg[r]||[];
+      const nums=row.map(num); // D=my occ, F=comp occ, H=mpi, J=my adr, L=comp adr...
+      const vals=(row||[]).map((v,i)=>({i,v:num(v)})).filter(x=>x.v!==null).map(x=>x.v);
+      if(vals.length>=5) out.dow.push({day:d, occMy:vals[0],occMyChg:vals[1],occComp:vals[2],mpi:vals[3],mpiChg:vals[4], adrMy:vals[5],adrMyChg:vals[6],adrComp:vals[7]});
+    }
+  }
+  /* Segmentation Indexes: Transient/Group/Contract usually not subscribed */
+  const seg=sheetByRe(wb,MAP.star.segIdx);
+  out.segAvailable=false;
+  if(seg){ const sgg=grid(seg); const r=findRow(sgg,/^Current Month$/i);
+    if(r>=0){ const row=sgg[r+1]||sgg[r]; /* transient cols D..F populated? */
+      const rr=findRows(sgg,/^\d{4}$/,3);
+      // if any transient-column value exists in the block rows, mark available
+      for(let i=r;i<Math.min(r+22,sgg.length);i++){ const rw=sgg[i]||[]; if(num(rw[3])!==null&&num(rw[4])!==null&&num(rw[5])!==null){ out.segAvailable=true; break; } }
+    } }
+  /* Daily by Month (+ Industry): this month's daily My/Comp/Industry series —
+     feeds the Patterns & Heatmaps tab (accumulates as monthly files are dropped) */
+  out.daily=parseStarDailyByMonth(wb,warns);
+  return out;
+}
+
+function parseStarDailyByMonth(wb,warns){
+  const out={occ:{},adr:{},revpar:{}}; let found=false;
+  const srcs=[[/^Daily by Month$/i,{my:'my',comp:'comp'}],[/^Daily by Month Industry$/i,{my:null,ind:'ind'}]];
+  for(const [re,want] of srcs){
+    const ws=sheetByRe(wb,re); if(!ws) continue;
+    const gd=grid(ws);
+    for(const [mk,mre] of [['occ',/^Occupancy \(%\)$/i],['adr',/^ADR$/i],['revpar',/^RevPAR$/i]]){
+      const br=findRow(gd,mre,null,10); if(br<0) continue;
+      const dayRow=gd[br+1]||[];
+      const dayCols=[]; dayRow.forEach((v,c)=>{ const n=num(v); if(n!=null&&n>=1&&n<=31&&Number.isInteger(n)) dayCols.push([c,n]); });
+      if(!dayCols.length) continue;
+      const grab=lre=>{ const r=findRow(gd,lre,null,br+1); if(r<0||r>br+8) return null;
+        const arr=new Array(31).fill(null); for(const[c,dn] of dayCols) arr[dn-1]=num(gd[r][c]); return arr; };
+      const my=grab(/^My Property$/i), comp=grab(/^Competitive Set$/i), ind=grab(/^Industry$/i);
+      if(my&&!out[mk].my) out[mk].my=my;
+      if(comp) out[mk].comp=comp;
+      if(ind) out[mk].ind=ind;
+      found=true;
+    }
+  }
+  if(!found){ W(warns,'Daily by Month sheets not parsed — heatmaps will miss this month'); return null; }
+  return out;
+}
+
+/* ---------- STAR weekly / daily (pace) ---------- */
+function parseStarWeekly(wb){
+  const warns=[]; const ws=sheetByRe(wb,/^SummaryComb$/i); if(!ws) throw new Error('SummaryComb missing');
+  const gd=grid(ws); const out={warns,type:'weekly',label:cellStr((gd[1]||[])[1]),days:[]};
+  /* per metric block (Occupancy/ADR/RevPAR) row "Total | My Property" then Comp/Index/Rank */
+  const blocks={occ:/^Occupancy$/i,adr:/^ADR$/i,revpar:/^RevPAR$/i};
+  out.metrics={};
+  for(const[k,re] of Object.entries(blocks)){
+    const br=findRow(gd,re); if(br<0){W(warns,'Weekly: block '+k+' missing');continue;}
+    const my=gd[findRow(gd,/^My Property$/i,null,br)]||[], cp=gd[findRow(gd,/^Comp Set$/i,null,br)]||[], ix=gd[findRow(gd,/^Index/i,null,br)]||[];
+    const grab=row=>row.map(num).filter(v=>v!==null);
+    out.metrics[k]={my:grab(my),comp:grab(cp),idx:grab(ix)};
+  }
+  const hdr=gd[2]||[]; out.dayNames=hdr.map(cellStr).filter(s=>/day$/i.test(s));
+  return out;
+}
+function parseStarDaily(wb){
+  const warns=[]; const ws=sheetByRe(wb,/^Glance$/i); if(!ws) throw new Error('Daily Glance missing');
+  const gd=grid(ws); const out={warns,type:'daily',label:'',rows:{}};
+  for(let r=0;r<8;r++){ const s=cellStr((gd[r]||[])[1]); const m=s.match(/Period Ending:\s*([A-Za-z]+ \d+, \d{4})/i); if(m){ out.label=m[1]; break; } }
+  const pers={day:/^[A-Za-z]+ \d+, \d{4}$/, mtd:/^Running Month To Date$/i, r7:/^Running 7 Days$/i};
+  let seen=0;
+  for(let r=0;r<40;r++){ const row=gd[r]||[];
+    for(let c=2;c<6;c++){ const s=cellStr(row[c]);
+      for(const [k,re] of Object.entries(pers)){
+        if(re.test(s)){ const nums=row.map(num).filter(v=>v!==null);
+          if(nums.length>=8 && seen<3) out.rows[k]={occ:{my:nums[0],comp:nums[1],idx:nums[2]},adr:{my:nums[3],comp:nums[4],idx:nums[5]},revpar:{my:nums[6],comp:nums[7],idx:nums[8]??null}};
+          if(re===pers.mtd&&out.rows.mtd) seen=3;
+        } } } if(Object.keys(out.rows).length>=3) break; }
+  return out;
+}
+
+/* ---------- HotStats ---------- */
+function parseHotStats(wb){
+  const warns=[]; const ws=sheetByRe(wb,MAP.hotstats.sheet); if(!ws) throw new Error('Operating Statement missing');
+  const gd=grid(ws); const out={warns,monthKey:null,rows:{}};
+  /* month: first cell matching "October 2025" */
+  outer: for(let r=0;r<8;r++){ const row=gd[r]||[]; for(let c=0;c<12;c++){ if(MAP.hotstats.monthRe.test(cellStr(row[c]))){ out.monthKey=monthKeyFromText(cellStr(row[c])); break outer; } } }
+  if(!out.monthKey) W(warns,'HotStats: period month not found');
+  /* header row with You/Comp/Index triplets */
+  let hdr=-1; for(let r=0;r<12;r++){ if(rowCols(gd[r]||[],/^You\s*$/i).length>=2){ hdr=r; break; } }
+  if(hdr<0) throw new Error('HotStats: You/Comp/Index header not found');
+  const yous=rowCols(gd[hdr],/^You\s*$/i);
+  const c0=yous[0], y0=yous[3]??(yous[0]+9); // MTD TY starts at first You; YTD TY at 4th You
+  /* section anchors so duplicate labels resolve to the right department */
+  const secRow={};
+  for(const [sk,sre] of Object.entries(MAP.hotstats.sections)){ const r=findRow(gd,sre); if(r>=0) secRow[sk]=r; }
+  secRow.Rooms = findRow(gd,/^Rooms Department$/i);
+  secRow.Total = findRow(gd,/^Financial Ratios|^Total Operating Revenue/i)>=0? findRow(gd,/^Other & Minor Operated Departments$/i):0;
+  for(const [key,re,sec] of MAP.hotstats.rows){
+    const from=secRow[sec]??0;
+    const r=findRow(gd,re,null,from);
+    if(r<0){ W(warns,'HotStats row not found: '+key); continue; }
+    const row=gd[r]||[];
+    const basis=cellStr(row[3])||cellStr(row[4]);
+    /* HotStats cells are often TEXT like "45.0%" or "n/a" — parse leniently */
+    const hn=v=>{ if(typeof v==='number') return isFinite(v)?v:null;
+      if(v==null) return null; const s=String(v).trim().replace(/,/g,'');
+      if(/^n\/?a$/i.test(s)) return null;
+      const m=s.match(/^-?\d+(\.\d+)?%?$/); return m? parseFloat(s):null; };
+    const take=(st)=>({you:hn(row[st]),comp:hn(row[st+1]),idx:hn(row[st+2])});
+    out.rows[key]={ basis,
+      mtd:{ ty:take(c0), ly:take(c0+3), vr:take(c0+6) },
+      ytd:{ ty:take(y0), ly:take(y0+3), vr:take(y0+6) } };
+  }
+  return out;
+}
+
+/* ---------- Consolidated FS ---------- */
+function parseFS(wb){
+  const warns=[]; const out={warns,months:{}};
+  for(const name of wb.SheetNames){
+    const m=name.trim().match(MAP.fs.sheetRe); if(!m) continue;
+    const key=`20${m[1]}-${m[2]}`;
+    const gd=grid(wb.Sheets[name]);
+    const o={};
+    /* column block: header row "Actual (VND)" */
+    let hdr=-1; for(let r=0;r<14;r++){ if(rowCols(gd[r]||[],/^Actual \(VND\)/i).length){ hdr=r; break; } }
+    if(hdr<0){ W(warns,name+': VND header not found'); continue; }
+    const cAct=rowCols(gd[hdr],/^Actual \(VND\)/i)[0];
+    const cBud=rowCols(gd[hdr],/^Budget \(VND\)/i)[0];
+    const lyCols=rowCols(gd[hdr],/^Actual/i); // 2nd Actual = LY, 3rd = YTD actual
+    const cLy=lyCols[1], cYact=lyCols[2];
+    const cYbud=rowCols(gd[hdr],/^Budget \(VND\)/i)[1];
+    const usdLimit=findRows(gd,/^Actual \(USD\)/i,20)[0]??gd.length; // stop before USD block
+    const read=(re,from=0)=>{ const r=findRow(gd,re,cAct,from); if(r<0||r>=usdLimit) return null;
+      return { act:num(gd[r][cAct]), bud:cBud!=null?num(gd[r][cBud]):null, ly:cLy!=null?num(gd[r][cLy]):null,
+               yact:cYact!=null?num(gd[r][cYact]):null, ybud:cYbud!=null?num(gd[r][cYbud]):null, _row:r }; };
+    for(const[k,re] of Object.entries(MAP.fs.rows)){
+      if(k==='roomRev'){ const a=findRow(gd,MAP.fs.roomDeptAnchor); o[k]=read(re,Math.max(a,0)); }
+      else if(k==='minorRev'){ const a=findRow(gd,MAP.fs.minorAnchor); o[k]=read(re,Math.max(a,0)); }
+      else if(k==='fx'){ const r=findRow(gd,re); o.fxRate=r>=0?num((gd[r]||[]).find((v,i)=>i>1&&num(v)>1000)):null; }
+      else o[k]=read(re);
+      if(!o[k]&&k!=='fx'&&k!=='rent') W(warns,name+': FS row not found: '+k);
+    }
+    out.months[key]=o;
+  }
+  if(!Object.keys(out.months).length) throw new Error('No FSyy.mm sheets found');
+  return out;
+}
+
+/* =====================================================================
+ *  REVENUE-ANALYSIS WORKBOOKS
+ *  Big transaction files are AGGREGATED here at ingest time; only the
+ *  compact aggregates go to localStorage. Column names below are the
+ *  exact headers of each export — edit here if the exports change.
+ * ===================================================================== */
+function sheetObjs(wb,re){ const ws=sheetByRe(wb,re); return ws?XLSX.utils.sheet_to_json(ws,{defval:null}):null; }
+const MKEY=(y,m)=>`${y}-${String(m).padStart(2,'0')}`;
+function monthNo(name){ const i=MONTHS.findIndex(x=>x.toLowerCase().startsWith(String(name||'').toLowerCase().slice(0,3))); return i<0?null:i+1; }
+function bump(o,k,f,v){ o[k]=o[k]||{}; o[k][f]=(o[k][f]||0)+(num(v)||0); }
+
+function parseKeyAcct(wb){
+  const rows=sheetObjs(wb,/^Key Account$/i); if(!rows) throw new Error('Key Account sheet missing');
+  const byAcct={}, byType={}, years=new Set();
+  for(const r of rows){
+    const y=num(r['Year']); if(!y) continue; years.add(y);
+    const k=y+'|'+(r['Account']||'?');
+    bump(byAcct,k,'rev',r['Room Rev']); bump(byAcct,k,'n',r['Nights']);
+    byAcct[k].type=r['Account Type']||''; byAcct[k].acct=r['Account']; byAcct[k].year=y;
+    bump(byType,y+'|'+(r['Account Type']||'?'),'rev',r['Room Rev']); bump(byType,y+'|'+(r['Account Type']||'?'),'n',r['Nights']);
+  }
+  return {byAcct,byType,years:[...years].sort()};
+}
+function parseOta(wb){
+  const rows=sheetObjs(wb,/^Booking com$/i); if(!rows) throw new Error('Booking com sheet missing');
+  const series={}, months=new Set();
+  for(const r of rows){
+    const y=num(r['Year']),m=num(r['Month']),h=(r['Hotel']||'').toString().trim(),adr=num(r['ADR']);
+    if(!y||!m||!h||adr==null||adr<=0) continue;
+    const ym=MKEY(y,m); months.add(ym);
+    series[h]=series[h]||{}; const s=series[h][ym]=series[h][ym]||{sum:0,n:0,min:1e15,max:0};
+    s.sum+=adr; s.n++; s.min=Math.min(s.min,adr); s.max=Math.max(s.max,adr);
+  }
+  for(const h of Object.keys(series)) for(const ym of Object.keys(series[h])){
+    const s=series[h][ym]; series[h][ym]={avg:Math.round(s.sum/s.n),n:s.n,min:Math.round(s.min),max:Math.round(s.max)};
+  }
+  return {hotels:Object.keys(series),months:[...months].sort(),series};
+}
+function parseNor1(wb){
+  const rows=sheetObjs(wb,/^Nor1$/i); if(!rows) throw new Error('Nor1 sheet missing');
+  const byProduct={},byLoyalty={};
+  for(const r of rows){
+    const p=r['Product']||'?';
+    bump(byProduct,p,'rev',r['Total Rev for Month booked']); bump(byProduct,p,'units',r['Rns/Covers']); bump(byProduct,p,'n',1);
+    bump(byLoyalty,(r['Loyalty Status']||'None').toString().trim()||'None','rev',r['Total Rev for Month booked']);
+  }
+  return {byProduct,byLoyalty,txns:rows.length};
+}
+function parseFnbDisc(wb){
+  const rows=sheetObjs(wb,/^FNB Discounts$/i); if(!rows) throw new Error('FNB Discounts sheet missing');
+  const byMonth={},byOutlet={},byCat={},byTier={},years=new Set();
+  for(const r of rows){
+    const y=num(r['Year']),m=num(r['Month No']); if(!y) continue; years.add(y);
+    const disc=num(r['Discount Amount (VND)'])||0, net=num(r['Check Total (VND)'])||0;
+    if(m){ bump(byMonth,MKEY(y,m),'disc',disc); bump(byMonth,MKEY(y,m),'net',net); bump(byMonth,MKEY(y,m),'checks',1); }
+    bump(byOutlet,y+'|'+(r['Outlet']||'?'),'disc',disc); bump(byOutlet,y+'|'+(r['Outlet']||'?'),'net',net); bump(byOutlet,y+'|'+(r['Outlet']||'?'),'checks',1);
+    bump(byCat,y+'|'+(r['Discount Category Label']||'?'),'disc',disc); bump(byCat,y+'|'+(r['Discount Category Label']||'?'),'checks',1);
+    bump(byTier,y+'|'+((r['AP Tier']??'').toString()||'—'),'disc',disc); bump(byTier,y+'|'+((r['AP Tier']??'').toString()||'—'),'checks',1);
+  }
+  return {byMonth,byOutlet,byCat,byTier,years:[...years].sort(),txns:rows.length};
+}
+function parseFnbSum(wb){
+  const rows=sheetObjs(wb,/^Meal Periods$/i); if(!rows) throw new Error('Meal Periods sheet missing');
+  const byMonthMeal={},byOutletMeal={},years=new Set();
+  for(const r of rows){
+    if((r['Version']||'')!=='Actual'||(r['Period']||'')!=='MTD') continue;
+    const y=num(r['Year']),m=monthNo(r['Month']); if(!y||!m) continue; years.add(y);
+    const meal=r['Meal Period']||'?', ym=MKEY(y,m);
+    bump(byMonthMeal,ym+'|'+meal,'cov',r['Covers']); bump(byMonthMeal,ym+'|'+meal,'rev',r['Total Net (excl SC)']);
+    bump(byOutletMeal,y+'|'+(r['Outlet']||'?')+'|'+meal,'cov',r['Covers']); bump(byOutletMeal,y+'|'+(r['Outlet']||'?')+'|'+meal,'rev',r['Total Net (excl SC)']);
+  }
+  return {byMonthMeal,byOutletMeal,years:[...years].sort()};
+}
+function parseUpsell(wb){
+  const rows=sheetObjs(wb,/^Upselling$/i); if(!rows) throw new Error('Upselling sheet missing');
+  const byProduct={},byEmp={},byMonth={},years=new Set();
+  for(const r of rows){
+    const y=num(r['Year']); if(!y) continue; years.add(y);
+    const p=r['Product']||'?';
+    bump(byProduct,y+'|'+p,'rev',r['Revenue']); bump(byProduct,y+'|'+p,'nights',r['Nights']); bump(byProduct,y+'|'+p,'n',1);
+    bump(byEmp,y+'|'+(r['Employee Name']||'?'),'rev',r['Revenue']); bump(byEmp,y+'|'+(r['Employee Name']||'?'),'n',1);
+    const m=num(r['Month']); if(m) bump(byMonth,MKEY(y,m),'rev',r['Revenue']);
+  }
+  return {byProduct,byEmp,byMonth,years:[...years].sort()};
+}
+function roomRank(name){
+  if(!name) return null;
+  const s=String(name).replace(/\s+(King|Twin|Queen|Double)\s*$/i,'').trim().toLowerCase();
+  let best=null;
+  MAP.roomRanks.forEach((r,i)=>{ const rl=r.toLowerCase();
+    if(s===rl||s.startsWith(rl)){ if(best==null||r.length>MAP.roomRanks[best].length) best=i; } });
+  return best==null?null:best+1;
+}
+function parseBookStay(wb){
+  const rows=sheetObjs(wb,/^Booked vs Stayed$/i); if(!rows) throw new Error('Booked vs Stayed sheet missing');
+  const byStayed={},byMemb={},years=new Set(); let skipped=0;
+  for(const r of rows){
+    const y=num(r['Year']); if(!y) continue;
+    const rb=roomRank(r['Room_Booked']), rs=roomRank(r['Room_Stayed']);
+    if(rb==null||rs==null){ skipped++; continue; }          // pseudo/house rooms excluded
+    if(rs<=rb) continue;                                     // only true upgrades counted
+    years.add(y);
+    const nights=num(r['Nights'])||0, rev=num(r['Room Rev'])||0, lv=(rs-rb)*nights;
+    const base=String(r['Room_Stayed']).replace(/\s+(King|Twin|Queen|Double)\s*$/i,'').trim();
+    const sk=y+'|'+base;
+    bump(byStayed,sk,'lv',lv); bump(byStayed,sk,'n',nights); bump(byStayed,sk,'rev',rev); byStayed[sk].rank=rs;
+    const mk2=y+'|'+(r['Membership.Type']||'Others')+'|'+(r['Membership.Rank']||'None');
+    bump(byMemb,mk2,'lv',lv); bump(byMemb,mk2,'n',nights); bump(byMemb,mk2,'rev',rev);
+  }
+  return {byStayed,byMemb,years:[...years].sort(),skipped};
+}
+/* ---------- FY Rolling Forecast (SUM FYxx Forecast) ---------- */
+function serialYM(n){ const d=new Date(Math.round((n-25569)*86400*1000)); return MKEY(d.getUTCFullYear(),d.getUTCMonth()+1); }
+function parseRF(wb){
+  const ws=sheetByRe(wb,/^SUM FY\d{2} Forecast$/i); if(!ws) throw new Error('RF sheet missing');
+  const gd=grid(ws);
+  const hdr=findRow(gd,/^Description$/i); if(hdr<0) throw new Error('RF: Description header not found');
+  const flags=gd[hdr-1]||[];
+  const cols=[]; (gd[hdr]||[]).forEach((v,c)=>{ const n=num(v); if(n!=null&&n>40000&&n<60000) cols.push({c,ym:serialYM(n),flag:cellStr(flags[c])||'?'}); });
+  if(!cols.length) throw new Error('RF: month serial columns not found');
+  const read=re=>{ const r=findRow(gd,re,cols[0].c,hdr); return r<0?null:cols.map(x=>num(gd[r][x.c])); };
+  const rows={
+    occ:read(/^Occupancy %/i), adr:read(/^Average Room Rate/i), revpar:read(/^RevPAR$/i),
+    roomsSold:read(/^No\. of Rooms Sold/i), roomsRev:read(/^Rooms$/i), fbRev:read(/^Total F&B Revenue$/i),
+    totalRev:read(/^Total Revenue$/i), deptProfit:read(/^Department Profit$/i),
+    gop:read(/^Gross Operating Profit$/i), gopPct:read(/^GOP %$/i),
+    payroll:read(/Total Payroll & Related Expenses \(including SVC\)/i),
+    netReturn:read(/^NET RETURN$/i),
+  };
+  for(const[k,v] of Object.entries(rows)) if(!v) throw Object.assign(new Error('RF row missing: '+k),{soft:true});
+  return { months:cols.map(x=>x.ym), flags:cols.map(x=>x.flag), rows,
+           title:cellStr((gd[1]||[])[0])||cellStr((gd[1]||[])[1]) };
+}
+/* ---------- Cashflow forecast (FY yyyy sheet) ---------- */
+function parseCF(wb){
+  const name=wb.SheetNames.find(s=>/^FY \d{4}$/i.test(s.trim())); if(!name) throw new Error('CF sheet missing');
+  const gd=grid(wb.Sheets[name]);
+  const hdr=findRow(gd,/^Period$/i); if(hdr<0) throw new Error('CF: Period row not found');
+  const flags=gd[hdr-1]||[];
+  const cols=[]; (gd[hdr]||[]).forEach((v,c)=>{ const n=num(v); if(n!=null&&n>40000&&n<60000) cols.push({c,ym:serialYM(n),flag:cellStr(flags[c])||'?'}); });
+  const read=re=>{ const r=findRow(gd,re,cols[0].c,hdr); return r<0?null:cols.map(x=>num(gd[r][x.c])); };
+  return { months:cols.map(x=>x.ym), flags:cols.map(x=>x.flag),
+    opening:read(/^Openn?ing Balance/i), cashIn:read(/^Total Cash In$/i),
+    cashOut:read(/^Total Cash Out$/i), closing:read(/^Closing Balance/i) };
+}
+/* ---------- Engineering monthly report (PDF via pdf.js, lazy-loaded) ---------- */
+async function ensurePdfjs(){
+  if(window.pdfjsLib) return;
+  await new Promise((res,rej)=>{ const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'; s.onload=res; s.onerror=()=>rej(new Error('pdf.js CDN failed')); document.head.appendChild(s); });
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+}
+async function parseEngPdf(buf){
+  await ensurePdfjs();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const lines=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const tc=await (await pdf.getPage(p)).getTextContent();
+    const rows={};
+    for(const it of tc.items){ const y=Math.round(it.transform[5]); (rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str}); }
+    Object.entries(rows).sort((a,b)=>b[0]-a[0]).forEach(([,items])=>{
+      const s=items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim(); if(s) lines.push(s); });
+  }
+  /* month: first "APRIL 2026"-style line */
+  let monthKey=null;
+  for(const l of lines.slice(0,10)){ const k=monthKeyFromText(l); if(k){ monthKey=k; break; } }
+  /* work-order KPIs: the 3-integer line following the header */
+  let wo=null;
+  const wi=lines.findIndex(l=>/Total of work order request/i.test(l));
+  if(wi>=0) for(let i=wi;i<wi+4&&i<lines.length;i++){
+    const m=lines[i].match(/^(\d{1,4})\s+(\d{1,4})\s+(\d{1,4})$/);
+    if(m){ wo={total:+m[1],done:+m[2],open:+m[3]}; break; }
+  }
+  /* hot-spots: mentions by floor/location and by system keyword */
+  const locRe=/\b(B[12]|\d{1,2}\s?F|Roof|Lobby|Club|Bistro|Mezz|Banquet|Pool|Spa|Kitchen)\b/gi;
+  const locs={},sys={},critical=[];
+  const skip=/^(APRIL|MAY|JUNE|JULY|MARCH|JANUARY|FEBRUARY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)|ENGINEERING DEPARTMENT|MONTHLY REPORT|BÁO CÁO/i;
+  let maxItem=0;
+  for(const l of lines){
+    if(skip.test(l)) continue;
+    const mNo=l.match(/^(\d{1,3})\s+\S/); if(mNo&&+mNo[1]<=300) maxItem=Math.max(maxItem,+mNo[1]);
+    let m2; const seen=new Set();
+    while((m2=locRe.exec(l))){ const k=m2[1].toUpperCase().replace(/\s/g,''); if(!seen.has(k)){ locs[k]=(locs[k]||0)+1; seen.add(k); } }
+    for(const [label,re] of MAP.engSys) if(re.test(l)) sys[label]=(sys[label]||0)+1;
+    if(MAP.engCritical.test(l)&&l.length>25&&critical.length<12) critical.push(l.slice(0,160));
+  }
+  return {monthKey,wo,locs,sys,critical,items:maxItem,pages:pdf.numPages};
+}
+
+const REV_PARSERS={keyacct:parseKeyAcct,ota:parseOta,nor1:parseNor1,fnbdisc:parseFnbDisc,fnbsum:parseFnbSum,upsell:parseUpsell,bookstay:parseBookStay};
+const REV_LABELS={keyacct:'Key accounts',ota:'OTA price observations',nor1:'Nor1 upsell transactions',fnbdisc:'F&B discounts',fnbsum:'F&B meal-period history',upsell:'FO/Reservation upsell',bookstay:'Room upgrades (booked vs stayed)'};
+
+/* =====================================================================
+ *  INGEST + STORE
+ * ===================================================================== */
+const LS_KEY='ssp_dash_v1';
+function loadStore(){ try{ const s=JSON.parse(localStorage.getItem(LS_KEY)); if(s&&s.months) state.store=s; }catch(e){} }
+function saveStore(){
+  /* rolling 24-month window */
+  const keys=Object.keys(state.store.months).sort();
+  while(keys.length>24){ delete state.store.months[keys.shift()]; }
+  try{ localStorage.setItem(LS_KEY,JSON.stringify(state.store)); }
+  catch(e){ toast('localStorage full — export & clear old months',true); }
+}
+function monthSlot(key){ state.store.months[key]=state.store.months[key]||{}; return state.store.months[key]; }
+
+async function ingestFiles(files){
+  for(const f of files){
+    try{
+      const buf=await f.arrayBuffer();
+      if(/\.pdf$/i.test(f.name)||new TextDecoder().decode(new Uint8Array(buf.slice(0,5)))==='%PDF-')
+        await ingestPdf(f.name,buf);
+      else ingestBuffer(f.name,buf);
+    }catch(e){ toast(f.name+': '+e.message,true); }
+  }
+  saveStore(); refreshMonths(); renderAll();
+}
+async function ingestPdf(name,buf){
+  const eng=await parseEngPdf(buf);
+  if(!eng.monthKey&&!eng.wo){ toast(name+': PDF not recognised as an Engineering monthly report',true); return; }
+  const key=eng.monthKey||state.month||'unknown';
+  monthSlot(key).eng=eng;
+  state.month=state.month||key;
+  toast(`✔ Engineering report → ${fmtMonthKey(key)} (${eng.items} logged items, WO ${eng.wo?eng.wo.total:'?'})`);
+}
+function ingestBuffer(name,buf){        // exposed for automated testing too
+  const wb=XLSX.read(buf,{type:'array'});
+  const type=detectType(wb);
+  if(!type){ toast(name+': unrecognised workbook (sheets: '+wb.SheetNames.slice(0,4).join(', ')+'…)',true); return; }
+  let parsed,label;
+  try{
+    if(type==='pnl'){ parsed=parsePnl(wb);
+      const key=parsed.monthKey||state.month||'unknown';
+      const slot=monthSlot(key);
+      slot['pnl'+parsed.currency]=parsed; slot.warns=(slot.warns||[]).filter(w=>!w.startsWith('P&L '+parsed.currency)).concat(parsed.warns.map(w=>'P&L '+parsed.currency+': '+w));
+      label=`P&L ${parsed.currency} → ${fmtMonthKey(key)}`;
+      state.month=key;
+    }
+    else if(type==='starMonthly'){ parsed=parseStarMonthly(wb);
+      const key=parsed.monthKey||state.month||'unknown'; const slot=monthSlot(key);
+      slot.star=parsed; slot.warns=(slot.warns||[]).concat(parsed.warns.map(w=>'STAR: '+w));
+      label=`Monthly STAR → ${fmtMonthKey(key)}`; state.month=state.month||key;
+    }
+    else if(type==='starWeekly'){ parsed=parseStarWeekly(wb); state.store.pace.weekly=parsed; label='Weekly STAR (pace): '+parsed.label; }
+    else if(type==='starDaily'){ parsed=parseStarDaily(wb); state.store.pace.daily=parsed; label='Daily STAR (pace): '+parsed.label; }
+    else if(type==='hotstats'){ parsed=parseHotStats(wb);
+      const key=parsed.monthKey||state.month||'unknown'; const slot=monthSlot(key);
+      slot.hotstats=parsed; slot.warns=(slot.warns||[]).concat(parsed.warns.map(w=>'HotStats: '+w));
+      label=`HotStats → ${fmtMonthKey(key)}`;
+    }
+    else if(type==='fs'){ parsed=parseFS(wb);
+      for(const [key,o] of Object.entries(parsed.months)){
+        const slot=monthSlot(key); slot.fs=o; slot.fs.fxRate=o.fxRate;
+      }
+      const keys=Object.keys(parsed.months).sort();
+      label=`Consolidated FS → ${keys.map(fmtMonthKey).join(', ')}`;
+      const latest=keys[keys.length-1]; monthSlot(latest).warns=(monthSlot(latest).warns||[]).concat(parsed.warns.map(w=>'FS: '+w));
+      state.month=state.month||latest;
+    }
+    else if(type==='rf'){ parsed=parseRF(wb); state.store.rf=parsed; label='Rolling forecast: '+(parsed.title||'FY'); }
+    else if(type==='cf'){ parsed=parseCF(wb); state.store.cf=parsed; label='Cashflow forecast ingested'; }
+    else if(REV_PARSERS[type]){
+      parsed=REV_PARSERS[type](wb);
+      state.store.rev=state.store.rev||{};
+      state.store.rev[type]=parsed;
+      label=REV_LABELS[type]+' ingested';
+    }
+    toast('✔ '+label);
+  }catch(e){ toast(name+': '+e.message,true); console.error(e); }
+}
+
+/* =====================================================================
+ *  DERIVED METRICS for the selected month
+ * ===================================================================== */
+/* g(pnl,'rev.rooms','MTD','act') safe getter */
+function g(pnl,path,per,fld){
+  if(!pnl) return null;
+  const o=path.split('.').reduce((a,k)=>a?.[k],pnl);
+  return o?.[per]?.[fld]??null;
+}
+function curMonth(){ return state.store.months[state.month]||{}; }
+function pnlSel(){ const m=curMonth(); return m['pnl'+ (state.cur==='USD'&&m.pnlUSD?'USD':'VND')] || m.pnlVND || m.pnlUSD || null; }
+function pnlVND(){ const m=curMonth(); return m.pnlVND||null; }
+
+function derive(){
+  const m=curMonth(), P=state.period;
+  const p=pnlVND();                        // all derived math in VND, converted at display time
+  const d={ ok:!!p, star:m.star, hs:m.hotstats, fs:m.fs };
+  if(!p) return d;
+  const G=(path,f='act')=>g(p,path,P,f);
+  d.p=p;
+  d.roomsAvail=G('stats.roomsAvail'); d.roomsSold=G('stats.roomsSold'); d.roomsOcc=G('stats.roomsOcc');
+  d.guests=G('stats.guests');
+  d.totalRev={act:G('rev.totalIncl'),bud:G('rev.totalIncl','bud'),ly:G('rev.totalIncl','ly')};
+  d.gop={act:G('sum.gop'),bud:G('sum.gop','bud'),ly:G('sum.gop','ly')};
+  d.gopPct={act:div(d.gop.act,d.totalRev.act),bud:div(d.gop.bud,d.totalRev.bud),ly:div(d.gop.ly,d.totalRev.ly)};
+  d.ebitda={act:G('sum.ebitda'),bud:G('sum.ebitda','bud'),ly:G('sum.ebitda','ly')};
+  d.netProfit={act:G('sum.netProfit'),bud:G('sum.netProfit','bud'),ly:G('sum.netProfit','ly')};
+  d.trevpar={act:div(d.totalRev.act,d.roomsAvail),bud:div(d.totalRev.bud,G('stats.roomsAvail','bud')),ly:div(d.totalRev.ly,G('stats.roomsAvail','ly'))};
+  d.goppar={act:div(d.gop.act,d.roomsAvail)};
+  d.revpar={act:G('stats.revpar'),bud:G('stats.revpar','bud'),ly:G('stats.revpar','ly')};
+  d.adr={act:G('stats.adr'),bud:G('stats.adr','bud'),ly:G('stats.adr','ly')};
+  d.occ={act:G('stats.occ'),bud:G('stats.occ','bud'),ly:G('stats.occ','ly')};
+  d.payroll={act:G('sum.payrollIncl'),bud:G('sum.payrollIncl','bud'),ly:G('sum.payrollIncl','ly')};
+  d.payrollPct={act:div(d.payroll.act,d.totalRev.act),bud:div(d.payroll.bud,d.totalRev.bud),ly:div(d.payroll.ly,d.totalRev.ly)};
+  d.deptProfit={act:G('dp.total'),bud:G('dp.total','bud'),ly:G('dp.total','ly')};
+  d.deptExp={act:d.totalRev.act-d.deptProfit.act, bud:d.totalRev.bud-d.deptProfit.bud, ly:d.totalRev.ly-d.deptProfit.ly};
+  d.undistTot={act:d.deptProfit.act-d.gop.act, bud:d.deptProfit.bud-d.gop.bud, ly:d.deptProfit.ly-d.gop.ly};
+  /* flow-through total */
+  d.flowLY  = (d.totalRev.act!=null&&d.totalRev.ly!=null&&d.totalRev.act!==d.totalRev.ly)? (d.gop.act-d.gop.ly)/(d.totalRev.act-d.totalRev.ly):null;
+  d.flowBud = (d.totalRev.act!=null&&d.totalRev.bud!=null&&d.totalRev.act!==d.totalRev.bud)? (d.gop.act-d.gop.bud)/(d.totalRev.act-d.totalRev.bud):null;
+  /* STAR indexes */
+  const gl=m.star?.glance;
+  const blkKey=P==='YTD'?'ytd':'cm';
+  d.mpi=gl?.[blkKey]?.occ?.idx??null; d.ari=gl?.[blkKey]?.adr?.idx??null; d.rgi=gl?.[blkKey]?.revpar?.idx??null;
+  d.compAdr=gl?.[blkKey]?.adr?.comp??null; d.compOcc=gl?.[blkKey]?.occ?.comp??null; d.compRevpar=gl?.[blkKey]?.revpar?.comp??null;
+  /* fair share */
+  const compRooms=m.star?.census?.rooms;
+  if(compRooms){ d.fairShare=284/(284+compRooms);
+    const myRN=(d.occ.act??0)*284, compRN=(d.compOcc??0)/100*compRooms;
+    d.actShare= myRN+compRN>0? myRN/(myRN+compRN):null; }
+  /* energy per occupied room */
+  d.energy={act:g(p,'undist.energy.oth',P,'act'),bud:g(p,'undist.energy.oth',P,'bud'),ly:g(p,'undist.energy.oth',P,'ly')};
+  d.energyPOR={act:div(d.energy.act,d.roomsOcc), ly:div(d.energy.ly,g(p,'stats.roomsOcc',P,'ly'))};
+  /* service charge check (MTD only meaningful) */
+  const scAct=g(p,'rev.sc','MTD','act'), roomsExcl=g(p,'rev.roomsExcl','MTD','act');
+  const totExcl=g(p,'rev.totalExcl','MTD','act');
+  d.scRate= scAct!=null&&totExcl? scAct/totExcl : null;
+  d.scRoomRate = (()=>{ const rs=g(p,'depts.rooms.sc','MTD','act'); const nr=g(p,'depts.rooms.netRev','MTD','act'); return rs!=null&&nr? rs/nr:null; })();
+  return d;
+}
+
+/* GOP bridge Budget → Actual decomposed by driver (exact bridge, residual = Mix/Other) */
+function gopBridge(d){
+  const p=d.p, P=state.period; if(!p||d.gop.act==null||d.gop.bud==null) return null;
+  const G=(path,f)=>g(p,path,P,f);
+  const soldA=G('stats.roomsSold','act'), soldB=G('stats.roomsSold','bud');
+  const adrA=G('stats.adr','act'), adrB=G('stats.adr','bud');
+  const SC=1+TH.scRate;
+  const vol=(soldA-soldB)*adrB*SC, rate=(adrA-adrB)*soldA*SC;
+  const fb=G('rev.totalFb','act')-G('rev.totalFb','bud');
+  const roomsRev=G('rev.rooms','act')-G('rev.rooms','bud');
+  const dRev=d.totalRev.act-d.totalRev.bud;
+  const other=dRev-roomsRev-fb;
+  const mix=roomsRev-vol-rate;                       // rounding / mix residual inside rooms
+  const deptCost=-(d.deptExp.act-d.deptExp.bud);
+  const undist=-(d.undistTot.act-d.undistTot.bud);
+  return { start:d.gop.bud, end:d.gop.act,
+    steps:[ ['Rooms volume',vol],['Rooms rate',rate],['Rooms mix/other',mix],['F&B',fb],['Other revenue',other],['Dept costs',deptCost],['Undistributed',undist] ] };
+}
+
+/* =====================================================================
+ *  INSIGHT RULE ENGINE — each rule returns null or an alert object
+ * ===================================================================== */
+function runRules(d){
+  const A=[]; const P=state.period; const m=curMonth();
+  const push=(sev,title,detail)=>A.push({sev,title,detail});
+  if(!d.ok) return A;
+  const revShort=x=>money(x);
+
+  /* 1. ADR up but ARI<97 */
+  if(d.ari!=null&&d.adr.act!=null&&d.adr.ly!=null&&d.adr.act>d.adr.ly&&d.ari<TH.ariLow){
+    const parityAdr=d.compAdr*0.97;
+    const gap=(parityAdr-d.adr.act)*d.roomsSold;
+    if(gap>0) push('warn', t('r1t'), t('r1d',{ari:idx(d.ari),gap:revShort(gap)}));
+  }
+  /* 2. MPI>103 & ARI<95 — buying occupancy */
+  if(d.mpi!=null&&d.ari!=null&&d.mpi>TH.mpiHigh&&d.ari<TH.ariVeryLow){
+    const parityRevpar=(d.compAdr)*(d.occ.act);
+    push('warn', t('r2t'), t('r2d',{mpi:idx(d.mpi),ari:idx(d.ari),rp:money(parityRevpar)}));
+  }
+  /* 3. RGI<100 for 2+ consecutive months */
+  const ch=m.star?.comp?.revpar;
+  if(ch&&ch.idx&&ch.idx.length>=2){
+    const lastTwo=ch.idx.slice(-2);
+    if(lastTwo.every(v=>v!=null&&v<100)){
+      const rank=ch.rank?.[ch.rank.length-1]||'';
+      push('crit', t('r3t'), t('r3d',{v1:idx(lastTwo[0]),v2:idx(lastTwo[1]),rank}));
+    }
+  }
+  /* 4/5. flow-through */
+  if(d.flowLY!=null&&d.totalRev.act>d.totalRev.ly){
+    if(d.gop.act<d.gop.ly) push('crit', t('r5t'), t('r5d',{dr:revShort(d.totalRev.act-d.totalRev.ly),dg:revShort(d.gop.act-d.gop.ly)}));
+    else if(d.flowLY<TH.flowMin){
+      /* point at the fastest-growing cost bucket */
+      const dDept=d.deptExp.act-d.deptExp.ly, dUnd=d.undistTot.act-d.undistTot.ly;
+      const culprit = dDept>dUnd? t('deptCosts') : t('undistCosts');
+      push('warn', t('r4t'), t('r4d',{ft:pct(d.flowLY),culprit,amt:revShort(Math.max(dDept,dUnd))}));
+    }
+  }
+  /* 6. dept profit% below LY by >3pts */
+  const dpNames={rooms:'Rooms',fnb:'F&B',spa:'Spa',laundry:'Guest Laundry',minibar:'Minibar',otherOp:'Other Op. Depts',misc:'Miscellaneous'};
+  for(const[k,label] of Object.entries(dpNames)){
+    const dp=d.p.dp[k]; const rv=d.p.rev[k==='fnb'?'totalFb':k];
+    if(!dp||!rv) continue;
+    const a=div(g(d.p,'dp.'+k,P,'act'), g(d.p,'rev.'+(k==='fnb'?'totalFb':k),P,'act'));
+    const l=div(g(d.p,'dp.'+k,P,'ly'),  g(d.p,'rev.'+(k==='fnb'?'totalFb':k),P,'ly'));
+    if(a!=null&&l!=null&&(l-a)*100>TH.deptProfitDropPts)
+      push('warn', t('r6t',{dept:label}), t('r6d',{dept:label,a:pct(a),l:pct(l),gap:revShort((l-a)*g(d.p,'rev.'+(k==='fnb'?'totalFb':k),P,'act'))}));
+  }
+  /* 7. F&B cost % */
+  const fc=div(g(d.p,'rev.food',P,'act')&&null,1); // computed from summary cost rows below
+  const foodCost=(()=>{ const c=g(d.p,'rev.food',P,'act'); return null; })();
+  { const p=d.p;
+    const cF=p._foodCostPct?.[P], cB=p._bevCostPct?.[P]; /* computed at parse? no — use outlet totals */ }
+  { /* use Summary Cost of Sales rows via F&B Total sheet if present, else outlets */
+    const fT=d.p.fnbOutlets;
+    const foodRev=g(d.p,'rev.food',P,'act'), bevRev=g(d.p,'rev.bev',P,'act');
+    let cf=null,cb=null,cfly=null,cbly=null;
+    const fbt=d.p.depts?.fbTotal;   // not parsed; fall back to outlet aggregation
+    if(fT&&fT.length){
+      const sum=(k,per,f)=>fT.reduce((a,o)=>a+(o[k]?.[per]?.[f]??0),0);
+      const cost=sum('costFood',P,'act'), rev=sum('foodRev',P,'act');
+      const costB=sum('costBev',P,'act'), revB=sum('bevRev',P,'act');
+      const costL=sum('costFood',P,'ly'), revL=sum('foodRev',P,'ly');
+      const costBL=sum('costBev',P,'ly'), revBL=sum('bevRev',P,'ly');
+      cf=div(cost,rev); cb=div(costB,revB); cfly=div(costL,revL); cbly=div(costBL,revBL);
+    }
+    if(cf!=null&&(cf>TH.foodCost||(cfly!=null&&(cf-cfly)*100>TH.costJumpPts)))
+      push('warn', t('r7ft'), t('r7fd',{c:pct(cf),ly:pct(cfly),gap:revShort((cf-TH.foodCost)*foodRev)}));
+    if(cb!=null&&(cb>TH.bevCost||(cbly!=null&&(cb-cbly)*100>TH.costJumpPts)))
+      push('warn', t('r7bt'), t('r7bd',{c:pct(cb),ly:pct(cbly)}));
+    d._foodCost=cf; d._bevCost=cb;
+  }
+  /* 8. payroll% jump / headcount up while occ down */
+  if(d.payrollPct.act!=null&&d.payrollPct.ly!=null&&(d.payrollPct.act-d.payrollPct.ly)*100>TH.payrollJumpPts)
+    push('warn', t('r8t'), t('r8d',{a:pct(d.payrollPct.act),l:pct(d.payrollPct.ly),gap:revShort((d.payrollPct.act-d.payrollPct.ly)*d.totalRev.act)}));
+  const staffA=g(d.p,'stats.staff',P,'act'), staffL=g(d.p,'stats.staff',P,'ly');
+  if(staffA!=null&&staffL!=null&&staffA>staffL&&d.occ.act<d.occ.ly)
+    push('warn', t('r8ht'), t('r8hd',{a:staffA,l:staffL}));
+  /* 9. energy per occupied room ↑ >10% YoY */
+  if(d.energyPOR.act!=null&&d.energyPOR.ly&&(d.energyPOR.act/d.energyPOR.ly-1)>TH.energyPorJump)
+    push('warn', t('r9t'), t('r9d',{a:money(d.energyPOR.act),l:money(d.energyPOR.ly),chg:pct(d.energyPOR.act/d.energyPOR.ly-1)}));
+  /* 10. A&G/S&M/IT above budget while revenue below budget */
+  if(d.totalRev.act<d.totalRev.bud){
+    for(const[k,label] of [['ag','A&G'],['sm','S&M'],['it','IT']]){
+      const a=(g(d.p,'undist.'+k+'.pay',P,'act')??0)+(g(d.p,'undist.'+k+'.oth',P,'act')??0);
+      const b=(g(d.p,'undist.'+k+'.pay',P,'bud')??0)+(g(d.p,'undist.'+k+'.oth',P,'bud')??0);
+      if(a>b&&b>0) push('warn', t('r10t',{dept:label}), t('r10d',{dept:label,a:revShort(a),b:revShort(b)}));
+    }
+  }
+  /* 11. Budget realism */
+  if(d.occ.act!=null&&d.occ.bud!=null&&Math.abs(d.occ.act-d.occ.bud)*100>TH.budgetOccGapPts)
+    push('info', t('r11t'), t('r11d',{a:pct(d.occ.act),b:pct(d.occ.bud)}));
+  /* 12. service charge ≠ 5% of net rooms revenue */
+  if(d.scRoomRate!=null&&Math.abs(d.scRoomRate-TH.scRate)>0.0005)
+    push('crit', t('r12t'), t('r12d',{r:pct(d.scRoomRate,2)}));
+  /* 13. HotStats index<90 cost lines */
+  if(d.hs){
+    const per=P==='YTD'?'ytd':'mtd';
+    const costKeys=[['rmCos','Rooms cost of sales'],['rmLabor','Rooms labour'],['rmOther','Rooms other exp POR'],['fbCos','F&B cost of sales'],['fbLabor','F&B labour'],['fbOtherExp','F&B other exp'],['agTotal','A&G total'],['itTotal','I&T total'],['smTotal','S&M total'],['pmTotal','P&M total'],['utilities','Utilities POR'],['payroll','Total payroll']];
+    const opps=[];
+    for(const[k,label] of costKeys){
+      const r=d.hs.rows[k]; if(!r) continue;
+      const ty=r[per]?.ty; if(!ty||ty.idx==null||ty.idx>=TH.idxLow) continue;
+      let vnd=null;
+      if(/%/.test(r.basis)){ const base=/F&B/.test(r.basis)? g(d.p,'rev.totalFb',P,'act') : /Rms/.test(r.basis)? g(d.p,'rev.rooms',P,'act') : d.totalRev.act;
+        vnd=(ty.you-ty.comp)/100*base; }
+      else if(/POR/.test(r.basis)) vnd=(ty.you-ty.comp)*d.roomsSold;
+      if(vnd&&vnd>0) opps.push({label,idx:ty.idx,vnd});
+    }
+    opps.sort((a,b)=>b.vnd-a.vnd);
+    if(opps.length) push('warn', t('r13t'), opps.slice(0,5).map(o=>`${o.label}: idx ${idx(o.idx)} → ${revShort(o.vnd)}`).join(' · '));
+    /* GOP conversion gap */
+    const gr=d.hs.rows.gop?.[per]?.ty;
+    if(gr&&gr.you!=null&&gr.comp!=null&&gr.comp>gr.you){
+      d._leakage=(gr.comp-gr.you)/100*d.totalRev.act;
+      push('crit', t('r14t'), t('r14d',{you:n1(gr.you)+'%',comp:n1(gr.comp)+'%',leak:revShort(d._leakage)}));
+    }
+  }
+  const order={crit:0,warn:1,info:2,good:3};
+  A.sort((a,b)=>order[a.sev]-order[b.sev]);
+  return A;
+}
+
+/* =====================================================================
+ *  I18N
+ * ===================================================================== */
+const I18N={
+en:{ subtitle:'Owner / BOD Revenue & Profit Analytics — 284 keys',
+  export:'💾 Backup JSON', import:'📂 Restore JSON', clearMonth:'Clear month',
+  xlsx:'⬇ Export Excel', printPdf:'🖨 Print / PDF',
+  dropTitle:'Drag & drop workbooks here', orClick:'…or click to choose files',
+  dropNote:'(parsed 100% in your browser — data never leaves this machine)',
+  tabCockpit:'BOD Cockpit', tabRooms:'Rooms', tabFnb:'F&B', tabOther:'Other Ops',
+  tabUndist:'Undistributed', tabMarket:'Market — STR', tabBench:'Benchmark — HotStats', tabConso:'Consolidated',
+  grpOverview:'Overview', grpOps:'Operations', grpMarket:'Market', grpGroup:'Group',
+  sideFoot:'Data stays in this browser. Export JSON regularly as backup.',
+  tabSeg:'Segmentation', filter:'Filter…',
+  tabForecast:'Forecast', tabHeat:'Patterns & Heatmaps', tabRevA:'Revenue Analysis', tabEng:'Engineering',
+  naTip:'Cannot be derived from the uploaded files', noData:'No data loaded for this month — drop the workbooks above.',
+  kTotalRev:'Total Revenue', kGOP:'GOP', kGOPpct:'GOP %', kEBITDA:'EBITDA', kNP:'Net Profit (PBT)',
+  kTRevPAR:'TRevPAR', kRevPAR:'RevPAR', kADR:'ADR', kOcc:'Occupancy', kPayroll:'Payroll % Rev', kRGI:'RGI', kGOPPAR:'GOP PAR',
+  vsBud:'vs Bud', vsLY:'vs LY', top5:'Top 5 things you must look at this month', bridge:'GOP bridge — Budget → Actual (by driver)',
+  trend:'Revenue & GOP trend (stored months)', alerts:'Alerts', flowThrough:'Flow-through',
+  deptCosts:'departmental costs', undistCosts:'undistributed overheads',
+  r1t:'Rate lag vs market', r1d:c=>`ADR grew vs LY but ARI is ${c.ari} (<97). Rate parity with comp set would add ≈ ${c.gap} room revenue.`,
+  r2t:'Buying occupancy', r2d:c=>`MPI ${c.mpi} with ARI ${c.ari}: share is bought with rate. At comp-set ADR, RevPAR would be ≈ ${c.rp}.`,
+  r3t:'RGI < 100 two consecutive months — share loss', r3d:c=>`RGI ${c.v1} → ${c.v2}; comp-set rank ${c.rank}. STR comp data is anonymised — check the ranking table for who is gaining.`,
+  r4t:'Cost creep — weak flow-through', r4d:c=>`Flow-through vs LY is ${c.ft} (<45%). Biggest cost growth: ${c.culprit} (+${c.amt}).`,
+  r5t:'NEGATIVE flow-through: revenue up, GOP down', r5d:c=>`Revenue +${c.dr} vs LY but GOP moved ${c.dg}. Immediate cost review required.`,
+  r6t:c=>`${c.dept} margin erosion`, r6d:c=>`${c.dept} dept profit ${c.a} vs ${c.l} LY (>3 pts drop) ≈ ${c.gap} lost profit.`,
+  r7ft:'Food cost above threshold', r7fd:c=>`Food cost ${c.c} (LY ${c.ly}, threshold 32%). Excess ≈ ${c.gap}.`,
+  r7bt:'Beverage cost above threshold', r7bd:c=>`Beverage cost ${c.c} (LY ${c.ly}, threshold 25%).`,
+  r8t:'Payroll ratio jump', r8d:c=>`Payroll ${c.a} of revenue vs ${c.l} LY (>1.5 pts) ≈ ${c.gap}.`,
+  r8ht:'Headcount up while occupancy down', r8hd:c=>`Staff ${c.a} vs ${c.l} LY while occupancy fell.`,
+  r9t:'Energy per occupied room +10%+ YoY', r9d:c=>`${c.a} vs ${c.l} LY (${c.chg}). Check POMEC/utilities contracts.`,
+  r10t:c=>`${c.dept} overspend while revenue misses budget`, r10d:c=>`${c.dept} actual ${c.a} > budget ${c.b} while total revenue is below budget.`,
+  r11t:'Budget is not a valid control this month', r11d:c=>`Budget occupancy ${c.b} vs actual ${c.a} — variance-to-budget % is meaningless. Re-benchmark against LY + comp set.`,
+  r12t:'Service charge ≠ 5.00% of net rooms revenue', r12d:c=>`Rooms SC rate is ${c.r} — investigate posting/allocation.`,
+  r13t:'HotStats: cost lines worse than comp (Index<90) — top VND opportunities',
+  r14t:'GOP conversion gap vs comp set — profit leakage', r14d:c=>`GOP ${c.you} vs comp ${c.comp}. Matching comp-set ratio ≈ ${c.leak} extra GOP.`,
+},
+vi:{ subtitle:'Phân tích Doanh thu & Lợi nhuận cho Chủ đầu tư / HĐQT — 284 phòng',
+  export:'💾 Sao lưu JSON', import:'📂 Phục hồi JSON', clearMonth:'Xoá tháng',
+  xlsx:'⬇ Xuất Excel', printPdf:'🖨 In / PDF',
+  dropTitle:'Kéo & thả file Excel vào đây', orClick:'…hoặc bấm để chọn file',
+  dropNote:'(xử lý 100% trên trình duyệt — dữ liệu không rời khỏi máy)',
+  tabCockpit:'Bảng điều hành', tabRooms:'Phòng', tabFnb:'Ẩm thực', tabOther:'BP khác',
+  tabUndist:'Chi phí chung', tabMarket:'Thị trường — STR', tabBench:'So chuẩn — HotStats', tabConso:'Hợp nhất',
+  grpOverview:'Tổng hợp', grpOps:'Vận hành', grpMarket:'Thị trường', grpGroup:'Tập đoàn',
+  sideFoot:'Dữ liệu lưu trên trình duyệt. Nhớ Xuất JSON để sao lưu định kỳ.',
+  tabSeg:'Phân khúc', filter:'Lọc…',
+  tabForecast:'Dự báo', tabHeat:'Mẫu hình & Heatmap', tabRevA:'Phân tích doanh thu', tabEng:'Kỹ thuật',
+  naTip:'Không thể tính từ các file đã tải lên', noData:'Chưa có dữ liệu tháng này — kéo thả file ở trên.',
+  kTotalRev:'Tổng doanh thu', kGOP:'GOP', kGOPpct:'GOP %', kEBITDA:'EBITDA', kNP:'LN trước thuế',
+  kTRevPAR:'TRevPAR', kRevPAR:'RevPAR', kADR:'Giá BQ (ADR)', kOcc:'Công suất', kPayroll:'Lương % DT', kRGI:'RGI', kGOPPAR:'GOP PAR',
+  vsBud:'so NS', vsLY:'so CK', top5:'5 điểm HĐQT phải xem tháng này', bridge:'Cầu GOP — Ngân sách → Thực tế (theo nguyên nhân)',
+  trend:'Xu hướng Doanh thu & GOP (các tháng đã lưu)', alerts:'Cảnh báo', flowThrough:'Hệ số chuyển hoá (flow-through)',
+  deptCosts:'chi phí bộ phận', undistCosts:'chi phí chung (undistributed)',
+  r1t:'Tăng giá chậm hơn thị trường', r1d:c=>`ADR tăng so CK nhưng ARI chỉ ${c.ari} (<97). Nếu ngang giá comp set: +≈ ${c.gap} doanh thu phòng.`,
+  r2t:'Mua công suất bằng giá', r2d:c=>`MPI ${c.mpi} nhưng ARI ${c.ari}: đang giành khách bằng giảm giá. Với ADR ngang comp set, RevPAR ≈ ${c.rp}.`,
+  r3t:'RGI < 100 hai tháng liên tiếp — mất thị phần', r3d:c=>`RGI ${c.v1} → ${c.v2}; hạng trong comp set: ${c.rank}. STR ẩn danh đối thủ — xem bảng xếp hạng.`,
+  r4t:'Chi phí leo thang — flow-through yếu', r4d:c=>`Flow-through so CK: ${c.ft} (<45%). Chi phí tăng mạnh nhất: ${c.culprit} (+${c.amt}).`,
+  r5t:'Flow-through ÂM: doanh thu tăng, GOP giảm', r5d:c=>`Doanh thu +${c.dr} so CK nhưng GOP ${c.dg}. Cần rà soát chi phí ngay.`,
+  r6t:c=>`${c.dept}: biên lợi nhuận xói mòn`, r6d:c=>`LN bộ phận ${c.dept} ${c.a} so ${c.l} CK (giảm >3 điểm) ≈ mất ${c.gap}.`,
+  r7ft:'Giá vốn món ăn vượt ngưỡng', r7fd:c=>`Food cost ${c.c} (CK ${c.ly}, ngưỡng 32%). Vượt ≈ ${c.gap}.`,
+  r7bt:'Giá vốn đồ uống vượt ngưỡng', r7bd:c=>`Beverage cost ${c.c} (CK ${c.ly}, ngưỡng 25%).`,
+  r8t:'Tỷ lệ lương tăng vọt', r8d:c=>`Lương ${c.a} doanh thu so ${c.l} CK (>1,5 điểm) ≈ ${c.gap}.`,
+  r8ht:'Nhân sự tăng khi công suất giảm', r8hd:c=>`Nhân viên ${c.a} so ${c.l} CK trong khi công suất giảm.`,
+  r9t:'Điện nước / phòng bán tăng >10% YoY', r9d:c=>`${c.a} so ${c.l} CK (${c.chg}). Kiểm tra hợp đồng POMEC/điện nước.`,
+  r10t:c=>`${c.dept} vượt ngân sách khi doanh thu hụt`, r10d:c=>`${c.dept} thực tế ${c.a} > ngân sách ${c.b} trong khi tổng doanh thu dưới ngân sách.`,
+  r11t:'Ngân sách không còn là chuẩn kiểm soát', r11d:c=>`NS công suất ${c.b} vs thực tế ${c.a} — % chênh so NS vô nghĩa. So với CK + comp set thay thế.`,
+  r12t:'Phí phục vụ ≠ 5,00% doanh thu phòng', r12d:c=>`Tỷ lệ SC phòng: ${c.r} — kiểm tra hạch toán.`,
+  r13t:'HotStats: chi phí kém comp set (Index<90) — cơ hội VND lớn nhất',
+  r14t:'Chênh lệch chuyển hoá GOP vs comp set — rò rỉ lợi nhuận', r14d:c=>`GOP ${c.you} vs comp ${c.comp}. Nếu đạt tỷ lệ comp set: +≈ ${c.leak} GOP.`,
+} };
+function t(key,ctx){ const v=I18N[state.lang][key]??I18N.en[key]??key; return typeof v==='function'? v(ctx||{}):v; }
+function applyStaticI18n(){ $$('[data-i18n]').forEach(el=>{ el.innerHTML=t(el.dataset.i18n); }); }
+
+/* =====================================================================
+ *  RENDERING
+ * ===================================================================== */
+function destroyChart(id){ if(state.charts[id]){ state.charts[id].destroy(); delete state.charts[id]; } }
+function mkChart(id,cfg){ destroyChart(id); const el=document.getElementById(id); if(!el) return;
+  Chart.defaults.color='#4b5563'; Chart.defaults.borderColor='rgba(107,114,128,.15)'; Chart.defaults.font.size=11;
+  state.charts[id]=new Chart(el,cfg); }
+
+function kpiCard(title,valHtml,vsBud,vsLY,invert){
+  let cl2='';
+  if(vsBud!=null){ const good=invert? vsBud<=0: vsBud>=0; const badLevel=Math.abs(vsBud)>0.05;
+    cl2 = good?'g':(badLevel?'r':'a'); }
+  const arrow=v=>v==null?'':`<b class="${v>=0?'up':'dn'}">${v>=0?'▲':'▼'}${pct(Math.abs(v))}</b>`;
+  return `<div class="kpi ${cl2}"><div class="t">${title}</div><div class="v">${valHtml}</div>
+    <div class="s">${t('vsBud')} ${arrow(vsBud)} · ${t('vsLY')} ${arrow(vsLY)}</div></div>`;
+}
+function noData(){ return `<div class="panel"><span class="small">${t('noData')}</span></div>`; }
+
+/* ---------------- COCKPIT ---------------- */
+function renderCockpit(d){
+  const el=$('#tab-cockpit');
+  if(!d.ok){ el.innerHTML=noData(); return; }
+  const vs=(o,inv)=>[varPct(o.act,o.bud),varPct(o.act,o.ly),inv];
+  const cards=[
+    [t('kTotalRev'),money(d.totalRev.act),...vs(d.totalRev)],
+    [t('kGOP'),money(d.gop.act),...vs(d.gop)],
+    [t('kGOPpct'),pct(d.gopPct.act),(d.gopPct.act-d.gopPct.bud)||null,(d.gopPct.act-d.gopPct.ly)||null,false,true],
+    [t('kEBITDA'),money(d.ebitda.act),...vs(d.ebitda)],
+    [t('kNP'),money(d.netProfit.act),...vs(d.netProfit)],
+    [t('kTRevPAR'),money(d.trevpar.act),...vs(d.trevpar)],
+    [t('kRevPAR'),money(d.revpar.act),...vs(d.revpar)],
+    [t('kADR'),money(d.adr.act),...vs(d.adr)],
+    [t('kOcc'),pct(d.occ.act),(d.occ.act-d.occ.bud)||null,(d.occ.act-d.occ.ly)||null,false,true],
+    [t('kPayroll'),pct(d.payrollPct.act),(d.payrollPct.act-d.payrollPct.bud)||null,(d.payrollPct.act-d.payrollPct.ly)||null,true,true],
+    [t('kRGI'),d.rgi!=null?idx(d.rgi):na('STR Monthly not loaded'),d.rgi!=null?(d.rgi-100)/100:null,null],
+    [t('kGOPPAR'),money(d.goppar.act),varPct(d.goppar.act,div(d.gop.bud,d.roomsAvail)),varPct(d.goppar.act,div(d.gop.ly,d.roomsAvail))],
+  ];
+  const kpis=cards.map(c=>{
+    const [title,val,vb,vl,inv,isPts]=c;
+    if(isPts){ // pts-based: reuse card but arrows show pts
+      const arrow=v=>v==null?'':`<b class="${(inv?v<=0:v>=0)?'up':'dn'}">${v>=0?'▲':'▼'}${pts(Math.abs(v*100)).replace('+','')}</b>`;
+      const good=vb==null?null:(inv?vb<=0:vb>=0);
+      const cl2=vb==null?'':(good?'g':(Math.abs(vb)>0.03?'r':'a'));
+      return `<div class="kpi ${cl2}"><div class="t">${title}</div><div class="v">${val}</div>
+        <div class="s">${t('vsBud')} ${arrow(vb)} · ${t('vsLY')} ${arrow(vl)}</div></div>`;
+    }
+    return kpiCard(title,val,vb,vl,inv);
+  }).join('');
+
+  const alerts=runRules(d);
+  const top5=alerts.slice(0,5).map((a,i)=>`<div class="alert ${a.sev}"><div class="h"><span class="sev">${a.sev.toUpperCase()}</span>${i+1}. ${a.title}</div><div class="d">${a.detail}</div></div>`).join('')||`<div class="small">${t('naTip')}</div>`;
+
+  el.innerHTML=`
+    <div class="kgrid">${kpis}</div>
+    <div class="cols c2">
+      <div class="panel"><h3>${t('bridge')} — ${state.period}</h3><div class="chartbox tall"><canvas id="chWaterfall"></canvas></div></div>
+      <div class="panel"><h3>${t('top5')}</h3>${top5}</div>
+    </div>
+    <div class="panel"><h3>${t('trend')}</h3><div class="chartbox"><canvas id="chTrend"></canvas></div></div>`;
+
+  /* waterfall */
+  const br=gopBridge(d);
+  if(br){
+    let run=br.start; const labels=['Budget GOP'], data=[[0,br.start]], colors=['#4a7dbd'];
+    for(const [lb,v] of br.steps){ labels.push(lb); data.push([run,run+v]); colors.push(v>=0?'#2f9e6e':'#d64545'); run+=v; }
+    labels.push('Actual GOP'); data.push([0,br.end]); colors.push('#C9A227');
+    mkChart('chWaterfall',{type:'bar',
+      data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:0,barPercentage:.8}]},
+      options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.raw[1]-c.raw[0])}}},
+        scales:{y:{ticks:{callback:v=>money(v,0)}},x:{ticks:{maxRotation:45,minRotation:30}}},maintainAspectRatio:false}});
+  }
+  /* trend from stored months (MTD actuals) */
+  const keys=Object.keys(state.store.months).sort();
+  const rev=keys.map(k=>g(state.store.months[k].pnlVND,'rev.totalIncl','MTD','act'));
+  const gop=keys.map(k=>g(state.store.months[k].pnlVND,'sum.gop','MTD','act'));
+  mkChart('chTrend',{type:'bar',
+    data:{labels:keys.map(fmtMonthKey),datasets:[
+      {type:'bar',label:'Revenue',data:rev.map(cv),backgroundColor:'rgba(74,125,189,.7)'},
+      {type:'line',label:'GOP',data:gop.map(cv),borderColor:'#C9A227',backgroundColor:'#C9A227',tension:.3,yAxisID:'y'}]},
+    options:{scales:{y:{ticks:{callback:v=>money(v,0)}}},maintainAspectRatio:false}});
+}
+
+/* ---------------- ROOMS ---------------- */
+function renderRooms(d){
+  const el=$('#tab-rooms'); if(!d.ok){ el.innerHTML=noData(); return; }
+  const P=state.period, p=d.p, R=p.depts.rooms||{};
+  const G=(k,f='act')=>R[k]?.[P==='YTD'?'YTD':'MTD']?.[f]??null;
+  const rr=g(p,'rev.rooms',P,'act'), rrB=g(p,'rev.rooms',P,'bud'), rrL=g(p,'rev.rooms',P,'ly');
+  const dp=g(p,'dp.rooms',P,'act'), dpB=g(p,'dp.rooms',P,'bud'), dpL=g(p,'dp.rooms',P,'ly');
+  const cpor=div(G('totalExp'),d.roomsSold);
+  const cporL=div(G('totalExp','ly'),g(p,'stats.roomsSold',P,'ly'));
+  const pay=G('payrollIncl'), payPct=div(pay,rr), payPOR=div(pay,d.roomsSold);
+  const ftLY=(rr!=null&&rrL!=null&&rr!==rrL)?(dp-dpL)/(rr-rrL):null;
+  const ftBud=(rr!=null&&rrB!=null&&rr!==rrB)?(dp-dpB)/(rr-rrB):null;
+  const rows=[
+    ['Occupancy',pct(d.occ.act),pct(d.occ.bud),pct(d.occ.ly),d.compOcc!=null?n1(d.compOcc)+'%':na()],
+    ['ADR',money(d.adr.act),money(d.adr.bud),money(d.adr.ly),d.compAdr!=null?money(d.compAdr):na()],
+    ['RevPAR',money(d.revpar.act),money(d.revpar.bud),money(d.revpar.ly),d.compRevpar!=null?money(d.compRevpar):na()],
+    ['Rooms revenue (incl SC)',money(rr),money(rrB),money(rrL),'—'],
+    ['Rooms sold',n1(d.roomsSold,0),n1(g(p,'stats.roomsSold',P,'bud'),0),n1(g(p,'stats.roomsSold',P,'ly'),0),'—'],
+    ['Arrivals',n1(G('arrivals'),0),n1(G('arrivals','bud'),0),n1(G('arrivals','ly'),0),'—'],
+    ['ALOS (nights)',n1(G('alos'),2),n1(G('alos','bud'),2),n1(G('alos','ly'),2),'—'],
+    ['Double occupancy factor',n1(G('dof'),2),n1(G('dof','bud'),2),n1(G('dof','ly'),2),'—'],
+    ['CPOR (total dept cost / room sold)',money(cpor),money(div(G('totalExp','bud'),g(p,'stats.roomsSold',P,'bud'))),money(cporL),'—'],
+    ['Rooms payroll % revenue',pct(payPct),pct(div(G('payrollIncl','bud'),rrB)),pct(div(G('payrollIncl','ly'),rrL)),'—'],
+    ['Rooms payroll / occupied room',money(payPOR),'—',money(div(G('payrollIncl','ly'),g(p,'stats.roomsSold',P,'ly'))),'—'],
+    ['Dept profit',money(dp),money(dpB),money(dpL),'—'],
+    ['Dept profit %',pct(div(dp,rr)),pct(div(dpB,rrB)),pct(div(dpL,rrL)),'—'],
+    ['Flow-through vs LY / vs Bud',pct(ftLY),pct(ftBud),'—','—'],
+    ['Payroll cost POR',money(G('porPay')),money(G('porPay','bud')),money(G('porPay','ly')),'—'],
+    ['Other expenses POR',money(G('porOther')),money(G('porOther','bud')),money(G('porOther','ly')),'—'],
+    ['Total expenses POR',money(G('porTotal')),money(G('porTotal','bud')),money(G('porTotal','ly')),'—'],
+    ['Dept profit POR',money(G('porProfit')),money(G('porProfit','bud')),money(G('porProfit','ly')),'—'],
+  ].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join('');
+
+  /* cost-line detail (sortable) */
+  let expRows='';
+  for(const ln of (R.expenses||[])){
+    const a=ln[P==='YTD'?'YTD':'MTD']?.act, b=ln[P==='YTD'?'YTD':'MTD']?.bud, l=ln[P==='YTD'?'YTD':'MTD']?.ly;
+    if(!a&&!b&&!l) continue;
+    const over=a!=null&&b!=null&&a>b;
+    expRows+=`<tr class="${over&&a-b>50e6?'bad':''}"><td>${ln.label}</td>
+      <td data-v="${a??''}">${money(a)}</td>
+      <td data-v="${div(a,rr)??''}">${pct(div(a,rr),2)}</td>
+      <td data-v="${b??''}">${money(b)}</td>
+      <td data-v="${l??''}">${money(l)}</td>
+      <td data-v="${varPct(a,b)??''}" class="${a!=null&&b?(a>b?'neg':'pos'):''}">${pct(varPct(a,b))}</td>
+      <td data-v="${varPct(a,l)??''}" class="${a!=null&&l?(a>l?'warn':'pos'):''}">${pct(varPct(a,l))}</td></tr>`;
+  }
+
+  /* top revenue segments (from Tracking Segmentation) */
+  const A=P==='YTD'?'ytdAct':'mtdAct', L=P==='YTD'?'ytdLy':'mtdLy';
+  const topSeg=(p.seg?.rows||[]).filter(r=>r.type==='sub').sort((a,b)=>(b.vals[A]?.rev??0)-(a.vals[A]?.rev??0)).slice(0,6)
+    .map(r=>`<tr><td>${r.code} ${r.name}</td><td>${n1(r.vals[A]?.rn,0)}</td><td>${money(r.vals[A]?.rev)}</td><td>${money(r.vals[A]?.arr)}</td>
+      <td class="${cls(varPct(r.vals[A]?.arr,r.vals[L]?.arr))}">${pct(varPct(r.vals[A]?.arr,r.vals[L]?.arr))}</td></tr>`).join('');
+
+  el.innerHTML=`
+    <div class="cols c2">
+      <div class="panel"><h3>Rooms KPIs — ${P}</h3>
+        <table><thead><tr><th>Metric</th><th>Actual</th><th>Budget</th><th>LY</th><th>Comp set</th></tr></thead><tbody>${rows}</tbody></table>
+      </div>
+      <div>
+        <div class="panel"><h3>RevPAR vs comp set — 18-month STR history</h3><div class="chartbox tall"><canvas id="chRoomsTrend"></canvas></div></div>
+        <div class="panel"><h3>Top 6 revenue segments — ${P} <span class="small">(full detail in Segmentation tab)</span></h3>
+          <table><thead><tr><th>Sub-segment</th><th>RN</th><th>Revenue</th><th>ARR</th><th>ARR %LY</th></tr></thead>
+          <tbody>${topSeg||'<tr><td colspan=5>'+na('Tracking Segmentation sheet not parsed')+'</td></tr>'}</tbody></table></div>
+      </div>
+    </div>
+    <div class="panel"><h3>Rooms cost lines — ${P} <span class="small">(red = &gt;50M over budget)</span>
+        <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cost line</th><th>Actual</th><th>% Rooms rev</th><th>Budget</th><th>LY</th><th>vs Bud %</th><th>vs LY %</th></tr></thead>
+      <tbody>${expRows||'<tr><td colspan=7>'+na('Expense detail rows not found on Rooms sheet')+'</td></tr>'}</tbody></table></div></div>`;
+  const ch=curMonth().star?.comp?.revpar;
+  if(ch) mkChart('chRoomsTrend',{type:'line',data:{labels:ch.months.map(fmtMonthKey),datasets:[
+      {label:'My RevPAR',data:ch.my.map(cv),borderColor:'#C9A227',tension:.3},
+      {label:'Comp set',data:ch.comp.map(cv),borderColor:'#4a7dbd',tension:.3},
+      {label:'RGI (right)',data:ch.idx,borderColor:'#2f9e6e',borderDash:[4,3],yAxisID:'y1',tension:.3}]},
+    options:{scales:{y:{ticks:{callback:v=>money(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false}}},maintainAspectRatio:false}});
+}
+
+/* ---------------- SEGMENTATION ---------------- */
+function renderSeg(d){
+  const el=$('#tab-seg');
+  const seg=d.p?.seg;
+  if(!d.ok||!seg||!seg.rows.length){ el.innerHTML=noData(); return; }
+  const P=state.period;
+  const A=P==='YTD'?'ytdAct':'mtdAct', B=P==='YTD'?'ytdBud':'mtdBud', L=P==='YTD'?'ytdLy':'mtdLy';
+  const grand=seg.grand.inclSC?.vals?.[A], grandLy=seg.grand.inclSC?.vals?.[L], grandBud=seg.grand.inclSC?.vals?.[B];
+  const totRN=seg.rows.filter(r=>r.type==='grouptotal').reduce((a,r)=>a+(r.vals[A]?.rn??0),0)||1;
+
+  /* KPI cards */
+  const kpis=
+    kpiCard('Room nights (excl comp, incl SC)',n1(grand?.rn,0),varPct(grand?.rn,grandBud?.rn),varPct(grand?.rn,grandLy?.rn))+
+    kpiCard('Segment revenue',money(grand?.rev),varPct(grand?.rev,grandBud?.rev),varPct(grand?.rev,grandLy?.rev))+
+    kpiCard('Blended ARR',money(grand?.arr),varPct(grand?.arr,grandBud?.arr),varPct(grand?.arr,grandLy?.arr))+
+    seg.rows.filter(r=>r.type==='grouptotal').slice(0,4).map(r=>{
+      const v=r.vals[A], ly=r.vals[L];
+      return kpiCard(r.group+' mix',pct((v?.rn??0)/totRN),null,varPct(v?.rn,ly?.rn));
+    }).join('');
+
+  /* winners / losers vs LY (sub-segments with meaningful volume) */
+  const subs=seg.rows.filter(r=>r.type==='sub'&&((r.vals[A]?.rn??0)>=20||(r.vals[L]?.rn??0)>=20));
+  const delta=subs.map(r=>({r,d:(r.vals[A]?.rev??0)-(r.vals[L]?.rev??0)})).sort((a,b)=>b.d-a.d);
+  const win=delta.slice(0,3), lose=delta.slice(-3).reverse();
+  const wl=(list,cl)=>list.map(x=>`<div class="alert ${cl}"><div class="h">${x.r.code} — ${x.r.name}</div>
+    <div class="d">${money(Math.abs(x.d))} ${x.d>=0?'gained':'lost'} vs LY · RN ${n1(x.r.vals[L]?.rn,0)} → ${n1(x.r.vals[A]?.rn,0)} · ARR ${money(x.r.vals[L]?.arr)} → ${money(x.r.vals[A]?.arr)}</div></div>`).join('');
+
+  /* main table */
+  let rows='';
+  for(const r of seg.rows){
+    const v=r.vals[A]||{}, vb=r.vals[B]||{}, vl=r.vals[L]||{};
+    const cls2=r.type==='grouptotal'?'seggrp':r.type==='segtotal'?'segsub':'';
+    rows+=`<tr class="${cls2}">
+      <td>${r.type==='sub'?r.group:''}</td><td>${r.type==='sub'?(r.segment||''):(r.type==='segtotal'?r.segment:'')}</td>
+      <td>${r.code||''}</td><td>${r.type==='grouptotal'?'<b>'+r.name+'</b>':r.name}</td>
+      <td data-v="${v.rn??''}">${n1(v.rn,0)}</td>
+      <td data-v="${(v.rn??0)/totRN}">${r.type!=='segtotal'?pct((v.rn??0)/totRN):''}</td>
+      <td data-v="${v.rev??''}">${money(v.rev)}</td>
+      <td data-v="${v.arr??''}">${money(v.arr)}</td>
+      <td data-v="${varPct(v.rn,vb.rn)??''}" class="${cls(varPct(v.rn,vb.rn))}">${pct(varPct(v.rn,vb.rn))}</td>
+      <td data-v="${varPct(v.rn,vl.rn)??''}" class="${cls(varPct(v.rn,vl.rn))}">${pct(varPct(v.rn,vl.rn))}</td>
+      <td data-v="${varPct(v.rev,vl.rev)??''}" class="${cls(varPct(v.rev,vl.rev))}">${pct(varPct(v.rev,vl.rev))}</td>
+      <td data-v="${varPct(v.arr,vl.arr)??''}" class="${cls(varPct(v.arr,vl.arr))}">${pct(varPct(v.arr,vl.arr))}</td></tr>`;
+  }
+  const g1=seg.grand.exclSC, g2=seg.grand.inclSC;
+  for(const g of [g1,g2].filter(Boolean)){
+    const v=g.vals[A]||{};
+    rows+=`<tr class="tot"><td colspan="3"></td><td>${g.label}</td><td>${n1(v.rn,0)}</td><td></td><td>${money(v.rev)}</td><td>${money(v.arr)}</td><td colspan="4"></td></tr>`;
+  }
+
+  el.innerHTML=`
+    <div class="kgrid">${kpis}</div>
+    <div class="cols c2">
+      <div class="panel"><h3>Room-night mix by main group — ${P}</h3><div class="chartbox"><canvas id="chSegMix"></canvas></div></div>
+      <div class="panel"><h3>Top 10 sub-segments by revenue — ${P}</h3><div class="chartbox"><canvas id="chSegTop"></canvas></div></div>
+    </div>
+    <div class="cols c2">
+      <div class="panel"><h3>Biggest gains vs LY</h3>${wl(win,'good')||'<div class="small">—</div>'}</div>
+      <div class="panel"><h3>Biggest losses vs LY</h3>${wl(lose,'crit')||'<div class="small">—</div>'}</div>
+    </div>
+    <div class="panel"><h3>Full segmentation detail — ${P}
+        <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Group</th><th>Segment</th><th>Code</th><th>Sub-segment</th>
+        <th>RN</th><th>Mix %</th><th>Revenue</th><th>ARR</th><th>RN %Bud</th><th>RN %LY</th><th>Rev %LY</th><th>ARR %LY</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+      <div class="small" style="margin-top:6px">Click any column header to sort · type in the filter box to search · grey rows = segment subtotals, navy rows = main-group totals.</div></div>`;
+
+  /* mix chart: stacked RN by group for Actual/Budget/LY */
+  const groups=seg.rows.filter(r=>r.type==='grouptotal');
+  const palette=['#0B1F3A','#C9A227','#2e5f9e','#1e7e4f','#b7791f','#6B7280'];
+  mkChart('chSegMix',{type:'bar',
+    data:{labels:['Actual','Budget','LY'],datasets:groups.map((r,i)=>({label:r.group,
+      data:[r.vals[A]?.rn??0,r.vals[B]?.rn??0,r.vals[L]?.rn??0],backgroundColor:palette[i%palette.length],stack:'s'}))},
+    options:{scales:{x:{stacked:true},y:{stacked:true}},maintainAspectRatio:false}});
+  /* top-10 revenue bar with ARR tooltip */
+  const top=[...seg.rows.filter(r=>r.type==='sub')].sort((a,b)=>(b.vals[A]?.rev??0)-(a.vals[A]?.rev??0)).slice(0,10);
+  mkChart('chSegTop',{type:'bar',
+    data:{labels:top.map(r=>r.code+' '+r.name.slice(0,22)),datasets:[
+      {label:'Revenue',data:top.map(r=>cv(r.vals[A]?.rev??0)),backgroundColor:'#C9A227'},
+      {label:'LY',data:top.map(r=>cv(r.vals[L]?.rev??0)),backgroundColor:'rgba(46,95,158,.55)'}]},
+    options:{indexAxis:'y',plugins:{tooltip:{callbacks:{afterLabel:c=>{const r=top[c.dataIndex];return 'ARR: '+money(r.vals[A]?.arr)+' (LY '+money(r.vals[L]?.arr)+')';}}}},
+      scales:{x:{ticks:{callback:v=>money(v,1)}}},maintainAspectRatio:false}});
+}
+
+/* ---------------- F&B ---------------- */
+function renderFnb(d){
+  const el=$('#tab-fnb'); if(!d.ok){ el.innerHTML=noData(); return; }
+  const P=state.period, p=d.p, per=P==='YTD'?'YTD':'MTD';
+  const V=(o,k,f='act')=>o[k]?.[per]?.[f]??null;
+  let rows='', chartLbl=[], chartAct=[], chartBud=[];
+  for(const o of p.fnbOutlets){
+    const rev=V(o,'totalRev'), revB=V(o,'totalRev','bud'), revL=V(o,'totalRev','ly');
+    const fc=div(V(o,'costFood'),V(o,'foodRev')), bc=div(V(o,'costBev'),V(o,'bevRev'));
+    const pay=V(o,'payrollIncl'), pp=div(pay,rev);
+    const dp=V(o,'deptProfit'), dpp=div(dp,rev), dppL=div(V(o,'deptProfit','ly'),revL);
+    const covers=V(o,'covers');
+    const check=covers? div(rev,covers):null;
+    const capture=div(rev,d.guests);
+    const destroyer=(dpp!=null&&dpp<0)||(dpp!=null&&dppL!=null&&dppL-dpp>0.03);
+    rows+=`<tr class="${destroyer?'bad':''}"><td>${o.name}${destroyer?' <span class="tag r">margin</span>':''}</td>
+      <td>${money(rev)}</td><td class="${cls(varPct(rev,revB))}">${pct(varPct(rev,revB))}</td><td class="${cls(varPct(rev,revL))}">${pct(varPct(rev,revL))}</td>
+      <td class="${fc!=null&&fc>TH.foodCost?'warn':''}">${pct(fc)}</td><td class="${bc!=null&&bc>TH.bevCost?'warn':''}">${pct(bc)}</td>
+      <td>${pct(pp)}</td><td class="${dpp!=null&&dpp<0?'neg':''}">${pct(dpp)}</td>
+      <td>${covers?n1(covers,0):na('No covers reported for this outlet')}</td>
+      <td>${check?money(check):na('Covers absent — average check not computable')}</td>
+      <td>${money(capture)}</td></tr>`;
+    chartLbl.push(o.name); chartAct.push(cv(rev)); chartBud.push(cv(revB));
+  }
+  /* totals from Summary */
+  const fbRev=g(p,'rev.totalFb',P,'act');
+  const capT=div(fbRev,d.guests);
+  rows+=`<tr class="tot"><td>Total F&B (Summary P&L)</td><td>${money(fbRev)}</td>
+    <td class="${cls(varPct(fbRev,g(p,'rev.totalFb',P,'bud')))}">${pct(varPct(fbRev,g(p,'rev.totalFb',P,'bud')))}</td>
+    <td class="${cls(varPct(fbRev,g(p,'rev.totalFb',P,'ly')))}">${pct(varPct(fbRev,g(p,'rev.totalFb',P,'ly')))}</td>
+    <td>${pct(d._foodCost)}</td><td>${pct(d._bevCost)}</td><td></td>
+    <td>${pct(div(g(p,'dp.fnb',P,'act'),fbRev))}</td><td></td><td></td><td>${money(capT)}</td></tr>`;
+
+  /* ---- meal-period deep dive (in-house vs walk-in, by meal, avg check) ---- */
+  const mealNames={breakfast:'Breakfast',lunch:'Lunch',dinner:'Dinner'};
+  let mealRows=''; const covByOutlet={}, guestMix={};
+  for(const o of p.fnbOutlets){
+    if(!o.meals) continue;
+    covByOutlet[o.name]={breakfast:0,lunch:0,dinner:0};
+    guestMix[o.name]={inhouse:0,walkin:0};
+    for(const [mk,m] of Object.entries(o.meals)){
+      const gv=x=>x?.[per]?.act??null, gl=x=>x?.[per]?.ly??null;
+      const cov=gv(m.covers), inh=gv(m.inhouse), wlk=gv(m.walkin), cap=gv(m.capture);
+      const fr=gv(m.foodRev), br2=gv(m.bevRev);
+      const rev=(fr??0)+(br2??0);
+      const chk=cov? rev/cov:null;
+      const covL=gl(m.covers), chkL=(covL&&((gl(m.foodRev)??0)+(gl(m.bevRev)??0)))?((gl(m.foodRev)??0)+(gl(m.bevRev)??0))/covL:null;
+      if(!cov&&!rev) continue;
+      covByOutlet[o.name][mk]=cov??0;
+      guestMix[o.name].inhouse+=inh??0; guestMix[o.name].walkin+=wlk??0;
+      mealRows+=`<tr><td>${o.name}</td><td>${mealNames[mk]}</td>
+        <td data-v="${inh??''}">${n1(inh,0)}</td><td data-v="${wlk??''}">${n1(wlk,0)}</td>
+        <td data-v="${cov??''}">${n1(cov,0)}</td>
+        <td data-v="${cov?(wlk??0)/cov:''}">${cov?pct((wlk??0)/cov):na()}</td>
+        <td data-v="${cap??''}">${cap!=null?pct(cap,2):na('Capture ratio not reported')}</td>
+        <td data-v="${fr??''}">${money(fr)}</td><td data-v="${br2??''}">${money(br2)}</td>
+        <td data-v="${chk??''}">${chk?money(chk):na('No covers')}</td>
+        <td data-v="${chk&&chkL?chk/chkL-1:''}" class="${cls(chk&&chkL?chk/chkL-1:null)}">${chk&&chkL?pct(chk/chkL-1):na('LY covers/revenue missing')}</td>
+        <td data-v="${cov&&covL?cov/covL-1:''}" class="${cls(cov&&covL?cov/covL-1:null)}">${cov&&covL?pct(cov/covL-1):na()}</td></tr>`;
+    }
+  }
+
+  el.innerHTML=`
+    <div class="panel"><h3>Outlet league table — ${P} <span class="small">(red rows are destroying margin)</span>
+        <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Outlet</th><th>Revenue</th><th>% Bud</th><th>% LY</th><th>Food cost %</th><th>Bev cost %</th><th>Payroll %</th><th>Dept profit %</th><th>Covers</th><th>Avg check</th><th>Rev / hotel guest</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>
+    <div class="panel"><h3>Meal-period deep dive — ${P} <span class="small">(in-house vs walk-in, avg check per meal)</span>
+        <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Outlet</th><th>Meal</th><th>In-house</th><th>Walk-in</th><th>Covers</th><th>Walk-in %</th><th>Capture %</th><th>Food rev</th><th>Bev rev</th><th>Avg check</th><th>Check %LY</th><th>Covers %LY</th></tr></thead>
+      <tbody>${mealRows||'<tr><td colspan=12>'+na('Meal blocks not found in outlet sheets')+'</td></tr>'}</tbody></table></div>
+      <div class="small" style="margin-top:6px">Capture % = in-house covers ÷ hotel guests (as reported per outlet sheet). Click headers to sort.</div></div>
+    <div class="cols c3">
+      <div class="panel"><h3>Outlet revenue vs budget — ${P}</h3><div class="chartbox"><canvas id="chFnb"></canvas></div></div>
+      <div class="panel"><h3>Covers by meal period — ${P}</h3><div class="chartbox"><canvas id="chMeals"></canvas></div></div>
+      <div class="panel"><h3>In-house vs walk-in covers — ${P}</h3><div class="chartbox"><canvas id="chGuestMix"></canvas></div></div>
+    </div>`;
+  mkChart('chFnb',{type:'bar',data:{labels:chartLbl,datasets:[
+    {label:'Actual',data:chartAct,backgroundColor:'#C9A227'},
+    {label:'Budget',data:chartBud,backgroundColor:'rgba(74,125,189,.6)'}]},
+    options:{scales:{y:{ticks:{callback:v=>money(v,1)}}},maintainAspectRatio:false}});
+  const mo=Object.keys(covByOutlet).filter(k=>covByOutlet[k].breakfast+covByOutlet[k].lunch+covByOutlet[k].dinner>0);
+  mkChart('chMeals',{type:'bar',data:{labels:mo,datasets:[
+      {label:'Breakfast',data:mo.map(k=>covByOutlet[k].breakfast),backgroundColor:'#C9A227',stack:'s'},
+      {label:'Lunch',data:mo.map(k=>covByOutlet[k].lunch),backgroundColor:'#2e5f9e',stack:'s'},
+      {label:'Dinner',data:mo.map(k=>covByOutlet[k].dinner),backgroundColor:'#0B1F3A',stack:'s'}]},
+    options:{scales:{x:{stacked:true,ticks:{maxRotation:60}},y:{stacked:true}},maintainAspectRatio:false}});
+  const go=Object.keys(guestMix).filter(k=>guestMix[k].inhouse+guestMix[k].walkin>0);
+  mkChart('chGuestMix',{type:'bar',data:{labels:go,datasets:[
+      {label:'In-house guests',data:go.map(k=>guestMix[k].inhouse),backgroundColor:'#1e7e4f',stack:'s'},
+      {label:'Walk-in',data:go.map(k=>guestMix[k].walkin),backgroundColor:'#b7791f',stack:'s'}]},
+    options:{scales:{x:{stacked:true,ticks:{maxRotation:60}},y:{stacked:true}},maintainAspectRatio:false}});
+}
+
+/* ---------------- OTHER OPS ---------------- */
+function renderOther(d){
+  const el=$('#tab-other'); if(!d.ok){ el.innerHTML=noData(); return; }
+  const P=state.period, per=P==='YTD'?'YTD':'MTD';
+  let rows='';
+  for(const o of (d.p.otherDepts||[])){
+    if(o.totalRev==null&&o.deptProfit==null) continue;   // sheet found but rows unmapped (e.g. cost-centre sheets)
+    const rev=o.totalRev?.[per]?.act, revL=o.totalRev?.[per]?.ly;
+    const dp=o.deptProfit?.[per]?.act, dpp=div(dp,rev);
+    const por=div(rev,d.roomsSold);
+    const neg=dp!=null&&dp<0;
+    rows+=`<tr class="${neg?'bad':''}"><td>${o.name}${neg?' <span class="tag r">LOSS</span>':''}</td>
+      <td>${money(rev)}</td><td class="${cls(varPct(rev,revL))}">${pct(varPct(rev,revL))}</td>
+      <td class="${neg?'neg':''}">${money(dp)}</td><td class="${dpp!=null&&dpp<0?'neg':''}">${pct(dpp)}</td><td>${money(por)}</td></tr>`;
+  }
+  el.innerHTML=`<div class="panel"><h3>Other operating & miscellaneous departments — ${P}</h3>
+    <table><thead><tr><th>Department</th><th>Revenue</th><th>% LY</th><th>Dept profit</th><th>Profit %</th><th>Rev POR</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan=6>'+na('Department sheets not found in P&L workbook')+'</td></tr>'}</tbody></table>
+    <div class="small" style="margin-top:6px">POR = per occupied (sold) room. Departments flagged LOSS run negative profit and need a make-or-buy / outsourcing decision.</div></div>`;
+}
+
+/* ---------------- UNDISTRIBUTED ---------------- */
+function renderUndist(d){
+  const el=$('#tab-undist'); if(!d.ok){ el.innerHTML=noData(); return; }
+  const P=state.period, p=d.p;
+  const tot=(k,f)=> (g(p,'undist.'+k+'.pay',P,f)??0)+(g(p,'undist.'+k+'.oth',P,f)??0) || null;
+  const items=[['ag','Administration & General'],['it','IT & Telecom'],['sm','Sales & Marketing'],['pomec','POMEC (repairs & maint.)'],['energy','Energy / Utilities']];
+  let rows='';
+  for(const[k,label] of items){
+    const a=k==='energy'? g(p,'undist.energy.oth',P,'act') : tot(k,'act');
+    const b=k==='energy'? g(p,'undist.energy.oth',P,'bud') : tot(k,'bud');
+    const l=k==='energy'? g(p,'undist.energy.oth',P,'ly')  : tot(k,'ly');
+    const pctRev=div(a,d.totalRev.act), pctRevL=div(l,d.totalRev.ly);
+    const par=div(a,d.roomsAvail), por=div(a,d.roomsSold);
+    const over=a!=null&&b!=null&&a>b&&d.totalRev.act<d.totalRev.bud;
+    rows+=`<tr class="${over?'bad':''}"><td>${label}${over?' <span class="tag a">over-bud</span>':''}</td>
+      <td>${money(a)}</td><td>${money(b)}</td><td>${money(l)}</td>
+      <td>${pct(pctRev)}</td><td class="${pctRev!=null&&pctRevL!=null&&pctRev>pctRevL?'warn':''}">${pct(pctRevL)}</td>
+      <td>${money(par)}</td><td>${money(por)}</td></tr>`;
+  }
+  const smTot=tot('sm','act');
+  const smPct=div(smTot,d.totalRev.act);
+  const marketing = d.rgi!=null? `S&M is ${pct(smPct)} of revenue while RGI is ${idx(d.rgi)} — ${d.rgi<100?'spend is NOT buying share (RGI<100): challenge channel mix & co-op programs':'spend is holding share (RGI≥100)'}.`
+    : `S&M is ${pct(smPct)} of revenue; load Monthly STAR to judge if marketing is buying share.`;
+  const hpar=div(g(p,'stats.staff',P,'act'),284);
+  el.innerHTML=`
+    <div class="panel"><h3>Undistributed & overheads — ${P}</h3>
+    <table><thead><tr><th>Line</th><th>Actual</th><th>Budget</th><th>LY</th><th>% Rev</th><th>% Rev LY</th><th>PAR</th><th>POR</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="kgrid">
+      ${kpiCard('Energy / occupied room',money(d.energyPOR.act),null,d.energyPOR.ly?d.energyPOR.act/d.energyPOR.ly-1:null,true)}
+      ${kpiCard('Total payroll % rev',pct(d.payrollPct.act),null,d.payrollPct.ly?(d.payrollPct.act-d.payrollPct.ly):null,true)}
+      ${kpiCard('Headcount / available room',n1(hpar,3),null,null)}
+      ${kpiCard('House Laundry + Canteen',(()=>{const hl=(p.otherDepts||[]).find(x=>0); return na('Allocated cost centres — see P&L sheets House Laundry / Staff Canteen');})(),null,null)}
+    </div>
+    <div class="panel"><h3>Is marketing buying share?</h3><div class="small">${marketing}</div></div>`;
+}
+
+/* ---------------- MARKET (STR) ---------------- */
+function renderMarket(d){
+  const el=$('#tab-market');
+  const st=curMonth().star;
+  if(!st){ el.innerHTML=noData(); return; }
+  const per=state.period==='YTD'?'ytd':'cm';
+  const gl=st.glance||{};
+  const blocks=[['cm','Current month'],['ytd','YTD'],['r3','Running 3M'],['r12','Running 12M']];
+  let idxRows='';
+  for(const [k,label] of blocks){
+    const b=gl[k]; if(!b) continue;
+    idxRows+=`<tr><td>${label}</td>
+      <td>${idx(b.occ.idx)}</td><td>${idx(b.adr.idx)}</td><td>${idx(b.revpar.idx)}</td>
+      <td>${pct(b.occ.my/100,1)}</td><td>${money(b.adr.my)}</td><td>${money(b.revpar.my)}</td>
+      <td>${pct(b.occ.comp/100,1)}</td><td>${money(b.adr.comp)}</td><td>${money(b.revpar.comp)}</td></tr>`;
+  }
+  /* ranking from Comp sheet (latest column) */
+  const rk=m=>{ const c=st.comp?.[m]; return c? c.rank[c.rank.length-1]:null; };
+  /* fair share */
+  const fair= d.fairShare!=null? `${pct(d.fairShare,1)} fair vs ${pct(d.actShare,1)} actual — ${d.actShare>d.fairShare?'taking more than fair share of demand':'below fair share of demand'}` : na('Census data missing from STAR Summary');
+  /* DOW table */
+  let dow='';
+  for(const r of st.dow||[]) dow+=`<tr><td>${r.day}</td><td>${n1(r.occMy)}%</td><td>${n1(r.occComp)}%</td>
+    <td class="${r.mpi<100?'neg':'pos'}">${idx(r.mpi)}</td><td>${money(r.adrMy)}</td><td>${money(r.adrComp)}</td></tr>`;
+  /* pace */
+  const pace=state.store.pace||{};
+  let paceHtml='';
+  if(pace.daily?.rows?.mtd){ const r=pace.daily.rows.mtd;
+    paceHtml+=`<tr><td>Daily STAR — running MTD (${pace.daily.label})</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${money(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${money(r.revpar?.my)}</td></tr>`; }
+  if(pace.daily?.rows?.r7){ const r=pace.daily.rows.r7;
+    paceHtml+=`<tr><td>Running 7 days</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${money(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${money(r.revpar?.my)}</td></tr>`; }
+  if(pace.weekly?.metrics?.occ){ paceHtml+=`<tr><td>Weekly STAR (${pace.weekly.label})</td><td colspan="5" class="small" style="text-align:left">day-level MPI/ARI in file — see chart below-right of quadrant for month trend</td></tr>`; }
+
+  el.innerHTML=`
+    <div class="cols c2">
+      <div class="panel"><h3>MPI / ARI / RGI — ${fmtMonthKey(st.monthKey)}</h3>
+        <table><thead><tr><th>Period</th><th>MPI</th><th>ARI</th><th>RGI</th><th>My Occ</th><th>My ADR</th><th>My RevPAR</th><th>Comp Occ</th><th>Comp ADR</th><th>Comp RevPAR</th></tr></thead>
+        <tbody>${idxRows}</tbody></table>
+        <div class="small" style="margin-top:6px">Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> &nbsp;|&nbsp; Fair share: ${fair}</div>
+        <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div>
+      </div>
+      <div class="panel"><h3>RGI quadrant — ARI vs MPI (bubble = month, gold = latest)</h3><div class="chartbox tall"><canvas id="chQuad"></canvas></div></div>
+    </div>
+    <div class="cols c2">
+      <div class="panel"><h3>Index trend — 18 months</h3><div class="chartbox"><canvas id="chIdxTrend"></canvas></div></div>
+      <div class="panel"><h3>Day-of-week pattern (current month)</h3>
+        <table><thead><tr><th>Day</th><th>My Occ</th><th>Comp Occ</th><th>MPI</th><th>My ADR</th><th>Comp ADR</th></tr></thead><tbody>${dow||'<tr><td colspan=6>'+na('Day of Week sheet missing')+'</td></tr>'}</tbody></table></div>
+    </div>
+    <div class="panel"><h3>Short-term pace (Weekly / Daily STAR)</h3>
+      <table><thead><tr><th>Window</th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead><tbody>${paceHtml||'<tr><td colspan=6>'+na('Weekly/Daily STAR not loaded')+'</td></tr>'}</tbody></table></div>`;
+
+  /* quadrant: x=MPI, y=ARI, points = last 12 months */
+  const co=st.comp?.occ, ca=st.comp?.adr;
+  if(co&&ca){
+    const n=co.idx.length;
+    const ptsArr=[];
+    for(let i=Math.max(0,n-12);i<n;i++){ if(co.idx[i]!=null&&ca.idx[i]!=null) ptsArr.push({x:co.idx[i],y:ca.idx[i],label:fmtMonthKey(co.months[i])}); }
+    const last=ptsArr[ptsArr.length-1];
+    mkChart('chQuad',{type:'scatter',
+      data:{datasets:[
+        {label:'Months',data:ptsArr.slice(0,-1),backgroundColor:'rgba(74,125,189,.7)',pointRadius:5},
+        {label:'Latest',data:last?[last]:[],backgroundColor:'#C9A227',pointRadius:9}]},
+      options:{plugins:{tooltip:{callbacks:{label:c=>`${c.raw.label}: MPI ${idx(c.raw.x)} / ARI ${idx(c.raw.y)}`}},legend:{display:false}},
+        scales:{x:{title:{display:true,text:'MPI (occupancy index)'},min:80,max:125},
+                y:{title:{display:true,text:'ARI (rate index)'},min:70,max:110}},maintainAspectRatio:false},
+      plugins:[{id:'quadLines',afterDraw(ch){ const {ctx,scales:{x,y}}=ch; ctx.save(); ctx.strokeStyle='rgba(201,162,39,.5)'; ctx.setLineDash([5,4]);
+        ctx.beginPath(); ctx.moveTo(x.getPixelForValue(100),y.top); ctx.lineTo(x.getPixelForValue(100),y.bottom); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x.left,y.getPixelForValue(100)); ctx.lineTo(x.right,y.getPixelForValue(100)); ctx.stroke();
+        ctx.fillStyle='#6B7280'; ctx.font='10px sans-serif';
+        ctx.fillText('Premium & full',x.getPixelForValue(101),y.getPixelForValue(109));
+        ctx.fillText('Rate premium, low occ',x.getPixelForValue(81),y.getPixelForValue(109));
+        ctx.fillText('Buying occupancy',x.getPixelForValue(101),y.getPixelForValue(72));
+        ctx.fillText('Losing on both',x.getPixelForValue(81),y.getPixelForValue(72)); ctx.restore(); }}]});
+  }
+  const cr=st.comp?.revpar;
+  if(cr) mkChart('chIdxTrend',{type:'line',data:{labels:cr.months.map(fmtMonthKey),datasets:[
+      {label:'MPI',data:st.comp.occ?.idx,borderColor:'#4a7dbd',tension:.3},
+      {label:'ARI',data:st.comp.adr?.idx,borderColor:'#d69e2e',tension:.3},
+      {label:'RGI',data:cr.idx,borderColor:'#C9A227',borderWidth:2.5,tension:.3}]},
+    options:{plugins:{},scales:{y:{suggestedMin:70,suggestedMax:120}},maintainAspectRatio:false},
+    plugins:[{id:'l100',afterDraw(ch){const{ctx,scales:{y}}=ch;ctx.save();ctx.strokeStyle='rgba(214,69,69,.6)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(ch.chartArea.left,y.getPixelForValue(100));ctx.lineTo(ch.chartArea.right,y.getPixelForValue(100));ctx.stroke();ctx.restore();}}]});
+}
+
+/* ---------------- BENCHMARK (HotStats) ---------------- */
+/* [section, key in hs.rows, display label] — also drives the efficiency-trend picker */
+const BENCH_LINES=[
+  ['Rooms','occ','Occupancy %'],['Rooms','adr','ADR'],['Rooms','revpar','RevPAR'],['Rooms','netRevpar','Net RevPAR'],
+  ['Rooms','rmCos','Rooms cost of sales'],['Rooms','rmLabor','Rooms labour %'],['Rooms','rmOther','Rooms other exp POR'],['Rooms','rmProfit','Rooms profit PAR'],
+  ['F&B','fbRev','F&B revenue POR'],['F&B','fbCos','F&B cost of sales %'],['F&B','fbLabor','F&B labour %'],['F&B','fbProfit','F&B profit %'],
+  ['Minor','minorRev','Minor ops revenue PAR'],['Minor','minorProfit','Minor ops profit %'],
+  ['Undist','agTotal','A&G total %'],['Undist','itTotal','I&T total %'],['Undist','smTotal','S&M total %'],['Undist','pmTotal','P&M total %'],['Undist','utilities','Utilities POR'],
+  ['Total','totRev','Total revenue PAR'],['Total','payroll','Total payroll %'],['Total','gop','GOP %'],['Total','flow','Flow-through'],
+];
+/* cost lines: LOWER than comp = winning (colours + trend verdict invert) */
+const BENCH_COST=/cos|labor|labour|rmOther|utilit|payroll|agTotal|itTotal|smTotal|pmTotal|fbOtherExp/i;
+window.__setBench=k=>{ state.benchMetric=k; renderBench(derive()); };
+function renderBench(d){
+  const el=$('#tab-bench');
+  /* use HS for the selected month; else latest available */
+  let hs=curMonth().hotstats, hsMonth=state.month;
+  if(!hs){ const keys=Object.keys(state.store.months).sort().reverse();
+    for(const k of keys){ if(state.store.months[k].hotstats){ hs=state.store.months[k].hotstats; hsMonth=k; break; } } }
+  if(!hs){ el.innerHTML=noData(); return; }
+  const per=state.period==='YTD'?'ytd':'mtd';
+  const fmtV=(v,basis)=>{ if(v==null) return na();
+    if(/%/.test(basis||'')) return n1(v)+'%';
+    if(/PAR|POR/.test(basis||'')) return money(v);
+    return n1(v); };
+  const lines=BENCH_LINES;
+  let rows='', sec='';
+  for(const [s,k,label] of lines){
+    const r=hs.rows[k]; if(!r) continue;
+    if(s!==sec){ rows+=`<tr><td colspan="8" style="color:var(--gold);font-weight:700;border-top:1px solid var(--line)">${s}</td></tr>`; sec=s; }
+    const ty=r[per]?.ty||{}, isCost=/cos|labor|labour|other|utilit|payroll|agtotal|ittotal|smtotal|pmtotal/i.test(k);
+    const win = ty.idx==null? null : (isCost? ty.idx<100 : ty.idx>=100);
+    /* HotStats cost indexes are printed as comp/you so >100 = cheaper than comp on some rows;
+       we colour on you-vs-comp value directly to stay unambiguous */
+    const better = ty.you==null||ty.comp==null? null : (isCost? ty.you<=ty.comp : ty.you>=ty.comp);
+    rows+=`<tr><td>${label}</td><td>${fmtV(ty.you,r.basis)}</td><td>${fmtV(ty.comp,r.basis)}</td>
+      <td class="${better==null?'':better?'pos':'neg'}">${idx(ty.idx)}</td>
+      <td>${fmtV(r[per]?.ly?.you,r.basis)}</td><td>${fmtV(r[per]?.ly?.comp,r.basis)}</td>
+      <td>${better==null?'':better?'<span class="tag g">WIN</span>':'<span class="tag r">LOSE</span>'}</td>
+      <td class="small">${r.basis||''}</td></tr>`;
+  }
+  const gop=hs.rows.gop?.[per]?.ty;
+  const leak = (gop&&d.ok&&gop.comp>gop.you)? `Profit leakage if we matched comp-set GOP%: <b style="color:var(--red)">${money((gop.comp-gop.you)/100*d.totalRev.act)}</b> (${n1(gop.comp-gop.you)} pts on ${money(d.totalRev.act)})` : (gop? 'GOP conversion at or above comp set — no leakage on this measure.':'');
+  /* ---- efficiency trend across all stored HotStats months ---- */
+  const monthsH=Object.keys(state.store.months).filter(k=>state.store.months[k].hotstats).sort();
+  const mk4=state.benchMetric;
+  const selLine=BENCH_LINES.find(l=>l[1]===mk4)||BENCH_LINES[0];
+  const secs=[...new Set(BENCH_LINES.map(l=>l[0]))];
+  const selHtml=`<select onchange="__setBench(this.value)" class="noprint">${secs.map(s=>
+    `<optgroup label="${s}">${BENCH_LINES.filter(l=>l[0]===s).map(l=>
+      `<option value="${l[1]}" ${l[1]===mk4?'selected':''}>${l[2]}</option>`).join('')}</optgroup>`).join('')}</select>`;
+  const tSeries=monthsH.map(k=>state.store.months[k].hotstats.rows[mk4]?.[per]?.ty||{});
+  const tBasis=state.store.months[monthsH[monthsH.length-1]]?.hotstats.rows[mk4]?.basis||'';
+  const idxVals=tSeries.map(x=>x.idx).filter(v=>v!=null);
+  let verdict='';
+  if(idxVals.length>=2){
+    const dIdx=idxVals[idxVals.length-1]-idxVals[0];
+    verdict=`Index ${idx(idxVals[0])} → ${idx(idxVals[idxVals.length-1])} over ${monthsH.length} months — efficiency vs comp set is <b class="${dIdx>=0?'pos':'neg'}" style="color:var(--${dIdx>=0?'green':'red'})">${dIdx>=0?'improving':'deteriorating'} (${pts(dIdx,1).replace(' pts',' idx pts')})</b>. Index &gt;100 = better than comp on this line (HotStats inverts cost-line indexes so higher is always better).`;
+  } else verdict=`Only ${monthsH.length} HotStats month stored — drop each month's HotStats file and this trend fills up like the STR history.`;
+
+  el.innerHTML=`<div class="panel"><h3>HotStats full P&L cascade — You vs Comp vs Index (${per.toUpperCase()}, period: ${fmtMonthKey(hsMonth)})
+      ${hsMonth!==state.month?'<span class="tag a">different period than selected month</span>':''}</h3>
+    <div style="overflow-x:auto"><table><thead><tr><th>Line</th><th>You</th><th>Comp</th><th>Index</th><th>You LY</th><th>Comp LY</th><th>Verdict</th><th>Basis</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="small" style="margin-top:8px">${leak}</div></div>
+    <div class="cols c2">
+      <div class="panel"><h3>Efficiency trend vs comp set — ${selLine[2]} ${selHtml}</h3>
+        <div class="chartbox tall"><canvas id="chBenchTrend"></canvas></div>
+        <div class="small" style="margin-top:6px">${verdict}</div></div>
+      <div class="panel"><h3>Index trend — key efficiency lines (${per.toUpperCase()})</h3>
+        <div class="chartbox tall"><canvas id="chBenchIdx"></canvas></div>
+        <div class="small" style="margin-top:6px">GOP %, total payroll % and F&B cost % indexes vs comp set. All lines: &gt;100 = better than comp; a line sliding below 100 is where the leakage grows.</div></div>
+    </div>`;
+
+  const fmtTick=v=>/%/.test(tBasis)?n1(v)+'%':(/PAR|POR/.test(tBasis)?money(v,1):n1(v));
+  mkChart('chBenchTrend',{type:'bar',data:{labels:monthsH.map(fmtMonthKey),datasets:[
+      {type:'bar',label:'You',data:tSeries.map(x=>x.you??null),backgroundColor:'#0B1F3A'},
+      {type:'bar',label:'Comp set',data:tSeries.map(x=>x.comp??null),backgroundColor:'#C9A227'},
+      {type:'line',label:'Index (right)',yAxisID:'y1',data:tSeries.map(x=>x.idx??null),borderColor:'#1e7e4f',borderDash:[5,4],tension:.3}]},
+    options:{scales:{y:{ticks:{callback:fmtTick}},y1:{position:'right',grid:{drawOnChartArea:false}}},maintainAspectRatio:false},
+    plugins:[{id:'b100',afterDraw(ch){const y1=ch.scales.y1;if(!y1)return;const{ctx}=ch;ctx.save();ctx.strokeStyle='rgba(192,57,43,.5)';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(ch.chartArea.left,y1.getPixelForValue(100));ctx.lineTo(ch.chartArea.right,y1.getPixelForValue(100));ctx.stroke();ctx.restore();}}]});
+  const idxKeys=[['gop','GOP %','#C9A227'],['payroll','Payroll %','#2e5f9e'],['fbCos','F&B cost %','#1e7e4f'],['revpar','RevPAR','#0B1F3A']];
+  mkChart('chBenchIdx',{type:'line',data:{labels:monthsH.map(fmtMonthKey),datasets:idxKeys.map(([k,l,c])=>(
+      {label:l,data:monthsH.map(m=>state.store.months[m].hotstats.rows[k]?.[per]?.ty?.idx??null),borderColor:c,tension:.3}))},
+    options:{scales:{y:{suggestedMin:70,suggestedMax:130}},maintainAspectRatio:false},
+    plugins:[{id:'b100b',afterDraw(ch){const{ctx,scales:{y}}=ch;ctx.save();ctx.strokeStyle='rgba(192,57,43,.5)';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(ch.chartArea.left,y.getPixelForValue(100));ctx.lineTo(ch.chartArea.right,y.getPixelForValue(100));ctx.stroke();ctx.restore();}}]});
+}
+
+/* ---------------- CONSOLIDATED ---------------- */
+function renderConso(d){
+  const el=$('#tab-conso');
+  const fsAll={}; for(const[k,m] of Object.entries(state.store.months)) if(m.fs) fsAll[k]=m.fs;
+  const fs=curMonth().fs;
+  if(!fs){ el.innerHTML=noData(); return; }
+  const V=(k,f='act')=>fs[k]?.[f]??null;
+  const P=state.period, f= P==='YTD'?'yact':'act', fb=P==='YTD'?'ybud':'bud';
+  const hotel=V('hotelGop',f), central=V('centralGop',f), group=hotel+central;
+  const rows=[
+    ['Total revenue (hotel)',V('totalRev',f),V('totalRev',fb),P==='MTD'?V('totalRev','ly'):null],
+    ['Hotel GOP',hotel,V('hotelGop',fb),P==='MTD'?V('hotelGop','ly'):null],
+    ['Central Plaza GOP (office)',central,V('centralGop',fb),P==='MTD'?V('centralGop','ly'):null],
+    ['Profit before fixed charges (Group)',V('pbfc',f),V('pbfc',fb),P==='MTD'?V('pbfc','ly'):null],
+    ['Fixed charges',V('fixed',f),V('fixed',fb),P==='MTD'?V('fixed','ly'):null],
+    ['Financial income/(exp) net',-(V('finNet',f)??0),null,P==='MTD'?-(V('finNet','ly')??0):null],
+    ['Depreciation & amortisation',V('dep',f),V('dep',fb),P==='MTD'?V('dep','ly'):null],
+    ['Profit before tax',V('pbt',f),V('pbt',fb),P==='MTD'?V('pbt','ly'):null],
+    ['CIT',V('tax',f),V('tax',fb),P==='MTD'?V('tax','ly'):null],
+    ['Net profit after tax',V('npat',f),V('npat',fb),P==='MTD'?V('npat','ly'):null],
+  ].map(r=>`<tr class="${/Net profit/.test(r[0])?'tot':''}"><td>${r[0]}</td><td>${money(r[1])}</td><td>${money(r[2])}</td><td>${r[3]==null?'—':money(r[3])}</td><td class="${cls(varPct(r[1],r[2]))}">${pct(varPct(r[1],r[2]))}</td></tr>`).join('');
+
+  /* MoM bridge: previous FS month */
+  const keys=Object.keys(fsAll).sort(); const iCur=keys.indexOf(state.month);
+  const prevKey=iCur>0?keys[iCur-1]:null; const prev=prevKey?fsAll[prevKey]:null;
+  let bridgeHtml='';
+  if(prev){
+    const dHotel=(fs.hotelGop?.act??0)-(prev.hotelGop?.act??0);
+    const dCentral=(fs.centralGop?.act??0)-(prev.centralGop?.act??0);
+    const dOther=((fs.npat?.act??0)-(prev.npat?.act??0))-dHotel-dCentral;
+    bridgeHtml=`<div class="panel"><h3>MoM bridge ${fmtMonthKey(prevKey)} → ${fmtMonthKey(state.month)} (net profit after tax)</h3>
+      <table><thead><tr><th>Driver</th><th>Δ</th></tr></thead><tbody>
+      <tr><td>NPAT ${fmtMonthKey(prevKey)}</td><td>${money(prev.npat?.act)}</td></tr>
+      <tr><td>Δ Hotel GOP</td><td class="${cls(dHotel)}">${money(dHotel)}</td></tr>
+      <tr><td>Δ Central Plaza GOP</td><td class="${cls(dCentral)}">${money(dCentral)}</td></tr>
+      <tr><td>Δ Fixed / financial / tax / other</td><td class="${cls(dOther)}">${money(dOther)}</td></tr>
+      <tr class="tot"><td>NPAT ${fmtMonthKey(state.month)}</td><td>${money(fs.npat?.act)}</td></tr></tbody></table></div>`;
+  }
+  const contrib= group? `${pct(hotel/group)} hotel / ${pct(central/group)} office` : '—';
+  el.innerHTML=`
+    <div class="kgrid">
+      ${kpiCard('Hotel GOP',money(hotel),varPct(hotel,V('hotelGop',fb)),P==='MTD'?varPct(hotel,V('hotelGop','ly')):null)}
+      ${kpiCard('Central Plaza GOP',money(central),varPct(central,V('centralGop',fb)),P==='MTD'?varPct(central,V('centralGop','ly')):null)}
+      ${kpiCard('Group GOP contribution',contrib,null,null)}
+      ${kpiCard('NPAT',money(V('npat',f)),varPct(V('npat',f),V('npat',fb)),P==='MTD'?varPct(V('npat',f),V('npat','ly')):null)}
+      ${kpiCard('FX ref rate',fs.fxRate?n1(fs.fxRate,0)+' ₫/$':na('FS note not found'),null,null)}
+    </div>
+    <div class="cols c2">
+      <div class="panel"><h3>Consolidated cascade — ${P}</h3>
+        <table><thead><tr><th>Line</th><th>Actual</th><th>Budget</th><th>LY</th><th>Var %</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="small" style="margin-top:6px">Office-building occupancy/yield is not disclosed in the FS workbook — only Central GOP. Reconciliation: Hotel GOP per FS ${money(hotel)} vs P&L GOP ${d.ok?money(state.period==='YTD'?g(d.p,'sum.gop','YTD','act'):d.gop.act):'—'} (FS is after mgmt/incentive fees — see cascade).</div></div>
+      <div class="panel"><h3>Hotel vs Central GOP — stored months</h3><div class="chartbox tall"><canvas id="chConso"></canvas></div></div>
+    </div>
+    ${bridgeHtml}`;
+  const ks=keys;
+  mkChart('chConso',{type:'bar',data:{labels:ks.map(fmtMonthKey),datasets:[
+    {label:'Hotel GOP',data:ks.map(k=>cv(fsAll[k].hotelGop?.act)),backgroundColor:'#C9A227',stack:'s'},
+    {label:'Central GOP',data:ks.map(k=>cv(fsAll[k].centralGop?.act)),backgroundColor:'#4a7dbd',stack:'s'}]},
+    options:{scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>money(v,0)}}},maintainAspectRatio:false}});
+}
+
+/* ---------------- PATTERNS & HEATMAPS (Month × DOW, SSP vs Comp vs Industry) ---------------- */
+const DOWS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+function dowOf(ym,day){ const [y,m]=ym.split('-').map(Number); return (new Date(y,m-1,day).getDay()+6)%7; } // 0=Mon
+function heatColor(v,min,max,diverge){
+  if(v==null) return '';
+  if(diverge){ const t=clamp((v-100)/25,-1,1);
+    return t>=0?`background:rgba(30,126,79,${.12+.55*t})`:`background:rgba(192,57,43,${.12+.55*(-t)})`; }
+  const t=max>min?(v-min)/(max-min):0;
+  return `background:rgba(232,163,61,${.06+.75*t})`;
+}
+function renderHeat(d){
+  const el=$('#tab-heat');
+  const months=Object.keys(state.store.months).filter(k=>state.store.months[k].star?.daily).sort();
+  if(!months.length){ el.innerHTML=noData(); return; }
+  const met=state.heatMetric;                        // occ | adr | revpar
+  const idxName={occ:'MPI',adr:'ARI',revpar:'RGI'}[met];
+  const fmtV=v=>v==null?'':(met==='occ'?n1(v,0):money(v,1));
+  /* build cells[entity][month] = [7 dow avgs, total] */
+  const ents=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry / submarket'],['idx','Index '+idxName+' (SSP ÷ Comp)']];
+  const grids={};
+  for(const [e] of ents) grids[e]={};
+  for(const mk of months){
+    const dl=state.store.months[mk].star.daily; const src=dl?.[met]; if(!src) continue;
+    for(const [e] of ents){
+      const sums=new Array(7).fill(0),ns=new Array(7).fill(0); let ts=0,tn=0;
+      for(let day=1;day<=31;day++){
+        let v=null;
+        if(e==='idx'){ const a=src.my?.[day-1],b=src.comp?.[day-1]; v=(a!=null&&b)?a/b*100:null; }
+        else v=src[e]?.[day-1];
+        if(v==null) continue;
+        const w=dowOf(mk,day); sums[w]+=v; ns[w]++; ts+=v; tn++;
+      }
+      if(tn) grids[e][mk]=[...sums.map((s,i)=>ns[i]?s/ns[i]:null), ts/tn];
+    }
+  }
+  const grid=(e,label)=>{
+    const rows=months.filter(mk=>grids[e][mk]);
+    if(!rows.length) return `<div class="panel"><h3>${label}</h3><div class="small">${na('Requires STAR "Daily by Month'+(e==='ind'?' Industry':'')+'" sheet — drop more Monthly STAR files')}</div></div>`;
+    const vals=rows.flatMap(mk=>grids[e][mk].slice(0,7)).filter(v=>v!=null);
+    const mn=Math.min(...vals),mx=Math.max(...vals);
+    let h=`<div class="panel"><h3>${label}</h3><div style="overflow-x:auto"><table class="heat"><thead><tr><th>Month</th>${DOWS.map(x=>'<th>'+x+'</th>').join('')}<th>Total</th></tr></thead><tbody>`;
+    for(const mk of rows){ const r=grids[e][mk];
+      h+=`<tr><td>${fmtMonthKey(mk)}</td>${r.slice(0,7).map(v=>`<td style="${heatColor(v,mn,mx,e==='idx')}" data-v="${v??''}">${fmtV(v)}</td>`).join('')}<td data-v="${r[7]??''}"><b>${fmtV(r[7])}</b></td></tr>`; }
+    return h+'</tbody></table></div></div>';
+  };
+  /* DOW insights across all stored months */
+  const dowAgg=(e)=>{ const s=new Array(7).fill(0),n=new Array(7).fill(0);
+    for(const mk of months){ const g=grids[e][mk]; if(!g) continue;
+      g.slice(0,7).forEach((v,i)=>{ if(v!=null){s[i]+=v;n[i]++;} }); }
+    return s.map((x,i)=>n[i]?x/n[i]:null); };
+  const rgiD=dowAgg('idx');
+  const worst=rgiD.indexOf(Math.min(...rgiD.filter(v=>v!=null))), best=rgiD.indexOf(Math.max(...rgiD.filter(v=>v!=null)));
+  const wkd=(a)=>a.slice(0,4).filter(v=>v!=null), wke=(a)=>a.slice(4,7).filter(v=>v!=null);
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+  const insights=[];
+  if(rgiD[worst]!=null) insights.push(['crit',`Weakest day: ${DOWS[worst]}`,`Average ${idxName} ${n1(rgiD[worst])} across ${months.length} stored month(s) — target promotions/corporate feed on ${DOWS[worst]}.`]);
+  if(rgiD[best]!=null) insights.push(['good',`Strongest day: ${DOWS[best]}`,`Average ${idxName} ${n1(rgiD[best])} — protect rate here, avoid discounting.`]);
+  const wd=avg(wkd(rgiD)),we=avg(wke(rgiD));
+  if(wd!=null&&we!=null) insights.push([we<wd?'warn':'info','Weekday vs weekend',`${idxName} weekday (Mon–Thu) ${n1(wd)} vs weekend (Fri–Sun) ${n1(we)} — ${we<wd?'weekend leisure demand is being lost to the comp set':'weekend position is stronger than weekday'}.`]);
+  const myD=dowAgg('my'), indD=dowAgg('ind');
+  if(met==='occ'&&indD.some(v=>v!=null)){
+    const gap=myD.map((v,i)=>v!=null&&indD[i]!=null?v-indD[i]:null).filter(v=>v!=null);
+    if(gap.length) insights.push([avg(gap)>=0?'good':'warn','vs Industry (submarket)',`Occupancy runs ${n1(Math.abs(avg(gap)))} pts ${avg(gap)>=0?'above':'below'} the submarket on average.`]);
+  }
+  el.innerHTML=`
+    <div class="panel noprint"><h3>Metric</h3>
+      ${[['occ','Occupancy'],['adr','ADR'],['revpar','RevPAR']].map(([k,l])=>`<button class="heatbtn ${met===k?'on':''}" onclick="__setHeat('${k}')">${l}</button>`).join(' ')}
+      <span class="small" style="margin-left:10px">Month × day-of-week averages from STAR daily data. Grids fill up as you drop each Monthly STAR file (${months.length} month(s) stored).</span></div>
+    <div class="heatwrap">${ents.map(([e,l])=>grid(e,l)).join('')}</div>
+    <div class="panel"><h3>Pattern insights — ${idxName}</h3>
+      ${insights.map(a=>`<div class="alert ${a[0]}"><div class="h">${a[1]}</div><div class="d">${a[2]}</div></div>`).join('')||'<div class="small">—</div>'}</div>`;
+}
+window.__setHeat=m=>{ state.heatMetric=m; renderHeat(derive()); };
+
+/* ---------------- FORECAST (seasonal-naive × run-rate growth + OTA validation) ---------------- */
+function median(a){ const s=[...a].sort((x,y)=>x-y); return s.length?(s[(s.length-1)>>1]+s[s.length>>1])/2:null; }
+function stdev(a){ if(a.length<2) return 0; const m=a.reduce((x,y)=>x+y,0)/a.length; return Math.sqrt(a.reduce((x,y)=>x+(y-m)**2,0)/(a.length-1)); }
+function addMonths(ym,k){ let [y,m]=ym.split('-').map(Number); m+=k; y+=Math.floor((m-1)/12); m=(m-1)%12+1; return MKEY(y,m); }
+function daysIn(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m,0).getDate(); }
+function olsNext(vals,steps){ // simple linear projection of a series
+  const pts=vals.map((v,i)=>[i,v]).filter(p=>p[1]!=null); if(pts.length<4) return steps.map(()=>null);
+  const n=pts.length, sx=pts.reduce((a,p)=>a+p[0],0), sy=pts.reduce((a,p)=>a+p[1],0);
+  const sxx=pts.reduce((a,p)=>a+p[0]*p[0],0), sxy=pts.reduce((a,p)=>a+p[0]*p[1],0);
+  const b=(n*sxy-sx*sy)/(n*sxx-sx*sx), a=(sy-b*sx)/n;
+  return steps.map(s=>a+b*(vals.length-1+s));
+}
+function renderForecast(d){
+  const el=$('#tab-forecast');
+  const st=curMonth().star, ch=st?.comp;
+  if(!ch?.revpar){ el.innerHTML=noData(); return; }
+  const M=ch.revpar.months, n=M.length;
+  const series={occ:ch.occ?.my||[], adr:ch.adr?.my||[], revpar:ch.revpar.my||[]};
+  /* run-rate growth: median YoY of the last ≤6 months with a LY pair */
+  const growth={},vol={};
+  for(const k of Object.keys(series)){
+    const g=[]; for(let i=Math.max(12,n-6);i<n;i++){ const a=series[k][i],b=series[k][i-12]; if(a!=null&&b) g.push(a/b-1); }
+    growth[k]=g.length?median(g):null; vol[k]=stdev(g);
+  }
+  const H=[...Array(6)].map((_,i)=>addMonths(M[n-1],i+1));
+  const fc=H.map((ym,h)=>{
+    const li=n-12+(h+1);                     // index of same month LY in the series
+    const o={ym};
+    for(const k of Object.keys(series)){
+      const base=li>=0&&li<n?series[k][li]:null;
+      o[k]=base!=null&&growth[k]!=null?base*(1+growth[k]):null;
+      o[k+'Lo']=base!=null&&growth[k]!=null?base*(1+growth[k]-vol[k]):null;
+      o[k+'Hi']=base!=null&&growth[k]!=null?base*(1+growth[k]+vol[k]):null;
+    }
+    if(o.occ!=null) o.occ=Math.min(o.occ,99);
+    return o;
+  });
+  /* RGI projection: linear trend of last 12 index values */
+  const rgiProj=olsNext(ch.revpar.idx.slice(-12),[1,2,3,4,5,6]);
+  /* convert RevPAR forecast into money using latest P&L structure */
+  const p=pnlVND();
+  const share=p?div(g(p,'rev.rooms','MTD','act'),g(p,'rev.totalIncl','MTD','act')):null;
+  const gopKeys=Object.keys(state.store.months).filter(k=>state.store.months[k].pnlVND).sort().slice(-3);
+  const gopPcts=gopKeys.map(k=>div(g(state.store.months[k].pnlVND,'sum.gop','MTD','act'),g(state.store.months[k].pnlVND,'rev.totalIncl','MTD','act'))).filter(v=>v!=null);
+  const gopPct=gopPcts.length?gopPcts.reduce((a,b)=>a+b,0)/gopPcts.length:null;
+  let rows=''; const statT=[];
+  for(let i=0;i<H.length;i++){ const f=fc[i];
+    const roomsRev=f.revpar!=null?f.revpar*284*daysIn(f.ym):null;
+    const totRev=roomsRev!=null&&share?roomsRev/share:null;
+    const gop=totRev!=null&&gopPct!=null?totRev*gopPct:null;
+    statT.push({ym:f.ym,totRev,gop});
+    rows+=`<tr><td>${fmtMonthKey(f.ym)}</td><td>${f.occ!=null?n1(f.occ,1)+'%':na()}</td><td>${money(f.adr)}</td>
+      <td>${money(f.revpar)}</td><td class="small">${money(f.revparLo)} – ${money(f.revparHi)}</td>
+      <td>${rgiProj[i]!=null?idx(rgiProj[i]):na()}</td><td>${money(roomsRev)}</td><td>${money(totRev)}</td><td>${money(gop)}</td></tr>`;
+  }
+  /* pace validation vs Daily STAR running MTD */
+  let paceHtml='';
+  const pd=state.store.pace.daily;
+  if(pd?.rows?.mtd&&pd.label){
+    const pk=monthKeyFromText(pd.label.replace(/(\d+),/,'')); // "June 30, 2026" → 2026-06
+    const fi=fc.findIndex(f=>f.ym===pk);
+    if(fi>=0){ const f=fc[fi], a=pd.rows.mtd;
+      const occDiff=a.occ.my-(f.occ??0), adrDiff=f.adr?a.adr.my/f.adr-1:null;
+      paceHtml=`<div class="alert ${Math.abs(occDiff)<5?'good':'warn'}"><div class="h">Pace check — ${fmtMonthKey(pk)} running MTD vs forecast</div>
+        <div class="d">Actual MTD Occ ${n1(a.occ.my,1)}% vs forecast ${n1(f.occ,1)}% (${pts(occDiff)}) · ADR ${money(a.adr.my)} vs ${money(f.adr)} (${pct(adrDiff)}). ${Math.abs(occDiff)<5?'Tracking in line — forecast holds.':occDiff>0?'Running AHEAD of forecast — hold or push rate rather than volume.':'Running BEHIND forecast — revisit pickup and rate strategy for the month.'}</div></div>`;
+    }
+  }
+  /* OTA independent observation */
+  const ota=state.store.rev?.ota; let otaHtml='',otaChart=null;
+  if(ota){
+    const sspH=ota.hotels.find(h=>/sofitel/i.test(h));
+    const comps=ota.hotels.filter(h=>h!==sspH);
+    const oM=ota.months.slice(-18);
+    const basket=oM.map(m=>{ const vs=comps.map(h=>ota.series[h][m]?.avg).filter(v=>v!=null); return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null; });
+    const strM=ch.adr?.months||[], strComp=ch.adr?.comp||[];
+    const strOnOta=oM.map(m=>{ const i=strM.indexOf(m); return i>=0?strComp[i]:null; });
+    /* validation: OTA basket vs STR comp ADR on overlapping months */
+    const pairs=oM.map((m,i)=>[basket[i],strOnOta[i]]).filter(x=>x[0]&&x[1]);
+    const ratio=pairs.length?avgA(pairs.map(x=>x[0]/x[1])):null;
+    const otaProj=olsNext(basket,[1,2,3]);
+    const last=oM.length-1;
+    let posRows=comps.concat(sspH?[sspH]:[]).map(h=>{ const s=ota.series[h][oM[last]]||{};
+      return `<tr class="${/sofitel/i.test(h)?'tot':''}"><td>${h}</td><td>${money(s.avg)}</td><td>${money(s.min)}</td><td>${money(s.max)}</td><td>${s.n??''}</td></tr>`; }).join('');
+    otaHtml=`<div class="cols c2">
+      <div class="panel"><h3>OTA price observation vs STR (validation)</h3><div class="chartbox"><canvas id="chOta"></canvas></div>
+        <div class="small" style="margin-top:6px">${pairs.length?`Across ${pairs.length} overlapping months the OTA basket runs ${pct(ratio-1)} vs STR comp-set ADR — ${Math.abs(ratio-1)<.15?'directionally consistent; STR data validated':'large gap — OTA scrape covers BAR only, treat as directional'}. Basket projection next 3 months: ${otaProj.map(v=>money(v)).join(' · ')}.`:'No overlapping months with STR yet.'}
+        ${sspH?'':'<br>Note: the OTA file contains competitor BARs only (no Sofitel rows) — position is read against the basket.'}</div></div>
+      <div class="panel"><h3>OTA BAR position — ${fmtMonthKey(oM[last])}</h3>
+        <table><thead><tr><th>Hotel</th><th>Avg BAR (net)</th><th>Min</th><th>Max</th><th>Obs</th></tr></thead><tbody>${posRows}</tbody></table></div>
+    </div>`;
+    otaChart={oM,comps,basket,strOnOta,ota};
+  }
+  /* ---- Management Rolling Forecast + Cashflow ---- */
+  const rf=state.store.rf, cf=state.store.cf;
+  let rfHtml='';
+  if(rf){
+    const cmp=statT.filter(s=>s.totRev!=null&&rf.months.includes(s.ym)).map(s=>{
+      const i=rf.months.indexOf(s.ym); return {ym:s.ym,stat:s.totRev,rf:rf.rows.totalRev[i]}; });
+    const dev=cmp.length?avgA(cmp.map(x=>x.stat/x.rf-1)):null;
+    const negs=rf.months.map((m,i)=>({m,g:rf.rows.gop[i],f:rf.flags[i]})).filter(x=>/forecast/i.test(x.f)&&x.g!=null&&x.g<0);
+    rfHtml=`<div class="panel"><h3>Management rolling forecast — ${rf.title||'FY2026 (04A+08F)'}</h3>
+      <div class="chartbox tall"><canvas id="chRf"></canvas></div>
+      <div class="small" style="margin-top:6px">
+        ${dev!=null?`Cross-check: this dashboard's statistical forecast runs <b>${pct(dev)}</b> vs the management RF on ${cmp.length} overlapping month(s) (${cmp.map(x=>fmtMonthKey(x.ym)+' '+pct(x.stat/x.rf-1)).join(' · ')}). Near-term months should agree; large gaps in later months usually mean the RF embeds events the statistical model cannot see (e.g. renovation closure) — trust the RF there, but challenge it where the near-term gap is wide.`:''}
+        ${negs.length?`<br><b style="color:var(--red)">RF plans NEGATIVE GOP in ${negs.map(x=>fmtMonthKey(x.m)).join(', ')}</b> — renovation-period cash burn; watch payroll ratio (RF has payroll reaching ${pct(Math.max(...rf.months.map((m,i)=>rf.rows.payroll[i]/rf.rows.totalRev[i])))} of revenue in the trough months).`:''}
+      </div></div>`;
+  } else rfHtml=`<div class="panel"><h3>Management rolling forecast</h3><div class="small">${na('Drop "FY26 Rolling Forecast 04A+08F.xlsx" into the drop zone')}</div></div>`;
+  let cfHtml='';
+  if(cf){
+    const fIdx=cf.flags.map((f,i)=>/forecast/i.test(f)?i:null).filter(i=>i!=null);
+    const minI=cf.closing.reduce((a,v,i)=>v!=null&&(a==null||v<cf.closing[a])?i:a,null);
+    cfHtml=`<div class="panel"><h3>Cashflow forecast — closing balance & flows</h3>
+      <div class="chartbox"><canvas id="chCf"></canvas></div>
+      <div class="small" style="margin-top:6px">Lowest closing balance: <b>${money(cf.closing[minI])}</b> in ${fmtMonthKey(cf.months[minI])}${cf.closing[minI]<10e9?' — <b style="color:var(--red)">below 10 bn buffer, review JVC fund advances timing</b>':''}.</div></div>`;
+  } else cfHtml=`<div class="panel"><h3>Cashflow forecast</h3><div class="small">${na('Drop "2026 Cashflow Forecast - ….xlsx" into the drop zone')}</div></div>`;
+
+  el.innerHTML=`
+    <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
+      <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>
+    ${paceHtml}
+    <div class="cols c2">${rfHtml}${cfHtml}</div>
+    <div class="panel"><h3>6-month outlook</h3>
+      <table><thead><tr><th>Month</th><th>Occ</th><th>ADR</th><th>RevPAR</th><th>RevPAR range</th><th>RGI proj</th><th>Rooms revenue</th><th>Total revenue</th><th>GOP est.</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+      <div class="small" style="margin-top:6px">Method: same-month-LY × (1 + median YoY of trailing 6 months); band = ±1σ of that growth. Rooms revenue = RevPAR × 284 × days; total revenue via rooms share ${pct(share)}; GOP at trailing ${gopPcts.length}-month margin ${pct(gopPct)}. RGI projected by linear trend of last 12 months. This is a control-tool projection, not a commitment.</div></div>
+    ${otaHtml}`;
+  /* forecast chart */
+  const labels=[...M,...H].map(fmtMonthKey);
+  const act=[...series.revpar,...H.map(()=>null)].map(v=>v==null?null:cv(v));
+  const fcl=[...M.map(()=>null),...fc.map(f=>f.revpar==null?null:cv(f.revpar))];
+  fcl[M.length-1]=act[M.length-1];
+  const lo=[...M.map(()=>null),...fc.map(f=>f.revparLo==null?null:cv(f.revparLo))];
+  const hi=[...M.map(()=>null),...fc.map(f=>f.revparHi==null?null:cv(f.revparHi))];
+  mkChart('chFc',{type:'line',data:{labels,datasets:[
+      {label:'RevPAR actual',data:act,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
+      {label:'Forecast',data:fcl,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
+      {label:'Low',data:lo,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
+      {label:'High',data:hi,borderColor:'rgba(201,162,39,.25)',pointRadius:0}]},
+    options:{plugins:{legend:{labels:{filter:i=>!/Low|High/.test(i.text)}}},scales:{y:{ticks:{callback:v=>money(v,1)}}},maintainAspectRatio:false}});
+  if(otaChart){
+    const {oM,comps,basket,strOnOta,ota}=otaChart;
+    mkChart('chOta',{type:'line',data:{labels:oM.map(fmtMonthKey),datasets:[
+        ...comps.map((h,i)=>({label:h,data:oM.map(m=>ota.series[h][m]?cv(ota.series[h][m].avg):null),borderColor:['#9CA3AF','#6B7280','#c0a0a0','#8fa8c8'][i%4],borderWidth:1,pointRadius:0,tension:.3})),
+        {label:'OTA basket avg',data:basket.map(v=>v==null?null:cv(v)),borderColor:'#C9A227',borderWidth:2.5,tension:.3},
+        {label:'STR comp-set ADR',data:strOnOta.map(v=>v==null?null:cv(v)),borderColor:'#0B1F3A',borderDash:[5,4],borderWidth:2,tension:.3}]},
+      options:{scales:{y:{ticks:{callback:v=>money(v,1)}}},maintainAspectRatio:false}});
+  }
+  if(rf){
+    mkChart('chRf',{type:'bar',data:{labels:rf.months.map(fmtMonthKey),datasets:[
+        {type:'bar',label:'Total revenue',data:rf.rows.totalRev.map(cv),
+         backgroundColor:rf.flags.map(f=>/actual/i.test(f)?'#0B1F3A':'rgba(201,162,39,.75)')},
+        {type:'line',label:'GOP',data:rf.rows.gop.map(cv),borderColor:'#1e7e4f',tension:.3},
+        {type:'line',label:'GOP % (right)',yAxisID:'y1',data:rf.rows.gopPct.map(v=>v==null?null:v*100),borderColor:'#c0392b',borderDash:[5,4],tension:.3}]},
+      options:{plugins:{tooltip:{callbacks:{afterTitle:c=>rf.flags[c[0].dataIndex]}}},
+        scales:{y:{ticks:{callback:v=>money(v,0)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
+  }
+  if(cf){
+    mkChart('chCf',{type:'bar',data:{labels:cf.months.map(fmtMonthKey),datasets:[
+        {type:'bar',label:'Cash in',data:cf.cashIn.map(cv),backgroundColor:'rgba(30,126,79,.65)'},
+        {type:'bar',label:'Cash out',data:cf.cashOut.map(v=>v==null?null:-cv(v)),backgroundColor:'rgba(192,57,43,.55)'},
+        {type:'line',label:'Closing balance',data:cf.closing.map(cv),borderColor:'#0B1F3A',borderWidth:2.5,tension:.3}]},
+      options:{scales:{y:{ticks:{callback:v=>money(v,0)}}},maintainAspectRatio:false}});
+  }
+}
+function avgA(a){ return a.length?a.reduce((x,y)=>x+y,0)/a.length:null; }
+
+/* ---------------- ENGINEERING (building condition & maintenance) ---------------- */
+function renderEng(d){
+  const el=$('#tab-eng');
+  const monthsE=Object.keys(state.store.months).filter(k=>state.store.months[k].eng).sort();
+  if(!monthsE.length){ el.innerHTML=`<div class="panel"><span class="small">${na('Drop the monthly "Engineer Monthly report" PDF into the drop zone — parsed in-browser with pdf.js')}</span></div>`; return; }
+  const key=state.store.months[state.month]?.eng?state.month:monthsE[monthsE.length-1];
+  const eng=state.store.months[key].eng;
+  const wo=eng.wo||{};
+  const rate=wo.total?wo.done/wo.total:null;
+  const kpis=
+    kpiCard('Work orders — '+fmtMonthKey(key),n1(wo.total,0),null,null)+
+    kpiCard('Completed',n1(wo.done,0),null,null)+
+    `<div class="kpi ${rate==null?'':rate>=.9?'g':rate>=.75?'a':'r'}"><div class="t">Completion rate</div><div class="v">${pct(rate)}</div><div class="s">open: ${n1(wo.open,0)}</div></div>`+
+    kpiCard('Logged maintenance items',n1(eng.items,0),null,null)+
+    kpiCard('Report pages',n1(eng.pages,0),null,null);
+  const topLocs=Object.entries(eng.locs||{}).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  const topSys=Object.entries(eng.sys||{}).sort((a,b)=>b[1]-a[1]);
+  const locRows=topLocs.map(([k,v],i)=>`<tr class="${i===0?'bad':''}"><td>${k}${i===0?' <span class="tag r">hotspot</span>':''}</td><td data-v="${v}">${v}</td></tr>`).join('');
+  const crit=(eng.critical||[]).map(c=>`<div class="alert warn"><div class="d">${c}</div></div>`).join('')||'<div class="small">No critical-keyword lines detected.</div>';
+  const insight= topSys.length? `<div class="alert ${topSys[0][1]>15?'crit':'info'}"><div class="h">Most stressed system: ${topSys[0][0]} (${topSys[0][1]} mentions)</div>
+    <div class="d">Top location: <b>${topLocs[0]?.[0]??'—'}</b> (${topLocs[0]?.[1]??0} mentions). Recurring mentions of the same floor/system month after month = ageing asset — cross-check against the renovation scope and FF&E reserve before approving one-off repairs.</div></div>`:'';
+  el.innerHTML=`
+    <div class="kgrid">${kpis}</div>
+    ${insight}
+    <div class="cols c3">
+      <div class="panel"><h3>Work-order trend</h3><div class="chartbox"><canvas id="chEngWo"></canvas></div></div>
+      <div class="panel"><h3>Mentions by system — ${fmtMonthKey(key)}</h3><div class="chartbox"><canvas id="chEngSys"></canvas></div></div>
+      <div class="panel"><h3>Mentions by location <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+        <table><thead><tr><th>Location</th><th>Mentions</th></tr></thead><tbody>${locRows}</tbody></table>
+        <div class="small" style="margin-top:4px">Counted from the report text — a proxy for where Engineering effort is going, not a defect count.</div></div>
+    </div>
+    <div class="panel"><h3>Critical watchlist — lines flagged by keyword (leak / broken / fail / damage / clog…)</h3>${crit}</div>`;
+  mkChart('chEngWo',{type:'bar',data:{labels:monthsE.map(fmtMonthKey),datasets:[
+      {type:'bar',label:'Requested',data:monthsE.map(m=>state.store.months[m].eng.wo?.total??null),backgroundColor:'#0B1F3A'},
+      {type:'bar',label:'Completed',data:monthsE.map(m=>state.store.months[m].eng.wo?.done??null),backgroundColor:'#C9A227'},
+      {type:'line',label:'Logged items (right)',yAxisID:'y1',data:monthsE.map(m=>state.store.months[m].eng.items??null),borderColor:'#1e7e4f',tension:.3}]},
+    options:{scales:{y1:{position:'right',grid:{drawOnChartArea:false}}},maintainAspectRatio:false}});
+  mkChart('chEngSys',{type:'bar',data:{labels:topSys.map(x=>x[0]),datasets:[{label:'Mentions',data:topSys.map(x=>x[1]),backgroundColor:'#2e5f9e'}]},
+    options:{indexAxis:'y',plugins:{legend:{display:false}},maintainAspectRatio:false}});
+}
+
+/* ---------------- REVENUE ANALYSIS (key accounts, upgrades, upsell, discounts, F&B history) ---------------- */
+function renderRevA(d){
+  const el=$('#tab-reva');
+  const rev=state.store.rev||{};
+  const missing=k=>`<div class="small">${na('Drop "'+{keyacct:'4. Key account.xlsx',bookstay:'3. Booked vs. Stayed.xlsx',upsell:'2. Upgrades.xlsx',nor1:'7. Consolidated_Nor1_Transactions.xlsx',fnbdisc:'8.1 F&B Revenue Analysis_Discount.xlsx',fnbsum:'9. FNB Summary.xlsx'}[k]+'" into the drop zone')}</div>`;
+  let html='';
+
+  /* --- key accounts --- */
+  {
+    let body=missing('keyacct');
+    if(rev.keyacct){
+      const ka=rev.keyacct, yr=ka.years[ka.years.length-1], py=ka.years[ka.years.length-2];
+      const cur=Object.values(ka.byAcct).filter(a=>a.year===yr&&a.acct&&!/^no (agent|company)/i.test(a.acct));
+      cur.sort((a,b)=>b.rev-a.rev);
+      const rowsK=cur.slice(0,15).map(a=>{
+        const prev=py?ka.byAcct[py+'|'+a.acct]:null;
+        return `<tr><td>${a.acct}</td><td class="small">${(a.type||'').replace(' production','')}</td>
+          <td data-v="${a.n}">${n1(a.n,0)}</td><td data-v="${a.rev}">${money(a.rev)}</td>
+          <td data-v="${div(a.rev,a.n)??''}">${money(div(a.rev,a.n))}</td>
+          <td data-v="${prev?varPct(a.rev,prev.rev):''}" class="${cls(prev?varPct(a.rev,prev.rev):null)}">${prev?pct(varPct(a.rev,prev.rev)):na('No '+py+' data for this account')}</td></tr>`;}).join('');
+      body=`<div style="overflow-x:auto"><table><thead><tr><th>Account</th><th>Type</th><th>Nights</th><th>Room revenue</th><th>ADR</th><th>vs ${py??'—'}</th></tr></thead><tbody>${rowsK}</tbody></table></div>`;
+    }
+    html+=`<div class="panel"><h3>Top key accounts ${rev.keyacct?('— '+rev.keyacct.years[rev.keyacct.years.length-1]):''}
+      <input class="tblflt noprint" placeholder="${t('filter')}"></h3>${body}</div>`;
+  }
+  /* --- upgrades by room & membership --- */
+  {
+    let body=missing('bookstay');
+    if(rev.bookstay){
+      const bs=rev.bookstay, yr=bs.years[bs.years.length-1];
+      const sRows=Object.entries(bs.byStayed).filter(([k])=>k.startsWith(yr+'|'))
+        .map(([k,v])=>({room:k.split('|')[1],...v})).sort((a,b)=>b.rank-a.rank);
+      const totalN=sRows.reduce((a,r)=>a+r.n,0),totalLv=sRows.reduce((a,r)=>a+r.lv,0),totalRev=sRows.reduce((a,r)=>a+r.rev,0);
+      const t1=sRows.map(r=>`<tr><td>${r.room}</td><td data-v="${r.lv/r.n}">${n1(r.lv/r.n,2)}</td>
+        <td data-v="${r.n}">${n1(r.n,0)}</td><td data-v="${div(r.rev,r.n)??''}">${money(div(r.rev,r.n))}</td><td data-v="${r.rev}">${money(r.rev)}</td></tr>`).join('')
+        +`<tr class="tot"><td>Total</td><td>${n1(totalLv/totalN,2)}</td><td>${n1(totalN,0)}</td><td>${money(div(totalRev,totalN))}</td><td>${money(totalRev)}</td></tr>`;
+      const mRows=Object.entries(bs.byMemb).filter(([k])=>k.startsWith(yr+'|'))
+        .map(([k,v])=>({type:k.split('|')[1],rank:k.split('|')[2],...v}))
+        .sort((a,b)=>a.type.localeCompare(b.type)||b.n-a.n)
+        .map(r=>`<tr><td>${r.type}</td><td>${r.rank}</td><td data-v="${r.lv/r.n}" class="${r.lv/r.n>2.2?'warn':''}">${n1(r.lv/r.n,2)}</td>
+          <td data-v="${r.n}">${n1(r.n,0)}</td><td data-v="${div(r.rev,r.n)??''}">${money(div(r.rev,r.n))}</td><td data-v="${r.rev}">${money(r.rev)}</td></tr>`).join('');
+      body=`<div class="cols c2">
+        <div><h3 class="small" style="text-transform:uppercase">By stayed room — ${yr}</h3>
+        <table><thead><tr><th>Stayed room</th><th>Avg up-levels</th><th>Upgraded RNs</th><th>ADR</th><th>Room rev</th></tr></thead><tbody>${t1}</tbody></table>
+        <div class="small" style="margin-top:4px">Counted only when stayed &gt; booked room level (pseudo/house rooms excluded: ${bs.skipped} rows).</div></div>
+        <div><h3 class="small" style="text-transform:uppercase">By membership — ${yr} <span style="text-transform:none">(amber = avg &gt;2.2 levels: review upgrade discipline)</span></h3>
+        <div style="max-height:340px;overflow-y:auto"><table><thead><tr><th>Programme</th><th>Tier</th><th>Avg levels</th><th>RNs</th><th>ADR</th><th>Room rev</th></tr></thead><tbody>${mRows}</tbody></table></div></div>
+      </div>`;
+    }
+    html+=`<div class="panel"><h3>Room upgrades — booked vs stayed <input class="tblflt noprint" placeholder="${t('filter')}"></h3>${body}</div>`;
+  }
+  /* --- paid upsell (FO/Reservation + Nor1) --- */
+  {
+    let body=missing('upsell');
+    if(rev.upsell){
+      const up=rev.upsell, yr=up.years[up.years.length-1];
+      const pRows=Object.entries(up.byProduct).filter(([k])=>k.startsWith(yr+'|')).map(([k,v])=>({p:k.split('|')[1],...v}))
+        .sort((a,b)=>b.rev-a.rev)
+        .map(r=>`<tr><td>${r.p}</td><td data-v="${r.n}">${n1(r.n,0)}</td><td data-v="${r.nights}">${n1(r.nights,0)}</td>
+          <td data-v="${div(r.rev,r.nights)??''}">${money(div(r.rev,r.nights))}</td><td data-v="${r.rev}">${money(r.rev)}</td></tr>`).join('');
+      const eRows=Object.entries(up.byEmp).filter(([k])=>k.startsWith(yr+'|')).map(([k,v])=>({e:k.split('|')[1],...v}))
+        .sort((a,b)=>b.rev-a.rev).slice(0,5)
+        .map((r,i)=>`<tr><td>${i+1}. ${r.e}</td><td>${n1(r.n,0)}</td><td>${money(r.rev)}</td></tr>`).join('');
+      let paidShare='';
+      if(rev.bookstay){
+        const bs=rev.bookstay, byr=bs.years[bs.years.length-1];
+        const upNights=Object.entries(up.byProduct).filter(([k])=>k.startsWith(yr+'|Room')).reduce((a,[,v])=>a+v.nights,0);
+        const allUp=Object.entries(bs.byStayed).filter(([k])=>k.startsWith(byr+'|')).reduce((a,[,v])=>a+v.n,0);
+        if(allUp) paidShare=`<div class="alert ${upNights/allUp<.1?'warn':'good'}"><div class="h">Paid vs free upgrades — ${yr}</div>
+          <div class="d">${n1(upNights,0)} paid room-upsell nights vs ${n1(allUp,0)} total upgraded nights = <b>${pct(upNights/allUp)}</b> monetised. ${upNights/allUp<.1?'&gt;90% of upgrades are given away — tighten entitlement rules and push paid offers at check-in.':'Healthy monetisation of the upgrade flow.'}</div></div>`;
+      }
+      const n1r=rev.nor1?`<div class="small" style="margin-top:6px">Nor1 (${rev.nor1.txns} txns): ${Object.entries(rev.nor1.byProduct).map(([p,v])=>`${p} ${money(v.rev)}`).join(' · ')}</div>`:missing('nor1');
+      body=`${paidShare}<div class="cols c2">
+        <div><table><thead><tr><th>Product — ${yr}</th><th>Txns</th><th>Nights</th><th>Rev / night</th><th>Revenue</th></tr></thead><tbody>${pRows}</tbody></table>${n1r}</div>
+        <div><table><thead><tr><th>Top upsellers — ${yr}</th><th>Txns</th><th>Revenue</th></tr></thead><tbody>${eRows}</tbody></table></div>
+      </div>`;
+    }
+    html+=`<div class="panel"><h3>Paid upsell — FO / Reservation / Nor1</h3>${body}</div>`;
+  }
+  /* --- F&B discounts --- */
+  {
+    let body=missing('fnbdisc');
+    if(rev.fnbdisc){
+      const fd=rev.fnbdisc, yr=fd.years[fd.years.length-1];
+      const mk3=(o,label)=>Object.entries(o).filter(([k])=>k.startsWith(yr+'|')).map(([k,v])=>({k:k.split('|')[1],...v}))
+        .sort((a,b)=>b.disc-a.disc).slice(0,10)
+        .map(r=>`<tr><td>${r.k}</td><td data-v="${r.checks}">${n1(r.checks,0)}</td><td data-v="${r.disc}">${money(r.disc)}</td>
+          <td data-v="${r.net!=null&&(r.net+r.disc)?r.disc/(r.net+r.disc):''}">${r.net!=null&&(r.net+r.disc)?pct(r.disc/(r.net+r.disc)):'—'}</td></tr>`).join('');
+      body=`<div class="cols c3">
+        <div><h3 class="small">BY OUTLET — ${yr}</h3><table><thead><tr><th>Outlet</th><th>Checks</th><th>Discount</th><th>Disc %</th></tr></thead><tbody>${mk3(fd.byOutlet)}</tbody></table></div>
+        <div><h3 class="small">BY CATEGORY — ${yr}</h3><table><thead><tr><th>Category</th><th>Checks</th><th>Discount</th><th></th></tr></thead><tbody>${mk3(fd.byCat)}</tbody></table></div>
+        <div><h3 class="small">BY ACCOR PLUS TIER — ${yr}</h3><table><thead><tr><th>Tier</th><th>Checks</th><th>Discount</th><th></th></tr></thead><tbody>${mk3(fd.byTier)}</tbody></table></div>
+      </div>
+      <div class="chartbox" style="margin-top:10px"><canvas id="chDisc"></canvas></div>`;
+    }
+    html+=`<div class="panel"><h3>F&B discount analysis <input class="tblflt noprint" placeholder="${t('filter')}"></h3>${body}</div>`;
+  }
+  /* --- F&B multi-year history --- */
+  {
+    let body=missing('fnbsum');
+    if(rev.fnbsum){
+      const fs2=rev.fnbsum, yr=fs2.years[fs2.years.length-1];
+      const oRows=Object.entries(fs2.byOutletMeal).filter(([k])=>k.startsWith(yr+'|'))
+        .map(([k,v])=>({outlet:k.split('|')[1],meal:k.split('|')[2],...v}))
+        .filter(r=>r.cov>0)
+        .sort((a,b)=>a.outlet.localeCompare(b.outlet))
+        .map(r=>`<tr><td>${r.outlet}</td><td>${r.meal}</td><td data-v="${r.cov}">${n1(r.cov,0)}</td>
+          <td data-v="${r.rev}">${money(r.rev)}</td><td data-v="${div(r.rev,r.cov)??''}">${money(div(r.rev,r.cov))}</td></tr>`).join('');
+      body=`<div class="cols c2">
+        <div><div class="chartbox tall"><canvas id="chMealHist"></canvas></div></div>
+        <div><h3 class="small">OUTLET × MEAL — ${yr}</h3><div style="max-height:340px;overflow-y:auto">
+          <table><thead><tr><th>Outlet</th><th>Meal</th><th>Covers</th><th>Revenue</th><th>Spend / cover</th></tr></thead><tbody>${oRows}</tbody></table></div></div>
+      </div>`;
+    }
+    html+=`<div class="panel"><h3>F&B history — covers & spend by meal period <input class="tblflt noprint" placeholder="${t('filter')}"></h3>${body}</div>`;
+  }
+  el.innerHTML=html;
+  /* charts */
+  if(rev.fnbdisc){
+    const ms=Object.keys(rev.fnbdisc.byMonth).sort().slice(-24);
+    mkChart('chDisc',{type:'bar',data:{labels:ms.map(fmtMonthKey),datasets:[
+      {label:'Discount given',data:ms.map(m=>cv(rev.fnbdisc.byMonth[m].disc)),backgroundColor:'#b7791f'},
+      {type:'line',label:'Discount % of gross',yAxisID:'y1',data:ms.map(m=>{const v=rev.fnbdisc.byMonth[m];return v.net+v.disc?v.disc/(v.net+v.disc)*100:null;}),borderColor:'#0B1F3A',tension:.3}]},
+      options:{scales:{y:{ticks:{callback:v=>money(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
+  }
+  if(rev.fnbsum){
+    const ms=[...new Set(Object.keys(rev.fnbsum.byMonthMeal).map(k=>k.split('|')[0]))].sort().slice(-24);
+    const meals=['Breakfast','Lunch','Dinner'];
+    mkChart('chMealHist',{type:'bar',data:{labels:ms.map(fmtMonthKey),datasets:[
+      ...meals.map((ml,i)=>({label:ml,data:ms.map(m=>rev.fnbsum.byMonthMeal[m+'|'+ml]?.cov??null),backgroundColor:['#C9A227','#2e5f9e','#0B1F3A'][i],stack:'s'})),
+      {type:'line',label:'Spend / cover',yAxisID:'y1',borderColor:'#1e7e4f',tension:.3,
+        data:ms.map(m=>{let c=0,r=0;for(const ml of meals){const v=rev.fnbsum.byMonthMeal[m+'|'+ml];if(v){c+=v.cov;r+=v.rev;}}return c?cv(r/c):null;})}]},
+      options:{scales:{x:{stacked:true},y:{stacked:true},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>money(v,0)}}},maintainAspectRatio:false}});
+  }
+}
+
+/* ---------------- DATA QUALITY ---------------- */
+function renderDQ(d){
+  const el=$('#tab-dq'); const m=curMonth();
+  const checks=[];
+  const warns=m.warns||[];
+  if(d.ok){
+    /* SC 5% */
+    if(d.scRoomRate!=null) checks.push([Math.abs(d.scRoomRate-.05)<=.0005,'Service charge = 5.00% of net rooms revenue',pct(d.scRoomRate,3)]);
+    /* zero/negative revenue lines */
+    const zeroes=[];
+    for(const[k,o] of Object.entries(d.p.rev)){ if(!o) continue; const v=o.MTD?.act; if(v!=null&&v<0) zeroes.push(k+' negative'); }
+    checks.push([zeroes.length===0,'No negative revenue lines',zeroes.join(', ')||'clean']);
+    /* budget=0 while actual≠0 */
+    const b0=[];
+    for(const[k,o] of Object.entries(d.p.rev)){ if(!o) continue; if((o.MTD?.bud===0||o.MTD?.bud==null)&&(o.MTD?.act??0)>0&&k!=='roomsExcl') b0.push(k); }
+    checks.push([b0.length===0,'Budget present for all active revenue lines',b0.length?('budget=0: '+b0.join(', ')):'clean']);
+    /* YTD ≥ MTD sanity + YTD = Σ stored months */
+    const keys=Object.keys(state.store.months).filter(k=>k.startsWith(state.month.slice(0,4))&&k<=state.month&&state.store.months[k].pnlVND).sort();
+    if(keys.length>=2){
+      const sum=keys.reduce((a,k)=>a+(g(state.store.months[k].pnlVND,'rev.totalIncl','MTD','act')??0),0);
+      const ytd=g(pnlVND(),'rev.totalIncl','YTD','act');
+      const monthsInYtd=+state.month.slice(5);
+      if(keys.length===monthsInYtd) checks.push([Math.abs(sum-ytd)/ytd<.001,`YTD = Σ stored months (${keys.length} months)`,`Σ=${money(sum)} vs YTD=${money(ytd)}`]);
+      else checks.push([null,`YTD reconciliation needs all ${monthsInYtd} months stored (have ${keys.length})`,'store prior months to activate']);
+    }
+    /* FX drift */
+    if(m.pnlVND&&m.pnlUSD){
+      const imp=g(m.pnlVND,'rev.totalIncl','MTD','act')/g(m.pnlUSD,'rev.totalIncl','MTD','act');
+      if(m.fs?.fxRate) checks.push([Math.abs(imp/m.fs.fxRate-1)<.01,'Implied P&L FX ≈ FS reference rate',`${n1(imp,0)} vs ${n1(m.fs.fxRate,0)} (${pct(imp/m.fs.fxRate-1,2)})`]);
+    } else checks.push([null,'USD P&L not loaded — FX drift check inactive','']);
+    /* LY missing */
+    checks.push([d.totalRev.ly!=null,'LY comparatives present','']);
+  }
+  const files=[['pnlVND','P&L VND'],['pnlUSD','P&L USD'],['star','Monthly STAR'],['hotstats','HotStats'],['fs','Consolidated FS']];
+  const loaded=files.map(([k,l])=>`<tr><td>${l}</td><td>${m[k]?'<span class="tag g">loaded</span>':'<span class="tag r">missing</span>'}</td></tr>`).join('');
+  el.innerHTML=`
+    <div class="cols c2">
+      <div class="panel"><h3>Files loaded — ${fmtMonthKey(state.month)}</h3><table><tbody>${loaded}</tbody></table>
+        <div class="small" style="margin-top:6px">Weekly pace: ${state.store.pace.weekly?state.store.pace.weekly.label:'—'} · Daily pace: ${state.store.pace.daily?state.store.pace.daily.label:'—'}</div></div>
+      <div class="panel"><h3>Automated checks</h3>
+        <table><thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody>
+        ${checks.map(c=>`<tr><td>${c[1]}</td><td>${c[0]===null?'<span class="tag a">n/a</span>':c[0]?'<span class="tag g">PASS</span>':'<span class="tag r">FAIL</span>'}</td><td class="small">${c[2]}</td></tr>`).join('')||'<tr><td colspan=3>'+t('noData')+'</td></tr>'}
+        </tbody></table></div>
+    </div>
+    <div class="panel"><h3>Parse warnings (${warns.length})</h3>
+      ${warns.length? '<ul class="small" style="margin-left:16px">'+warns.map(w=>`<li>${w}</li>`).join('')+'</ul>' : '<div class="small">No parse warnings — all mapped rows found.</div>'}</div>`;
+  const badge=$('#warnbadge'); const fails=checks.filter(c=>c[0]===false).length+warns.length;
+  badge.textContent=fails; badge.style.display=fails?'inline-block':'none';
+}
+
+/* ---------------- top-level render ---------------- */
+function refreshMonths(){
+  const sel=$('#selMonth'); const keys=Object.keys(state.store.months).sort().reverse();
+  sel.innerHTML=keys.map(k=>`<option value="${k}" ${k===state.month?'selected':''}>${fmtMonthKey(k)}</option>`).join('')||'<option>— no data —</option>';
+  if(!state.month&&keys.length) state.month=keys[0];
+}
+function renderAll(){
+  applyStaticI18n();
+  const d=derive();
+  renderCockpit(d); renderRooms(d); renderSeg(d); renderFnb(d); renderOther(d);
+  renderUndist(d); renderMarket(d); renderBench(d); renderConso(d); renderDQ(d);
+  renderForecast(d); renderHeat(d); renderRevA(d); renderEng(d);
+}
+
+/* ---------- generic table sort + filter (event delegation survives re-renders) ---------- */
+function parseCellVal(td){
+  if(td.dataset.v!==undefined&&td.dataset.v!=='') return +td.dataset.v;
+  const s=td.textContent.trim();
+  if(!s||s==='—'||/^n\/a$/i.test(s)) return null;
+  const m=s.replace(/[$,▲▼+]/g,'').match(/^(-?\d+(?:\.\d+)?)\s*(bn|M|K|%|pts)?/i);
+  if(m){ let v=+m[1]; const u=(m[2]||'').toLowerCase();
+    if(u==='bn')v*=1e9; else if(u==='m')v*=1e6; else if(u==='k')v*=1e3; return v; }
+  return s.toLowerCase();
+}
+document.addEventListener('click',e=>{
+  const th=e.target.closest('main table thead th'); if(!th) return;
+  const tbl=th.closest('table'); const tb=tbl.tBodies[0]; if(!tb) return;
+  const ci=[...th.parentNode.children].indexOf(th);
+  const dir=th.classList.contains('sd')?'asc':'desc';
+  tbl.querySelectorAll('th').forEach(x=>x.classList.remove('sa','sd'));
+  th.classList.add(dir==='asc'?'sa':'sd');
+  const all=[...tb.rows];
+  const tots=all.filter(r=>r.classList.contains('tot'));
+  const data=all.filter(r=>!r.classList.contains('tot'));
+  data.sort((a,b)=>{
+    const va=a.cells[ci]?parseCellVal(a.cells[ci]):null, vb=b.cells[ci]?parseCellVal(b.cells[ci]):null;
+    if(va==null&&vb==null) return 0; if(va==null) return 1; if(vb==null) return -1;
+    if(typeof va==='number'&&typeof vb==='number') return dir==='asc'?va-vb:vb-va;
+    return dir==='asc'? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+  });
+  data.forEach(r=>tb.appendChild(r)); tots.forEach(r=>tb.appendChild(r));
+});
+document.addEventListener('input',e=>{
+  if(!e.target.classList.contains('tblflt')) return;
+  const panel=e.target.closest('.panel'); if(!panel) return;
+  const q=e.target.value.toLowerCase();
+  panel.querySelectorAll('tbody tr').forEach(tr=>{
+    if(tr.classList.contains('tot')) return;
+    tr.style.display = tr.textContent.toLowerCase().includes(q)?'':'none';
+  });
+});
+document.addEventListener('click',e=>{ if(e.target.classList.contains('tblflt')) e.stopPropagation(); },true);
+
+/* =====================================================================
+ *  WIRING
+ * ===================================================================== */
+loadStore(); refreshMonths(); renderAll();
+
+const drop=$('#drop');
+;['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('hot');}));
+;['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('hot');}));
+drop.addEventListener('drop',ev=>ingestFiles([...ev.dataTransfer.files]));
+$('#pickFiles').addEventListener('click',e=>{e.preventDefault();$('#fileIn').click();});
+drop.addEventListener('click',e=>{ if(e.target.id!=='pickFiles') $('#fileIn').click(); });
+$('#fileIn').addEventListener('change',e=>{ ingestFiles([...e.target.files]); e.target.value=''; });
+
+$('#selMonth').addEventListener('change',e=>{ state.month=e.target.value; renderAll(); });
+$('#btnMTD').onclick=()=>{state.period='MTD';$('#btnMTD').classList.add('on');$('#btnYTD').classList.remove('on');renderAll();};
+$('#btnYTD').onclick=()=>{state.period='YTD';$('#btnYTD').classList.add('on');$('#btnMTD').classList.remove('on');renderAll();};
+$('#btnVND').onclick=()=>{state.cur='VND';$('#btnVND').classList.add('on');$('#btnUSD').classList.remove('on');renderAll();};
+$('#btnUSD').onclick=()=>{state.cur='USD';$('#btnUSD').classList.add('on');$('#btnVND').classList.remove('on');renderAll();};
+$('#btnEN').onclick=()=>{state.lang='en';$('#btnEN').classList.add('on');$('#btnVI').classList.remove('on');renderAll();};
+$('#btnVI').onclick=()=>{state.lang='vi';$('#btnVI').classList.add('on');$('#btnEN').classList.remove('on');renderAll();};
+
+$('#btnExport').onclick=()=>{
+  const blob=new Blob([JSON.stringify(state.store,null,1)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='ssp-dashboard-history-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+};
+
+/* ---------- Export Excel: one multi-sheet workbook of the whole board pack ---------- */
+function buildExportWb(){
+  const d=derive(); const wb=XLSX.utils.book_new();
+  const P=state.period, cur=state.cur;
+  const cvN=v=>v==null?null:Math.round(cv(v));
+  const vp=(a,b)=>{const v=varPct(a,b); return v==null?null:Math.round(v*1000)/10;};
+  /* Cockpit sheet: raw numbers in the display currency */
+  const aoa=[
+    ['Sofitel Saigon Plaza — Executive Analytics'],
+    ['Month', fmtMonthKey(state.month), 'Period', P, 'Currency', cur],
+    [],
+    ['KPI','Actual','Budget','LY','Var vs Bud %','Var vs LY %'],
+  ];
+  if(d.ok){
+    const money$=[['Total Revenue',d.totalRev],['GOP',d.gop],['EBITDA',d.ebitda],['Net Profit (PBT)',d.netProfit],
+      ['TRevPAR',d.trevpar],['RevPAR',d.revpar],['ADR',d.adr],['Total Payroll',d.payroll]];
+    for(const [n,o] of money$) aoa.push([n,cvN(o.act),cvN(o.bud),cvN(o.ly),vp(o.act,o.bud),vp(o.act,o.ly)]);
+    const pct$=[['Occupancy %',d.occ],['GOP %',d.gopPct],['Payroll % Rev',d.payrollPct]];
+    for(const [n,o] of pct$) aoa.push([n,o.act==null?null:Math.round(o.act*1000)/10,o.bud==null?null:Math.round(o.bud*1000)/10,o.ly==null?null:Math.round(o.ly*1000)/10]);
+    aoa.push(['GOP PAR',cvN(d.goppar.act)],['MPI',d.mpi],['ARI',d.ari],['RGI',d.rgi]);
+    aoa.push([],['ALERTS']);
+    for(const a of runRules(d)){ const tmp=document.createElement('div'); tmp.innerHTML=a.detail;
+      aoa.push([a.sev.toUpperCase(), a.title, tmp.textContent]); }
+  } else aoa.push([t('noData')]);
+  const ws0=XLSX.utils.aoa_to_sheet(aoa); ws0['!cols']=[{wch:28},{wch:16},{wch:16},{wch:16},{wch:12},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws0,'Cockpit');
+  /* every rendered table, tab by tab (exports exactly what is on screen) */
+  const tabsX=[['forecast','Forecast'],['rooms','Rooms'],['seg','Segmentation'],['fnb','F&B'],['other','Other Ops'],['undist','Undistributed'],
+    ['reva','Revenue Analysis'],['market','Market STR'],['heat','Patterns'],['bench','HotStats'],['conso','Consolidated'],['eng','Engineering'],['dq','Data Quality']];
+  for(const [id,name] of tabsX){
+    document.querySelectorAll('#tab-'+id+' table').forEach((tb,i)=>{
+      try{
+        const ws=XLSX.utils.table_to_sheet(tb,{raw:false});
+        const nm=(name+(i?' '+(i+1):'')).replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31);
+        XLSX.utils.book_append_sheet(wb,ws,nm);
+      }catch(e){ console.warn('excel export skip',id,e); }
+    });
+  }
+  return wb;
+}
+$('#btnXlsx').onclick=()=>{
+  try{ XLSX.writeFile(buildExportWb(),`SSP-Dashboard-${state.month||'nodata'}-${state.period}-${state.cur}.xlsx`); toast('✔ Excel exported'); }
+  catch(e){ toast('Excel export failed: '+e.message,true); }
+};
+
+/* ---------- Print / PDF: show every tab and re-render charts before printing ---------- */
+function preparePrint(){
+  $$('section.tab').forEach(s=>{
+    s.classList.add('printshow');
+    if(!s.querySelector('.printhead')){
+      const btn=$(`#tabs button[data-tab=${s.id.replace('tab-','')}]`);
+      const h=document.createElement('div'); h.className='printhead';
+      h.textContent=`Sofitel Saigon Plaza — ${btn?btn.textContent.replace(/\d+$/,'').trim():''} — ${fmtMonthKey(state.month)} — ${state.period} — ${state.cur}`;
+      s.prepend(h);
+    }
+  });
+  Object.values(state.charts).forEach(c=>{ try{ c.resize(); c.update('none'); }catch(e){} });
+}
+function cleanupPrint(){
+  $$('section.tab').forEach(s=>s.classList.remove('printshow'));
+  Object.values(state.charts).forEach(c=>{ try{ c.resize(); }catch(e){} });
+}
+window.addEventListener('beforeprint',preparePrint);
+window.addEventListener('afterprint',cleanupPrint);
+$('#btnPrint').onclick=()=>{ preparePrint(); setTimeout(()=>window.print(),150); };
+$('#btnImport').onclick=()=>$('#fileImport').click();
+$('#fileImport').addEventListener('change',async e=>{
+  try{ const s=JSON.parse(await e.target.files[0].text());
+    if(!s.months) throw new Error('not a dashboard export');
+    state.store=s; saveStore(); state.month=Object.keys(s.months).sort().pop(); refreshMonths(); renderAll(); toast('✔ history imported'); }
+  catch(err){ toast('Import failed: '+err.message,true); }
+  e.target.value='';
+});
+$('#btnClear').onclick=()=>{
+  if(!state.month) return;
+  if(confirm('Delete stored data for '+fmtMonthKey(state.month)+'?')){
+    delete state.store.months[state.month]; saveStore(); state.month=null; refreshMonths(); renderAll();
+  }
+};
+$$('#tabs button').forEach(b=>b.addEventListener('click',()=>{
+  $$('#tabs button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  $$('section.tab').forEach(s=>s.classList.remove('on')); $('#tab-'+b.dataset.tab).classList.add('on');
+  $('#pageTitle').textContent=b.textContent.replace(/\d+$/,'').trim();
+}));
+
+/* expose for automated verification */
+window.__ingestBuffer=ingestBuffer; window.__renderAll=()=>{saveStore();refreshMonths();renderAll();}; window.__state=state;
+</script>
+</body>
+</html>
