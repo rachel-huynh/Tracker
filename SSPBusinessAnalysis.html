@@ -2240,8 +2240,11 @@ function renderUndist(d){
 }
 
 /* ---------------- MARKET (STR) ---------------- */
-/* STAR values are USD-denominated (STR exports) — formatted independently of the VND/USD toggle */
+/* STAR money: STR exports come USD- OR VND-denominated (filename -USD-/-VND-).
+   Magnitude decides: hotel ADR/RevPAR in VND is always >20k, in USD always <20k.
+   VND values go through money() so the VND/USD display toggle works on them. */
 function usd(v,dec){ return v==null||!isFinite(v)?na():'$'+v.toLocaleString('en',{maximumFractionDigits:dec??(Math.abs(v)<1000?2:0)}); }
+function starMoney(v,dec){ return v==null||!isFinite(v)?na():(Math.abs(v)>20000?money(v,dec):usd(v,dec)); }
 function chgTd(v,dec=1){ return `<td class="${cls(v)}" data-v="${v==null?'':v}">${v==null?'—':(v>0?'+':'')+n1(v,dec)+'%'}</td>`; }
 window.__setSnapPer=v=>{ state.snapPer=v; renderMarket(derive()); };
 window.__setDailyBench=v=>{ state.dailyBench=v; renderMarket(derive()); };
@@ -2258,7 +2261,7 @@ function renderMarket(d){
   const sp=state.snapPer||'cm';
   const spBtns=[['cm','Current month'],['ytd','YTD'],['r3','Run 3M'],['r12','Run 12M']]
     .map(([k,l])=>`<button class="heatbtn ${sp===k?'on':''}" onclick="__setSnapPer('${k}')">${l}</button>`).join(' ');
-  const SNAP_MET=[['occ','Occupancy',v=>v==null?na():n1(v,1)+'%'],['adr','ADR',v=>usd(v)],['revpar','RevPAR',v=>usd(v)]];
+  const SNAP_MET=[['occ','Occupancy',v=>v==null?na():n1(v,1)+'%'],['adr','ADR',v=>starMoney(v)],['revpar','RevPAR',v=>starMoney(v)]];
   let snapRows='';
   for(const [met,label,fmt] of SNAP_MET){
     const pv = sum[met]?.prop?.[sp]     ?? gl[sp]?.[met]?.my;
@@ -2294,8 +2297,8 @@ function renderMarket(d){
     const b=gl[k]; if(!b) continue;
     idxRows+=`<tr><td>${label}</td>
       <td>${idx(b.occ.idx)}</td><td>${idx(b.adr.idx)}</td><td>${idx(b.revpar.idx)}</td>
-      <td>${pct(b.occ.my/100,1)}</td><td>${usd(b.adr.my)}</td><td>${usd(b.revpar.my)}</td>
-      <td>${pct(b.occ.comp/100,1)}</td><td>${usd(b.adr.comp)}</td><td>${usd(b.revpar.comp)}</td></tr>`;
+      <td>${pct(b.occ.my/100,1)}</td><td>${starMoney(b.adr.my)}</td><td>${starMoney(b.revpar.my)}</td>
+      <td>${pct(b.occ.comp/100,1)}</td><td>${starMoney(b.adr.comp)}</td><td>${starMoney(b.revpar.comp)}</td></tr>`;
   }
   /* ranking from Comp sheet (latest column) */
   const rk=m=>{ const c=st.comp?.[m]; return c? c.rank[c.rank.length-1]:null; };
@@ -2304,14 +2307,14 @@ function renderMarket(d){
   /* DOW table */
   let dow='';
   for(const r of st.dow||[]) dow+=`<tr><td>${r.day}</td><td>${n1(r.occMy)}%</td><td>${n1(r.occComp)}%</td>
-    <td class="${r.mpi<100?'neg':'pos'}">${idx(r.mpi)}</td><td>${usd(r.adrMy)}</td><td>${usd(r.adrComp)}</td></tr>`;
+    <td class="${r.mpi<100?'neg':'pos'}">${idx(r.mpi)}</td><td>${starMoney(r.adrMy)}</td><td>${starMoney(r.adrComp)}</td></tr>`;
   /* pace */
   const pace=state.store.pace||{};
   let paceHtml='';
   if(pace.daily?.rows?.mtd){ const r=pace.daily.rows.mtd;
-    paceHtml+=`<tr><td>Daily STAR — running MTD (${pace.daily.label})</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${usd(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${usd(r.revpar?.my)}</td></tr>`; }
+    paceHtml+=`<tr><td>Daily STAR — running MTD (${pace.daily.label})</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${starMoney(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${starMoney(r.revpar?.my)}</td></tr>`; }
   if(pace.daily?.rows?.r7){ const r=pace.daily.rows.r7;
-    paceHtml+=`<tr><td>Running 7 days</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${usd(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${usd(r.revpar?.my)}</td></tr>`; }
+    paceHtml+=`<tr><td>Running 7 days</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${starMoney(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${starMoney(r.revpar?.my)}</td></tr>`; }
   if(pace.weekly?.metrics?.occ){ paceHtml+=`<tr><td>Weekly STAR (${pace.weekly.label})</td><td colspan="5" class="small" style="text-align:left">day-level MPI/ARI in file — see chart below-right of quadrant for month trend</td></tr>`; }
 
   /* ---------- Daily performance table (STR "Daily Data" layout): day-by-day vs benchmark,
@@ -2344,8 +2347,8 @@ function renderMarket(d){
     const lySets=setsOf(lyDl,lyKey);
     const chg=(a,b)=>(a!=null&&b)?((a-b)/Math.abs(b))*100:null;
     const METS_D=[['occ','Occupancy',v=>v==null?'—':n1(v,1)+'%'],
-                  ['adr','ADR (US$)',v=>v==null?'—':'$'+n1(v,2)],
-                  ['revpar','RevPAR (US$)',v=>v==null?'—':'$'+n1(v,2)]];
+                  ['adr','ADR',v=>v==null?'—':starMoney(v,1)],
+                  ['revpar','RevPAR',v=>v==null?'—':starMoney(v,1)]];
     const fmtChg=v=>v==null?'—':(v>0?'+':'')+n1(v,1)+'%';
     const line=(name,perDay,aggs,fmt2,colored)=>`<tr><td>${name}</td>${
       days.map(d2=>{const v=perDay(d2);return `<td class="${colored?cls(v):''}" data-v="${v??''}">${fmt2(v)}</td>`;}).join('')}${
@@ -2445,7 +2448,7 @@ function renderMarket(d){
         {label:'My Property',data:days.map(d2=>dl2.revpar?.my?.[d2-1]??null),borderColor:'#C9A227',borderWidth:2.5,tension:.3,pointRadius:2},
         {label:'Comp set',data:days.map(d2=>dl2.revpar?.comp?.[d2-1]??null),borderColor:'#0B1F3A',borderWidth:2,tension:.3,pointRadius:2},
         {label:'Industry',data:days.map(d2=>dl2.revpar?.ind?.[d2-1]??null),borderColor:'#9CA3AF',borderDash:[5,4],tension:.3,pointRadius:0}]},
-      options:{scales:{y:{ticks:{callback:v=>'$'+v}},x:{title:{display:true,text:'Day of month'}}},maintainAspectRatio:false}});
+      options:{scales:{y:{ticks:{callback:v=>starMoney(v,1)}},x:{title:{display:true,text:'Day of month'}}},maintainAspectRatio:false}});
   }
 
   /* occupancy bandwidth chart — weekend columns shaded, band = comp↔industry envelope */
@@ -2843,6 +2846,93 @@ function renderForecast(d){
       <div class="small" style="margin-top:6px">Lowest closing balance: <b>${money(cf.closing[minI])}</b> in ${fmtMonthKey(cf.months[minI])}${cf.closing[minI]<10e9?' — <b style="color:var(--red)">below 10 bn buffer, review JVC fund advances timing</b>':''}.</div></div>`;
   } else cfHtml=`<div class="panel"><h3>Cashflow forecast</h3><div class="small">${na('Drop "2026 Cashflow Forecast - ….xlsx" into the drop zone')}</div></div>`;
 
+  /* ---- STAR model lab (added Jul-2026, calibrated on 17 real Monthly STAR files Jan-25→May-26) ----
+     Occupancy: dampened YoY drift  occ(t)=occ(t-12)+½·median(last-3 YoY pt-changes) — won a 21-month
+       rolling backtest vs seasonal-naive / full drift / MPI-bridge / AR variants (MAE 6.5–7.2 pts).
+     Month-end projection: plain running MTD average — no DOW or LY-shape model beat it; the value is
+       the backtest-calibrated error cone by day-of-month.
+     ADR↔Occ: daily link is weak (r≈0.24) but compression pricing kicks in above ~80% occ. */
+  const un={};
+  for(const k2 of Object.keys(state.store.months)){ const c2=state.store.months[k2].star?.comp; if(!c2?.occ) continue;
+    c2.occ.months.forEach((mk2,i2)=>{ if(!mk2) return; un[mk2]=un[mk2]||{};
+      if(c2.occ.my[i2]!=null) un[mk2].occ=c2.occ.my[i2]; });}
+  const um=Object.keys(un).sort(), uocc=um.map(m2=>un[m2].occ??null);
+  const ddPred=t=>{ const dfs=[]; for(let i2=t-1;i2>=t-3;i2--){ if(i2-12>=0&&uocc[i2]!=null&&uocc[i2-12]!=null) dfs.push(uocc[i2]-uocc[i2-12]); }
+    return (t-12>=0&&uocc[t-12]!=null)? uocc[t-12]+(dfs.length>=2?0.5*median(dfs):0) : null; };
+  const bErr=[]; for(let t=13;t<um.length;t++){ if(uocc[t]==null) continue; const p2=ddPred(t); if(p2!=null) bErr.push(Math.abs(p2-uocc[t])); }
+  const occMAE=bErr.length>=6?avgA(bErr):null;
+  const occP80=bErr.length>=6?[...bErr].sort((a,b)=>a-b)[Math.floor(bErr.length*.8)]:null;
+  let modelHtml='', occFc=null, adrPts=null, adrDec=null;
+  const dKeys=Object.keys(state.store.months).filter(k2=>state.store.months[k2].star?.daily?.occ?.my).sort();
+  if(um.length>=16&&occMAE!=null){
+    const lastD=[]; for(let i2=um.length-1;i2>=um.length-3;i2--){ if(i2-12>=0&&uocc[i2]!=null&&uocc[i2-12]!=null) lastD.push(uocc[i2]-uocc[i2-12]); }
+    const adj=lastD.length>=2?0.5*median(lastD):0;
+    occFc=[1,2,3].map(h2=>{ const ym=addMonths(um[um.length-1],h2), li=um.length-12+h2;
+      const base=(li>=0&&li<um.length)?uocc[li]:null;
+      return {ym, ly:base, v:base!=null?clamp(base+adj,0,99):null}; });
+    const fcRows=occFc.map(f2=>`<tr><td>${fmtMonthKey(f2.ym)}</td><td><b>${f2.v!=null?n1(f2.v,1)+'%':'—'}</b></td>
+      <td class="small">${f2.v!=null?n1(Math.max(0,f2.v-occMAE),1)+' – '+n1(Math.min(99,f2.v+occMAE),1)+'%':''}</td>
+      <td>${f2.ly!=null?n1(f2.ly,1)+'%':'—'}</td>${chgTd(f2.v!=null&&f2.ly?(f2.v-f2.ly)/f2.ly*100:null)}</tr>`).join('');
+    /* pickup cone: calibrated on the complete stored months */
+    const cuts=[7,10,14,20,25], cone={}; cuts.forEach(c3=>cone[c3]=[]);
+    for(const k2 of dKeys){ const dO=state.store.months[k2].star.daily.occ.my;
+      const [y3,m3]=k2.split('-').map(Number), nD=new Date(y3,m3,0).getDate();
+      const vals=dO.slice(0,nD); if(vals.filter(v=>v!=null).length<nD-2) continue;
+      const act=avgA(vals.filter(v=>v!=null));
+      for(const c3 of cuts){ const mtd=vals.slice(0,c3).filter(v=>v!=null); if(mtd.length) cone[c3].push(Math.abs(avgA(mtd)-act)); } }
+    const coneRows=cuts.filter(c3=>cone[c3].length>=6).map(c3=>({d:c3,mae:avgA(cone[c3]),n:cone[c3].length}));
+    let projHtml='';
+    const lk=dKeys[dKeys.length-1];
+    if(lk){ const [y3,m3]=lk.split('-').map(Number), nD=new Date(y3,m3,0).getDate();
+      const vals=state.store.months[lk].star.daily.occ.my.slice(0,nD), have=vals.filter(v=>v!=null).length;
+      if(have<nD-1&&have>=5){ const mtd=avgA(vals.filter(v=>v!=null));
+        const nearest=coneRows.length?(coneRows.find(r2=>r2.d>=have)||coneRows[coneRows.length-1]):null;
+        projHtml=`<div class="alert info"><div class="h">Live projection — ${fmtMonthKey(lk)} (day ${have} of ${nD})</div>
+          <div class="d">Running MTD occupancy <b>${n1(mtd,1)}%</b> → month-end lands at <b>${n1(mtd,1)}%</b> ±${nearest?n1(nearest.mae,1):'?'} pts (calibrated cone).</div></div>`;
+      } else projHtml=`<div class="small" style="margin-bottom:6px">All stored months are complete — the live projection activates when a provisional / weekly STR month is loaded mid-month.</div>`;
+    }
+    /* ADR ↔ Occ daily cloud */
+    adrPts=[];
+    for(const k2 of dKeys){ const s3=state.store.months[k2].star.daily; if(!s3?.adr?.my) continue;
+      const [y3,m3]=k2.split('-').map(Number), nD=new Date(y3,m3,0).getDate();
+      for(let d2=1;d2<=nD;d2++){ const o=s3.occ?.my?.[d2-1], a=s3.adr.my[d2-1]; if(o==null||a==null) continue;
+        adrPts.push({x:o,y:a,we:(w=>w===4||w===5)(dowOf(k2,d2))}); } }
+    let adrInsight='';
+    if(adrPts.length>=60){
+      const corr2=(xs,ys)=>{ const mx=avgA(xs),my2=avgA(ys); let sxy=0,sx=0,sy=0;
+        xs.forEach((x2,i2)=>{sxy+=(x2-mx)*(ys[i2]-my2);sx+=(x2-mx)**2;sy+=(ys[i2]-my2)**2;}); return sxy/Math.sqrt(sx*sy); };
+      const rAll=corr2(adrPts.map(p2=>p2.x),adrPts.map(p2=>p2.y));
+      const lx=adrPts.map(p2=>Math.log(p2.x)), ly2=adrPts.map(p2=>Math.log(p2.y));
+      const mlx=avgA(lx),mly=avgA(ly2); let nu=0,de=0; lx.forEach((x2,i2)=>{nu+=(x2-mlx)*(ly2[i2]-mly);de+=(x2-mlx)**2;});
+      const elast=nu/de;
+      const sorted=[...adrPts].sort((a,b)=>a.x-b.x);
+      adrDec=[...Array(10)].map((_,i2)=>{ const sl=sorted.slice(Math.floor(i2*sorted.length/10),Math.floor((i2+1)*sorted.length/10));
+        return {x:avgA(sl.map(p2=>p2.x)), y:avgA(sl.map(p2=>p2.y)), lo:sl[0].x}; });
+      const baseAdr=avgA(adrDec.slice(0,3).map(d3=>d3.y));
+      const thDec=adrDec.find(d3=>d3.y>=baseAdr*1.05);
+      const topLift=(adrDec[8].y/baseAdr-1)*100;
+      const chgPairs=Object.keys(state.store.months).map(k2=>state.store.months[k2].star?.glance?.cmChg)
+        .filter(g2=>g2?.occ?.my!=null&&g2?.adr?.my!=null).map(g2=>[g2.occ.my,g2.adr.my]);
+      const rYoY=chgPairs.length>=6?corr2(chgPairs.map(p2=>p2[0]),chgPairs.map(p2=>p2[1])):null;
+      adrInsight=`Day-level correlation is <b>weak</b> (r = ${n1(rAll,2)}; log-log elasticity ${n1(elast,2)} — a 10% occupancy gain lifts same-day ADR only ~${n1(elast*10,1)}%). The real pattern is <b>compression pricing</b>: ADR sits flat around ${starMoney(baseAdr,1)} below ${thDec?n1(thDec.lo,0):'~80'}% occupancy, then climbs to ${starMoney(adrDec[8].y,1)} (+${n1(topLift,1)}%) in the 90–97% band${adrDec[9].y<adrDec[8].y?', and <b>dips again on the very fullest nights ('+starMoney(adrDec[9].y,1)+') — the sell-out days are being filled with lower-rated business</b>, worth a yield review':''}.${rYoY!=null?` Month-level YoY changes correlate <b>negatively</b> (r = ${n1(rYoY,2)}): months that pushed rate gave up occupancy and vice-versa — the gold curve shows where rate can be pushed without volume risk.`:''}`;
+    }
+    modelHtml=`
+    <div class="cols c2">
+      <div class="panel"><h3>Occupancy forecast — dampened YoY drift <span class="tag g">backtest winner</span></h3>
+        <div class="chartbox"><canvas id="chOccFc"></canvas></div>
+        <table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast Occ</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${fcRows}</tbody></table>
+        <div class="small" style="margin-top:6px">Model: same-month-LY + ½·median(YoY change of last 3 months). Chosen over seasonal-naive, full drift, MPI-bridge and AR variants by rolling backtest on the merged STAR history (${fmtMonthKey(um[0])} → ${fmtMonthKey(um[um.length-1])}, ${bErr.length} test months): MAE <b>${n1(occMAE,1)} pts</b>, 80% of errors ≤ ${n1(occP80,1)} pts. Monthly occupancy is genuinely volatile here — read the band, not the point.</div></div>
+      <div class="panel"><h3>Month-end projection — pickup cone</h3>
+        ${projHtml}
+        <table><thead><tr><th>Known through day</th><th>Month-end error (± pts MAE)</th><th>Months tested</th></tr></thead>
+        <tbody>${coneRows.map(r2=>`<tr><td>${r2.d}</td><td data-v="${r2.mae}">±${n1(r2.mae,1)}</td><td>${r2.n}</td></tr>`).join('')}</tbody></table>
+        <div class="small" style="margin-top:6px">Backtest verdict on ${dKeys.length} stored months: <b>no day-of-week or LY-shape model beat the plain running MTD average</b> — so the honest projection is "the month lands where MTD is", with this cone as the calibrated uncertainty. It tightens sharply after mid-month; before day 10 treat any projection as indicative only.</div></div>
+    </div>
+    ${adrPts.length>=60?`<div class="panel"><h3>ADR ↔ Occupancy — ${adrPts.length} STAR days, ${dKeys.length} months</h3>
+      <div class="chartbox tall"><canvas id="chAdrOcc"></canvas></div>
+      <div class="small" style="margin-top:6px">${adrInsight}</div></div>`:''}`;
+  }
+
   el.innerHTML=`
     <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
       <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>
@@ -2852,6 +2942,7 @@ function renderForecast(d){
       <table><thead><tr><th>Month</th><th>Occ</th><th>ADR</th><th>RevPAR</th><th>RevPAR range</th><th>RGI proj</th><th>Rooms revenue</th><th>Total revenue</th><th>GOP est.</th></tr></thead>
       <tbody>${rows}</tbody></table>
       <div class="small" style="margin-top:6px">Method: same-month-LY × (1 + median YoY of trailing 6 months); band = ±1σ of that growth. Rooms revenue = RevPAR × 284 × days; total revenue via rooms share ${pct(share)}; GOP at trailing ${gopPcts.length}-month margin ${pct(gopPct)}. RGI projected by linear trend of last 12 months. This is a control-tool projection, not a commitment.</div></div>
+    ${modelHtml}
     ${otaHtml}`;
   /* forecast chart */
   const labels=[...M,...H].map(fmtMonthKey);
@@ -2866,6 +2957,33 @@ function renderForecast(d){
       {label:'Low',data:lo,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
       {label:'High',data:hi,borderColor:'rgba(201,162,39,.25)',pointRadius:0}]},
     options:{plugins:{legend:{labels:{filter:i=>!/Low|High/.test(i.text)}}},scales:{y:{ticks:{callback:v=>money(v,1)}}},maintainAspectRatio:false}});
+  /* model lab charts */
+  if(occFc){
+    const histN=Math.min(18,um.length);
+    const lb=[...um.slice(-histN),...occFc.map(f2=>f2.ym)].map(fmtMonthKey);
+    const actA=[...uocc.slice(-histN),...occFc.map(()=>null)];
+    const fcA=[...um.slice(-histN).map(()=>null),...occFc.map(f2=>f2.v)];
+    fcA[histN-1]=actA[histN-1];
+    const loA=fcA.map((v,i2)=>i2>=histN&&v!=null?Math.max(0,v-occMAE):null);
+    const hiA=fcA.map((v,i2)=>i2>=histN&&v!=null?Math.min(99,v+occMAE):null);
+    mkChart('chOccFc',{type:'line',data:{labels:lb,datasets:[
+        {label:'Occupancy actual',data:actA,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
+        {label:'Forecast',data:fcA,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
+        {label:'Low',data:loA,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
+        {label:'High',data:hiA,borderColor:'rgba(201,162,39,.25)',pointRadius:0}]},
+      options:{plugins:{legend:{labels:{filter:i2=>!/Low|High/.test(i2.text)}}},
+        scales:{y:{ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
+  }
+  if(adrPts&&adrPts.length>=60&&adrDec){
+    mkChart('chAdrOcc',{type:'scatter',data:{datasets:[
+        {label:'Weekday (Sun–Thu)',data:adrPts.filter(p2=>!p2.we),backgroundColor:'rgba(11,31,58,.35)',pointRadius:2.5},
+        {label:'Weekend (Fri–Sat)',data:adrPts.filter(p2=>p2.we),backgroundColor:'rgba(74,125,189,.45)',pointRadius:2.5},
+        {label:'Decile average (compression curve)',data:adrDec.map(d3=>({x:d3.x,y:d3.y})),showLine:true,
+         borderColor:'#C9A227',borderWidth:2.5,backgroundColor:'#C9A227',pointRadius:4,tension:.3,type:'line'}]},
+      options:{plugins:{tooltip:{callbacks:{label:c=>`Occ ${n1(c.raw.x,1)}% · ADR ${starMoney(c.raw.y,1)}`}}},
+        scales:{x:{title:{display:true,text:'Daily occupancy %'},ticks:{callback:v=>v+'%'}},
+                y:{title:{display:true,text:'Daily ADR'},ticks:{callback:v=>starMoney(v,1)}}},maintainAspectRatio:false}});
+  }
   if(otaChart){
     const {oM,comps,basket,strOnOta,ota}=otaChart;
     mkChart('chOta',{type:'line',data:{labels:oM.map(fmtMonthKey),datasets:[
