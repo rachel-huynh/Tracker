@@ -572,6 +572,7 @@ function fmtMonthKey(k){ if(!k) return '—'; const [y,m]=k.split('-'); return M
 
 let state = {
   month:null, period:'MTD', cur:'VND', lang:'en', heatMetric:'revpar', benchMetric:'gop',
+  snapPer:'cm', dailyBench:'comp',   // Market — STR: snapshot period + daily-table benchmark
   store:{ months:{}, pace:{} },   // persisted
   warnings:[],                    // parse warnings of the LAST ingest batch (also persisted per month)
   charts:{},
@@ -2239,20 +2240,62 @@ function renderUndist(d){
 }
 
 /* ---------------- MARKET (STR) ---------------- */
+/* STAR values are USD-denominated (STR exports) — formatted independently of the VND/USD toggle */
+function usd(v,dec){ return v==null||!isFinite(v)?na():'$'+v.toLocaleString('en',{maximumFractionDigits:dec??(Math.abs(v)<1000?2:0)}); }
+function chgTd(v,dec=1){ return `<td class="${cls(v)}" data-v="${v==null?'':v}">${v==null?'—':(v>0?'+':'')+n1(v,dec)+'%'}</td>`; }
+window.__setSnapPer=v=>{ state.snapPer=v; renderMarket(derive()); };
+window.__setDailyBench=v=>{ state.dailyBench=v; renderMarket(derive()); };
+const IDX_NAMES={occ:'MPI',adr:'ARI',revpar:'RGI'};
 function renderMarket(d){
   const el=$('#tab-market');
   const st=curMonth().star;
   if(!st){ el.innerHTML=noData(); return; }
-  const per=state.period==='YTD'?'ytd':'cm';
-  const gl=st.glance||{};
+  const gl=st.glance||{}, sum=st.summary||{};
+  const [stY,stM]=st.monthKey.split('-').map(Number);
+  const lyKey=(stY-1)+'-'+String(stM).padStart(2,'0');
+
+  /* ---------- STR Snapshot: Property / Comp Set / Index / Market, with YoY % change ---------- */
+  const sp=state.snapPer||'cm';
+  const spBtns=[['cm','Current month'],['ytd','YTD'],['r3','Run 3M'],['r12','Run 12M']]
+    .map(([k,l])=>`<button class="heatbtn ${sp===k?'on':''}" onclick="__setSnapPer('${k}')">${l}</button>`).join(' ');
+  const SNAP_MET=[['occ','Occupancy',v=>v==null?na():n1(v,1)+'%'],['adr','ADR',v=>usd(v)],['revpar','RevPAR',v=>usd(v)]];
+  let snapRows='';
+  for(const [met,label,fmt] of SNAP_MET){
+    const pv = sum[met]?.prop?.[sp]     ?? gl[sp]?.[met]?.my;
+    const pc = sum[met]?.prop?.[sp+'Chg'] ?? gl[sp+'Chg']?.[met]?.my;
+    const cVal=sum[met]?.comp?.[sp]     ?? gl[sp]?.[met]?.comp;
+    const cChg=sum[met]?.comp?.[sp+'Chg'] ?? gl[sp+'Chg']?.[met]?.comp;
+    const iv = gl[sp]?.[met]?.idx ?? ((pv!=null&&cVal)?pv/cVal*100:null);
+    const ic = gl[sp+'Chg']?.[met]?.idx;
+    const mv = sum[met]?.market?.[sp] ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
+    const mc = sum[met]?.market?.[sp+'Chg'];
+    snapRows+=`<tr><td>${label}</td><td data-v="${pv??''}">${fmt(pv)}</td>${chgTd(pc)}
+      <td data-v="${cVal??''}">${fmt(cVal)}</td>${chgTd(cChg)}
+      <td data-v="${iv??''}">${idx(iv)}</td>${chgTd(ic)}
+      <td data-v="${mv??''}">${fmt(mv)}</td>${chgTd(mc)}</tr>`;
+  }
+
+  /* ---------- Property Scorecard: CM / YTD / 3M / 12M, levels + YoY % change ---------- */
+  const SC_PER=[['cm','Current Month'],['ytd','Year to Date'],['r3','3 Month Avg'],['r12','12 Month Avg']];
+  let scRows='';
+  for(const [met,label,fmt] of SNAP_MET){
+    scRows+=`<tr><td>${label}</td>`+SC_PER.map(([k])=>{
+      const v=sum[met]?.prop?.[k] ?? gl[k]?.[met]?.my, c=sum[met]?.prop?.[k+'Chg'] ?? gl[k+'Chg']?.[met]?.my;
+      return `<td data-v="${v??''}">${fmt(v)}</td>${chgTd(c)}`;}).join('')+'</tr>';
+  }
+  for(const [met] of SNAP_MET){
+    scRows+=`<tr><td class="small">${IDX_NAMES[met]} — index vs comp set</td>`+SC_PER.map(([k])=>{
+      const v=gl[k]?.[met]?.idx, c=gl[k+'Chg']?.[met]?.idx;
+      return `<td data-v="${v??''}">${idx(v)}</td>${chgTd(c)}`;}).join('')+'</tr>';
+  }
   const blocks=[['cm','Current month'],['cmInd','Current month vs INDUSTRY'],['ytd','YTD'],['r3','Running 3M'],['r12','Running 12M']];
   let idxRows='';
   for(const [k,label] of blocks){
     const b=gl[k]; if(!b) continue;
     idxRows+=`<tr><td>${label}</td>
       <td>${idx(b.occ.idx)}</td><td>${idx(b.adr.idx)}</td><td>${idx(b.revpar.idx)}</td>
-      <td>${pct(b.occ.my/100,1)}</td><td>${money(b.adr.my)}</td><td>${money(b.revpar.my)}</td>
-      <td>${pct(b.occ.comp/100,1)}</td><td>${money(b.adr.comp)}</td><td>${money(b.revpar.comp)}</td></tr>`;
+      <td>${pct(b.occ.my/100,1)}</td><td>${usd(b.adr.my)}</td><td>${usd(b.revpar.my)}</td>
+      <td>${pct(b.occ.comp/100,1)}</td><td>${usd(b.adr.comp)}</td><td>${usd(b.revpar.comp)}</td></tr>`;
   }
   /* ranking from Comp sheet (latest column) */
   const rk=m=>{ const c=st.comp?.[m]; return c? c.rank[c.rank.length-1]:null; };
@@ -2261,17 +2304,116 @@ function renderMarket(d){
   /* DOW table */
   let dow='';
   for(const r of st.dow||[]) dow+=`<tr><td>${r.day}</td><td>${n1(r.occMy)}%</td><td>${n1(r.occComp)}%</td>
-    <td class="${r.mpi<100?'neg':'pos'}">${idx(r.mpi)}</td><td>${money(r.adrMy)}</td><td>${money(r.adrComp)}</td></tr>`;
+    <td class="${r.mpi<100?'neg':'pos'}">${idx(r.mpi)}</td><td>${usd(r.adrMy)}</td><td>${usd(r.adrComp)}</td></tr>`;
   /* pace */
   const pace=state.store.pace||{};
   let paceHtml='';
   if(pace.daily?.rows?.mtd){ const r=pace.daily.rows.mtd;
-    paceHtml+=`<tr><td>Daily STAR — running MTD (${pace.daily.label})</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${money(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${money(r.revpar?.my)}</td></tr>`; }
+    paceHtml+=`<tr><td>Daily STAR — running MTD (${pace.daily.label})</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${usd(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${usd(r.revpar?.my)}</td></tr>`; }
   if(pace.daily?.rows?.r7){ const r=pace.daily.rows.r7;
-    paceHtml+=`<tr><td>Running 7 days</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${money(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${money(r.revpar?.my)}</td></tr>`; }
+    paceHtml+=`<tr><td>Running 7 days</td><td>${n1(r.occ.my)}%</td><td>${idx(r.occ.idx)}</td><td>${usd(r.adr.my)}</td><td>${idx(r.adr.idx)}</td><td>${usd(r.revpar?.my)}</td></tr>`; }
   if(pace.weekly?.metrics?.occ){ paceHtml+=`<tr><td>Weekly STAR (${pace.weekly.label})</td><td colspan="5" class="small" style="text-align:left">day-level MPI/ARI in file — see chart below-right of quadrant for month trend</td></tr>`; }
 
+  /* ---------- Daily performance table (STR "Daily Data" layout): day-by-day vs benchmark,
+     MTD + weekday/weekend splits, YoY % change when the same month LY is stored ---------- */
+  const dl=st.daily;
+  const dowL=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  let dailyPanel='';
+  if(dl){
+    const hasInd=['occ','adr','revpar'].some(m=>dl[m]?.ind?.some(v=>v!=null));
+    const bKey=(state.dailyBench==='ind'&&hasInd)?'ind':'comp';
+    const bName=bKey==='ind'?'Industry':'Comp set';
+    const nDays=new Date(stY,stM,0).getDate();
+    const days=[...Array(nDays)].map((_,i)=>i+1)
+      .filter(d2=>['occ','adr','revpar'].some(m=>dl[m]?.my?.[d2-1]!=null||dl[m]?.[bKey]?.[d2-1]!=null));
+    const isWE=(ym,d2)=>{const w=dowOf(ym,d2);return w===4||w===5;};   // STR convention: weekend = Fri+Sat
+    const lyDl=state.store.months[lyKey]?.star?.daily||null;
+    /* aggregates: occ & RevPAR are day averages; ADR is revenue-weighted = ΣRevPAR/Σ(Occ/100) */
+    const agg=(src,who,ym,set)=>{ if(!src) return {occ:null,adr:null,revpar:null};
+      const take=m=>set.map(d3=>src[m]?.[who]?.[d3-1]).filter(v=>v!=null);
+      const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+      const occ=mean(take('occ')), rp=mean(take('revpar'));
+      return {occ, revpar:rp, adr:(occ&&rp!=null)?rp/(occ/100):mean(take('adr'))};
+    };
+    const setsOf=(src,ym)=>{ if(!src) return null;
+      const n2=new Date(+ym.split('-')[0],+ym.split('-')[1],0).getDate();
+      const dd=[...Array(n2)].map((_,i)=>i+1).filter(d3=>['occ','adr','revpar'].some(m=>src[m]?.my?.[d3-1]!=null));
+      return {all:dd, wd:dd.filter(d3=>!isWE(ym,d3)), we:dd.filter(d3=>isWE(ym,d3))};
+    };
+    const tySets={all:days, wd:days.filter(d2=>!isWE(st.monthKey,d2)), we:days.filter(d2=>isWE(st.monthKey,d2))};
+    const lySets=setsOf(lyDl,lyKey);
+    const chg=(a,b)=>(a!=null&&b)?((a-b)/Math.abs(b))*100:null;
+    const METS_D=[['occ','Occupancy',v=>v==null?'—':n1(v,1)+'%'],
+                  ['adr','ADR (US$)',v=>v==null?'—':'$'+n1(v,2)],
+                  ['revpar','RevPAR (US$)',v=>v==null?'—':'$'+n1(v,2)]];
+    const fmtChg=v=>v==null?'—':(v>0?'+':'')+n1(v,1)+'%';
+    const line=(name,perDay,aggs,fmt2,colored)=>`<tr><td>${name}</td>${
+      days.map(d2=>{const v=perDay(d2);return `<td class="${colored?cls(v):''}" data-v="${v??''}">${fmt2(v)}</td>`;}).join('')}${
+      aggs.map(v=>`<td class="${colored?cls(v):''}" data-v="${v??''}"><b>${fmt2(v)}</b></td>`).join('')}</tr>`;
+    let dBody='';
+    for(const [met,label,fmt] of METS_D){
+      const iName=IDX_NAMES[met]+(bKey==='ind'?' vs Ind':'');
+      dBody+=`<tr class="tot"><td colspan="${days.length+4}">${label}</td></tr>`;
+      const aggMy =['all','wd','we'].map(s2=>agg(dl,'my',st.monthKey,tySets[s2])[met]);
+      const aggB  =['all','wd','we'].map(s2=>agg(dl,bKey,st.monthKey,tySets[s2])[met]);
+      dBody+=line('My Property',d2=>dl[met]?.my?.[d2-1],aggMy,fmt,false);
+      dBody+=line(bName,d2=>dl[met]?.[bKey]?.[d2-1],aggB,fmt,false);
+      dBody+=line('Index ('+iName+')',d2=>{const a=dl[met]?.my?.[d2-1],b=dl[met]?.[bKey]?.[d2-1];return (a!=null&&b)?a/b*100:null;},
+        aggMy.map((a,i2)=>(a!=null&&aggB[i2])?a/aggB[i2]*100:null),v=>v==null?'—':idx(v),false);
+      if(lyDl&&lySets){
+        const aggMyLy=['all','wd','we'].map(s2=>agg(lyDl,'my',lyKey,lySets[s2])[met]);
+        const aggBLy =['all','wd','we'].map(s2=>agg(lyDl,bKey,lyKey,lySets[s2])[met]);
+        dBody+=line('My Property % chg',d2=>chg(dl[met]?.my?.[d2-1],lyDl[met]?.my?.[d2-1]),
+          aggMy.map((a,i2)=>chg(a,aggMyLy[i2])),fmtChg,true);
+        dBody+=line(bName+' % chg',d2=>chg(dl[met]?.[bKey]?.[d2-1],lyDl[met]?.[bKey]?.[d2-1]),
+          aggB.map((a,i2)=>chg(a,aggBLy[i2])),fmtChg,true);
+        dBody+=line('Index % chg',d2=>{const a=dl[met]?.my?.[d2-1],b=dl[met]?.[bKey]?.[d2-1],a0=lyDl[met]?.my?.[d2-1],b0=lyDl[met]?.[bKey]?.[d2-1];
+          return chg((a!=null&&b)?a/b*100:null,(a0!=null&&b0)?a0/b0*100:null);},
+          aggMy.map((a,i2)=>chg((a!=null&&aggB[i2])?a/aggB[i2]*100:null,(aggMyLy[i2]!=null&&aggBLy[i2])?aggMyLy[i2]/aggBLy[i2]*100:null)),fmtChg,true);
+      }
+    }
+    const dHead=`<tr><th style="text-align:left">${fmtMonthKey(st.monthKey)}</th>${
+      days.map(d2=>`<th style="text-align:center;${isWE(st.monthKey,d2)?'background:rgba(107,114,128,.12)':''}">${dowL[dowOf(st.monthKey,d2)]}<br>${d2}</th>`).join('')
+      }<th>MTD</th><th>MTD WD</th><th>MTD WE</th></tr>`;
+    dailyPanel=`<div class="panel"><h3>Daily data — My Property vs ${bName} ${st.provisional?'<span class="tag a">provisional</span>':''}
+        <span class="noprint" style="float:right">
+          <button class="heatbtn ${bKey==='comp'?'on':''}" onclick="__setDailyBench('comp')">Comp Set</button>
+          <button class="heatbtn ${bKey==='ind'?'on':''}" onclick="__setDailyBench('ind')" ${hasInd?'':'disabled title="Industry daily rows not in this STAR file"'}>Industry</button>
+        </span></h3>
+      <div style="overflow-x:auto"><table><thead>${dHead}</thead><tbody>${dBody}</tbody></table></div>
+      <div class="small" style="margin-top:6px">Shaded day columns = STR weekend (Fri–Sat); MTD WD = Sun–Thu, MTD WE = Fri–Sat. MTD ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc).
+        ${lyDl?'% chg rows compare the same calendar day of '+fmtMonthKey(lyKey)+'.':'Drop the '+fmtMonthKey(lyKey)+' Monthly STAR to unlock the YoY % change rows.'}</div></div>`;
+  }
+
+  /* ---------- Occupancy bandwidth data: daily occupancy across the last 3 stored months,
+     property line vs the comp-set ↔ industry envelope (member-level min/max is not in the STAR export) ---------- */
+  const bwMonths=Object.keys(state.store.months)
+    .filter(k=>state.store.months[k].star?.daily?.occ&&k<=st.monthKey).sort().slice(-3);
+  const bw={labels:[],my:[],comp:[],ind:[],we:[]};
+  for(const mk2 of bwMonths){
+    const s2=state.store.months[mk2].star.daily.occ; const [y2,m2]=mk2.split('-').map(Number);
+    const n2=new Date(y2,m2,0).getDate();
+    for(let d2=1;d2<=n2;d2++){
+      if(s2.my?.[d2-1]==null&&s2.comp?.[d2-1]==null) continue;
+      bw.labels.push(d2+' '+MONTHS[m2-1].slice(0,3));
+      bw.my.push(s2.my?.[d2-1]??null); bw.comp.push(s2.comp?.[d2-1]??null); bw.ind.push(s2.ind?.[d2-1]??null);
+      const w=dowOf(mk2,d2); bw.we.push(w===4||w===5);
+    }
+  }
+  const hasBw=bw.labels.length>0, hasBwInd=bw.ind.some(v=>v!=null);
+
   el.innerHTML=`
+    <div class="cols c2">
+      <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
+          <span class="noprint" style="float:right">${spBtns}</span></h3>
+        <table><thead><tr><th></th><th>Property</th><th>% Chg</th><th>Comp Set</th><th>% Chg</th><th>Index</th><th>% Chg</th><th>Market</th><th>% Chg</th></tr></thead>
+        <tbody>${snapRows}</tbody></table>
+        <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). Market = HCMC market row of the STAR Summary sheet${sum.occ?.market?'':' — not in this file; Industry MTD shown when a weekly/daily STR extract is loaded'}.</div></div>
+      <div class="panel"><h3>Property scorecard — Occ / ADR / RevPAR by period</h3>
+        <table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
+        <tbody>${scRows}</tbody></table>
+        <div class="small" style="margin-top:6px">Top rows = property levels (STR Glance); bottom rows = indexes vs comp set — an index % change &lt; 0 means the market grew faster than we did.</div></div>
+    </div>
     <div class="cols c2">
       <div class="panel"><h3>MPI / ARI / RGI — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL — mid-month STR extract; official Monthly STAR due ~20th replaces it on drop</span>':''}</h3>
         <table><thead><tr><th>Period</th><th>MPI</th><th>ARI</th><th>RGI</th><th>My Occ</th><th>My ADR</th><th>My RevPAR</th><th>Comp Occ</th><th>Comp ADR</th><th>Comp RevPAR</th></tr></thead>
@@ -2279,13 +2421,18 @@ function renderMarket(d){
         <div class="small" style="margin-top:6px">Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> &nbsp;|&nbsp; Fair share: ${fair}</div>
         <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div>
       </div>
-      <div class="panel"><h3>RGI quadrant — ARI vs MPI (bubble = month, gold = latest)</h3><div class="chartbox tall"><canvas id="chQuad"></canvas></div></div>
+      <div class="panel"><h3>RevPAR positioning matrix — ARI vs MPI (trail = last 12 months · gold = ${fmtMonthKey(st.monthKey)} · red ring = ${fmtMonthKey(lyKey)})</h3><div class="chartbox tall"><canvas id="chQuad"></canvas></div></div>
     </div>
     <div class="cols c2">
       <div class="panel"><h3>Index trend — 18 months</h3><div class="chartbox"><canvas id="chIdxTrend"></canvas></div></div>
       <div class="panel"><h3>Day-of-week pattern (current month)</h3>
         <table><thead><tr><th>Day</th><th>My Occ</th><th>Comp Occ</th><th>MPI</th><th>My ADR</th><th>Comp ADR</th></tr></thead><tbody>${dow||'<tr><td colspan=6>'+na('Day of Week sheet missing')+'</td></tr>'}</tbody></table></div>
     </div>
+    ${dailyPanel}
+    ${hasBw?`<div class="panel"><h3>Occupancy bandwidth — daily, last ${bwMonths.length} stored month(s)</h3>
+      <div class="chartbox"><canvas id="chBand"></canvas></div>
+      <div class="small" style="margin-top:6px">Green = Sofitel SSP daily occupancy; shaded band = comp-set ↔ industry envelope${hasBwInd?'':' (industry rows missing — comp set shown as dashed line only)'};
+        grey columns = STR weekends (Fri–Sat). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
     ${st.daily?`<div class="panel"><h3>Daily RevPAR — ${fmtMonthKey(st.monthKey)} · My Property vs Comp Set vs Industry ${st.provisional?'<span class="tag a">provisional</span>':''}</h3>
       <div class="chartbox"><canvas id="chDailyCmp"></canvas></div>
       <div class="small" style="margin-top:6px">Direct day-by-day comparison from the STAR daily grids — spot exactly which days the comp set / submarket filled while we did not.</div></div>`:''}
@@ -2293,12 +2440,34 @@ function renderMarket(d){
       <table><thead><tr><th>Window</th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead><tbody>${paceHtml||'<tr><td colspan=6>'+na('Weekly/Daily STAR not loaded')+'</td></tr>'}</tbody></table></div>`;
 
   if(st.daily){
-    const dl=st.daily; const days=[...Array(31)].map((_,i)=>i+1).filter(d2=>dl.revpar?.my?.[d2-1]!=null||dl.revpar?.comp?.[d2-1]!=null);
+    const dl2=st.daily; const days=[...Array(31)].map((_,i)=>i+1).filter(d2=>dl2.revpar?.my?.[d2-1]!=null||dl2.revpar?.comp?.[d2-1]!=null);
     mkChart('chDailyCmp',{type:'line',data:{labels:days,datasets:[
-        {label:'My Property',data:days.map(d2=>dl.revpar?.my?.[d2-1]==null?null:cv(dl.revpar.my[d2-1])),borderColor:'#C9A227',borderWidth:2.5,tension:.3,pointRadius:2},
-        {label:'Comp set',data:days.map(d2=>dl.revpar?.comp?.[d2-1]==null?null:cv(dl.revpar.comp[d2-1])),borderColor:'#0B1F3A',borderWidth:2,tension:.3,pointRadius:2},
-        {label:'Industry',data:days.map(d2=>dl.revpar?.ind?.[d2-1]==null?null:cv(dl.revpar.ind[d2-1])),borderColor:'#9CA3AF',borderDash:[5,4],tension:.3,pointRadius:0}]},
-      options:{scales:{y:{ticks:{callback:v=>money(v,1)}},x:{title:{display:true,text:'Day of month'}}},maintainAspectRatio:false}});
+        {label:'My Property',data:days.map(d2=>dl2.revpar?.my?.[d2-1]??null),borderColor:'#C9A227',borderWidth:2.5,tension:.3,pointRadius:2},
+        {label:'Comp set',data:days.map(d2=>dl2.revpar?.comp?.[d2-1]??null),borderColor:'#0B1F3A',borderWidth:2,tension:.3,pointRadius:2},
+        {label:'Industry',data:days.map(d2=>dl2.revpar?.ind?.[d2-1]??null),borderColor:'#9CA3AF',borderDash:[5,4],tension:.3,pointRadius:0}]},
+      options:{scales:{y:{ticks:{callback:v=>'$'+v}},x:{title:{display:true,text:'Day of month'}}},maintainAspectRatio:false}});
+  }
+
+  /* occupancy bandwidth chart — weekend columns shaded, band = comp↔industry envelope */
+  if(hasBw){
+    const lo=bw.labels.map((_,i)=>{const a=bw.comp[i],b=bw.ind[i];return a==null?b:(b==null?a:Math.min(a,b));});
+    const hi=bw.labels.map((_,i)=>{const a=bw.comp[i],b=bw.ind[i];return a==null?b:(b==null?a:Math.max(a,b));});
+    const weBand={id:'weBand',beforeDatasetsDraw(ch){ const {ctx,chartArea,scales:{x}}=ch; if(!chartArea) return;
+      ctx.save(); ctx.fillStyle='rgba(107,114,128,.08)';
+      bw.we.forEach((f,i)=>{ if(!f) return;
+        const l=Math.max(x.getPixelForValue(i-0.5),chartArea.left), r=Math.min(x.getPixelForValue(i+0.5),chartArea.right);
+        if(r>l) ctx.fillRect(l,chartArea.top,r-l,chartArea.bottom-chartArea.top); });
+      ctx.restore(); }};
+    mkChart('chBand',{type:'line',data:{labels:bw.labels,datasets:[
+        ...(hasBwInd?[
+          {label:'_lo',data:lo,borderWidth:0,pointRadius:0,fill:false},
+          {label:'Comp ↔ Industry band',data:hi,borderWidth:0,pointRadius:0,fill:'-1',backgroundColor:'rgba(232,163,61,.28)'}]:[]),
+        {label:'Comp set',data:bw.comp,borderColor:'#0B1F3A',borderWidth:1.5,borderDash:[4,3],pointRadius:0,tension:.3},
+        {label:'Sofitel SSP',data:bw.my,borderColor:'#1E7E4F',borderWidth:2.5,pointRadius:2,tension:.3}]},
+      options:{plugins:{legend:{labels:{filter:it=>it.text!=='_lo'}},
+          tooltip:{callbacks:{label:c=>c.dataset.label==='_lo'?null:`${c.dataset.label}: ${n1(c.raw)}%`}}},
+        scales:{y:{ticks:{callback:v=>v+'%'}},x:{ticks:{maxTicksLimit:18,maxRotation:0}}},maintainAspectRatio:false},
+      plugins:[weBand]});
   }
 
   /* quadrant: x=MPI, y=ARI, points = last 12 months */
@@ -2308,9 +2477,12 @@ function renderMarket(d){
     const ptsArr=[];
     for(let i=Math.max(0,n-12);i<n;i++){ if(co.idx[i]!=null&&ca.idx[i]!=null) ptsArr.push({x:co.idx[i],y:ca.idx[i],label:fmtMonthKey(co.months[i])}); }
     const last=ptsArr[ptsArr.length-1];
+    const li=co.months.indexOf(lyKey);
+    const lyPt=(li>=0&&co.idx[li]!=null&&ca.idx[li]!=null)?{x:co.idx[li],y:ca.idx[li],label:fmtMonthKey(lyKey)+' (same month LY)'}:null;
     mkChart('chQuad',{type:'scatter',
       data:{datasets:[
         {label:'Months',data:ptsArr.slice(0,-1),backgroundColor:'rgba(74,125,189,.7)',pointRadius:5},
+        {label:'Same month LY',data:lyPt?[lyPt]:[],backgroundColor:'rgba(192,57,43,.15)',borderColor:'#C0392B',borderWidth:2,pointRadius:8},
         {label:'Latest',data:last?[last]:[],backgroundColor:'#C9A227',pointRadius:9}]},
       options:{plugins:{tooltip:{callbacks:{label:c=>`${c.raw.label}: MPI ${idx(c.raw.x)} / ARI ${idx(c.raw.y)}`}},legend:{display:false}},
         scales:{x:{title:{display:true,text:'MPI (occupancy index)'},min:80,max:125},
