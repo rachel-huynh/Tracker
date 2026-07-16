@@ -262,6 +262,9 @@ const MAP = {
     { type:'bookstay',   all:[/^Booked vs Stayed$/i] },
     { type:'rf',         all:[/^SUM FY\d{2} Forecast$/i] },
     { type:'cf',         all:[/^FY \d{4}$/i, /^P&L \d{4}$/i] },
+    /* provisional mid-month STR extract ("STR - <Month>.xlsx": Compset+Industry
+       daily grids only) — placeholder until the official Monthly STAR (~20th) */
+    { type:'strTemp',    all:[/^Compset$/i, /^Industry$/i] },
   ],
 
   /* Engineering PDF hot-spot dictionaries (mention counting) */
@@ -955,18 +958,21 @@ function parseStarMonthly(wb){
 
 function parseStarDailyByMonth(wb,warns){
   const out={occ:{},adr:{},revpar:{}}; let found=false;
-  const srcs=[[/^Daily by Month$/i,{my:'my',comp:'comp'}],[/^Daily by Month Industry$/i,{my:null,ind:'ind'}]];
+  /* weekly exports name the industry sheet "Daily by Month Ind" */
+  const srcs=[[/^Daily by Month$/i,{my:'my',comp:'comp'}],[/^Daily by Month Ind(ustry)?$/i,{my:null,ind:'ind'}]];
   for(const [re,want] of srcs){
     const ws=sheetByRe(wb,re); if(!ws) continue;
     const gd=grid(ws);
     for(const [mk,mre] of [['occ',/^Occupancy \(%\)$/i],['adr',/^ADR$/i],['revpar',/^RevPAR$/i]]){
       const br=findRow(gd,mre,null,10); if(br<0) continue;
+      if(!out._monthName){ const nm=cellStr((gd[br]||[])[2])||cellStr((gd[br]||[])[3]);
+        if(/^[A-Za-z]{3,}$/.test(nm)) out._monthName=nm; }
       const dayRow=gd[br+1]||[];
       const dayCols=[]; dayRow.forEach((v,c)=>{ const n=num(v); if(n!=null&&n>=1&&n<=31&&Number.isInteger(n)) dayCols.push([c,n]); });
       if(!dayCols.length) continue;
       const grab=lre=>{ const r=findRow(gd,lre,null,br+1); if(r<0||r>br+8) return null;
         const arr=new Array(31).fill(null); for(const[c,dn] of dayCols) arr[dn-1]=num(gd[r][c]); return arr; };
-      const my=grab(/^My Property$/i), comp=grab(/^Competitive Set$/i), ind=grab(/^Industry$/i);
+      const my=grab(/^My Property$/i), comp=grab(/^Comp(etitive)?\s?Set$/i), ind=grab(/^Industry$/i);
       if(my&&!out[mk].my) out[mk].my=my;
       if(comp) out[mk].comp=comp;
       if(ind) out[mk].ind=ind;
@@ -974,6 +980,46 @@ function parseStarDailyByMonth(wb,warns){
     }
   }
   if(!found){ W(warns,'Daily by Month sheets not parsed — heatmaps will miss this month'); return null; }
+  return out;
+}
+
+/* ---------- provisional mid-month STR extract (Compset + Industry sheets) ----------
+   Produces the SAME shape as the official Monthly STAR (glance.cm + daily arrays)
+   with provisional:true, so Market tab / heatmaps / cockpit RGI work immediately.
+   The official Monthly STAR file simply overwrites it when dropped. */
+function parseStrTemp(wb){
+  const warns=[]; const out={warns,provisional:true,monthKey:null,glance:{},summary:{},comp:{},dow:[],census:{},daily:{occ:{},adr:{},revpar:{}}};
+  for(const [re,who] of [[/^Compset$/i,'comp'],[/^Industry$/i,'ind']]){
+    const ws=sheetByRe(wb,re); if(!ws){ W(warns,'Sheet missing: '+who); continue; }
+    const gd=grid(ws);
+    /* month: first excel serial in the top rows */
+    if(!out.monthKey) for(let r=0;r<5&&!out.monthKey;r++) for(const v of (gd[r]||[])){ const n=num(v); if(n!=null&&n>40000&&n<60000){ out.monthKey=serialYM(n); break; } }
+    /* day columns: the row holding 1..31 ascending integers; MTD col right after */
+    let dayRow=-1,dayCols=[],mtdCol=null;
+    for(let r=0;r<8;r++){ const cols=[]; (gd[r]||[]).forEach((v,c)=>{ const n=num(v); if(n!=null&&Number.isInteger(n)&&n>=1&&n<=31) cols.push([c,n]); });
+      if(cols.length>=27){ dayRow=r; dayCols=cols; break; } }
+    if(dayRow<0){ W(warns,who+': day-number row not found'); continue; }
+    const hdr=gd[dayRow-1]||[];                          // DOW row also holds "MTD"
+    mtdCol=rowCols(hdr,/^MTD$/i)[0]??(dayCols[dayCols.length-1][0]+1);
+    for(const [mk,mre] of [['occ',/^Occupancy$/i],['adr',/^ADR$/i],['revpar',/^RevPAR$/i]]){
+      const br=findRow(gd,mre,null,dayRow); if(br<0){ W(warns,who+': block missing '+mk); continue; }
+      const scale=mk==='occ'?100:1;                      // occupancy comes as fractions here
+      const grab=lre=>{ const r=findRow(gd,lre,null,br); if(r<0||r>br+4) return null;
+        const arr=new Array(31).fill(null); for(const[c,dn] of dayCols){ const v=num(gd[r][c]); arr[dn-1]=v==null?null:v*scale; }
+        arr._mtd=num(gd[r][mtdCol]); return arr; };
+      const my=grab(/^My Property$/i), other=grab(who==='comp'?/^Comp Set$/i:/^Industry$/i), ix=grab(/^Index/i);
+      if(my&&!out.daily[mk].my) out.daily[mk].my=my;
+      if(other) out.daily[mk][who]=other;
+      if(who==='comp'&&my&&other){                       // provisional current-month glance from MTD col
+        out.glance.cm=out.glance.cm||{};
+        out.glance.cm[mk]={ my: my._mtd==null?null:my._mtd*scale,
+                            comp: other._mtd==null?null:other._mtd*scale,
+                            idx: ix?._mtd??null };
+      }
+    }
+  }
+  if(!out.monthKey) W(warns,'Provisional STR: month serial not found');
+  if(!out.glance.cm) throw new Error('Provisional STR: MTD columns not parsed');
   return out;
 }
 
@@ -991,7 +1037,49 @@ function parseStarWeekly(wb){
     out.metrics[k]={my:grab(my),comp:grab(cp),idx:grab(ix)};
   }
   const hdr=gd[2]||[]; out.dayNames=hdr.map(cellStr).filter(s=>/day$/i.test(s));
+  /* the weekly export also carries full "Daily by Month (Ind)" sheets →
+     use them as a PROVISIONAL month until the official Monthly STAR (~20th) */
+  out.daily=parseStarDailyByMonth(wb,warns);
+  if(out.daily?._monthName){
+    const yr=(out.label.match(/(\d{4})/)||[])[1];
+    if(yr) out.dailyMonthKey=monthKeyFromText(out.daily._monthName+' '+yr);
+  }
   return out;
+}
+/* build a provisional star object (same shape as the official Monthly STAR)
+   from a weekly file's daily arrays — the FULL month of daily data drives
+   the MTD glance, vs-Industry indexes AND the day-of-week pattern */
+function provisionalStarFromDaily(daily,monthKey,warns){
+  const avgArr=a=>{ const v=(a||[]).filter(x=>x!=null); return v.length?v.reduce((x,y)=>x+y,0)/v.length:null; };
+  /* MTD ADR must be revenue-weighted: Σrev/Σsold = mean(RevPAR)/mean(Occ) */
+  const adrOf=(rp,oc)=>rp!=null&&oc?rp/(oc/100):null;
+  const block=(who)=>{                                     // who: 'comp' | 'ind'
+    const o={};
+    for(const mk of ['occ','revpar']){
+      const my=avgArr(daily[mk]?.my), other=avgArr(daily[mk]?.[who]);
+      o[mk]={my,comp:other,idx:my!=null&&other?my/other*100:null};
+    }
+    o.adr={my:adrOf(o.revpar.my,o.occ.my),comp:adrOf(o.revpar.comp,o.occ.comp)};
+    o.adr.idx=o.adr.my!=null&&o.adr.comp?o.adr.my/o.adr.comp*100:null;
+    return o.occ.comp!=null||o.revpar.comp!=null?o:null;
+  };
+  const cm=block('comp'), cmInd=block('ind');
+  const glance={}; if(cm) glance.cm=cm; if(cmInd) glance.cmInd=cmInd;
+  /* day-of-week pattern from the daily arrays (same shape as official DOW sheet) */
+  const dow=[]; const [y,mm]=monthKey.split('-').map(Number);
+  const names=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  for(let w=0;w<7;w++){
+    const pick=(src)=>{ const v=[]; for(let d2=1;d2<=31;d2++){ const x=daily[src.m]?.[src.e]?.[d2-1];
+      if(x!=null&&new Date(y,mm-1,d2).getDay()===w) v.push(x); } return v.length?v.reduce((a,b)=>a+b,0)/v.length:null; };
+    const oMy=pick({m:'occ',e:'my'}), oCp=pick({m:'occ',e:'comp'});
+    const rMy=pick({m:'revpar',e:'my'}), rCp=pick({m:'revpar',e:'comp'});
+    if(oMy==null&&oCp==null) continue;
+    dow.push({day:names[w],occMy:oMy,occMyChg:null,occComp:oCp,
+      mpi:oMy!=null&&oCp?oMy/oCp*100:null,mpiChg:null,
+      adrMy:adrOf(rMy,oMy),adrMyChg:null,adrComp:adrOf(rCp,oCp)});
+  }
+  /* keep official ordering Sunday-first */
+  return {provisional:true,monthKey,warns:[],glance,summary:{},comp:{},dow,census:{},daily};
 }
 function parseStarDaily(wb){
   const warns=[]; const ws=sheetByRe(wb,/^Glance$/i); if(!ws) throw new Error('Daily Glance missing');
@@ -1322,7 +1410,17 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
       slot.star=parsed; slot.warns=(slot.warns||[]).concat(parsed.warns.map(w=>'STAR: '+w));
       label=`Monthly STAR → ${fmtMonthKey(key)}`; state.month=state.month||key;
     }
-    else if(type==='starWeekly'){ parsed=parseStarWeekly(wb); state.store.pace.weekly=parsed; label='Weekly STAR (pace): '+parsed.label; }
+    else if(type==='starWeekly'){ parsed=parseStarWeekly(wb); state.store.pace.weekly=parsed; label='Weekly STAR (pace): '+parsed.label;
+      /* bonus: its Daily by Month sheets give a PROVISIONAL month until the official Monthly STAR */
+      if(parsed.dailyMonthKey&&parsed.daily){
+        const slot=monthSlot(parsed.dailyMonthKey);
+        if(!slot.star||slot.star.provisional){
+          slot.star=provisionalStarFromDaily(parsed.daily,parsed.dailyMonthKey,parsed.warns);
+          label+=` + PROVISIONAL ${fmtMonthKey(parsed.dailyMonthKey)} (replaced by official Monthly STAR)`;
+          state.month=parsed.dailyMonthKey;
+        } else label+=` (official ${fmtMonthKey(parsed.dailyMonthKey)} STAR already stored — provisional skipped)`;
+      }
+    }
     else if(type==='starDaily'){ parsed=parseStarDaily(wb); state.store.pace.daily=parsed; label='Daily STAR (pace): '+parsed.label; }
     else if(type==='hotstats'){ parsed=parseHotStats(wb);
       const key=parsed.monthKey||state.month||'unknown'; const slot=monthSlot(key);
@@ -1337,6 +1435,15 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
       label=`Consolidated FS → ${keys.map(fmtMonthKey).join(', ')}`;
       const latest=keys[keys.length-1]; monthSlot(latest).warns=(monthSlot(latest).warns||[]).concat(parsed.warns.map(w=>'FS: '+w));
       state.month=state.month||latest;
+    }
+    else if(type==='strTemp'){
+      parsed=parseStrTemp(wb);
+      const key=parsed.monthKey||state.month||'unknown';
+      const slot=monthSlot(key);
+      if(slot.star&&!slot.star.provisional){ toast('Official STAR already stored for '+fmtMonthKey(key)+' — provisional file ignored'); return; }
+      slot.star=parsed; slot.warns=(slot.warns||[]).filter(w=>!w.startsWith('STR prov')).concat(parsed.warns.map(w=>'STR prov: '+w));
+      label=`PROVISIONAL STR → ${fmtMonthKey(key)} (replaced automatically by the official Monthly STAR)`;
+      state.month=key;
     }
     else if(type==='rf'){ parsed=parseRF(wb); state.store.rf=parsed; label='Rolling forecast: '+(parsed.title||'FY'); }
     else if(type==='cf'){ parsed=parseCF(wb); state.store.cf=parsed; label='Cashflow forecast ingested'; }
@@ -2138,7 +2245,7 @@ function renderMarket(d){
   if(!st){ el.innerHTML=noData(); return; }
   const per=state.period==='YTD'?'ytd':'cm';
   const gl=st.glance||{};
-  const blocks=[['cm','Current month'],['ytd','YTD'],['r3','Running 3M'],['r12','Running 12M']];
+  const blocks=[['cm','Current month'],['cmInd','Current month vs INDUSTRY'],['ytd','YTD'],['r3','Running 3M'],['r12','Running 12M']];
   let idxRows='';
   for(const [k,label] of blocks){
     const b=gl[k]; if(!b) continue;
@@ -2166,7 +2273,7 @@ function renderMarket(d){
 
   el.innerHTML=`
     <div class="cols c2">
-      <div class="panel"><h3>MPI / ARI / RGI — ${fmtMonthKey(st.monthKey)}</h3>
+      <div class="panel"><h3>MPI / ARI / RGI — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL — mid-month STR extract; official Monthly STAR due ~20th replaces it on drop</span>':''}</h3>
         <table><thead><tr><th>Period</th><th>MPI</th><th>ARI</th><th>RGI</th><th>My Occ</th><th>My ADR</th><th>My RevPAR</th><th>Comp Occ</th><th>Comp ADR</th><th>Comp RevPAR</th></tr></thead>
         <tbody>${idxRows}</tbody></table>
         <div class="small" style="margin-top:6px">Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> &nbsp;|&nbsp; Fair share: ${fair}</div>
@@ -2179,8 +2286,20 @@ function renderMarket(d){
       <div class="panel"><h3>Day-of-week pattern (current month)</h3>
         <table><thead><tr><th>Day</th><th>My Occ</th><th>Comp Occ</th><th>MPI</th><th>My ADR</th><th>Comp ADR</th></tr></thead><tbody>${dow||'<tr><td colspan=6>'+na('Day of Week sheet missing')+'</td></tr>'}</tbody></table></div>
     </div>
+    ${st.daily?`<div class="panel"><h3>Daily RevPAR — ${fmtMonthKey(st.monthKey)} · My Property vs Comp Set vs Industry ${st.provisional?'<span class="tag a">provisional</span>':''}</h3>
+      <div class="chartbox"><canvas id="chDailyCmp"></canvas></div>
+      <div class="small" style="margin-top:6px">Direct day-by-day comparison from the STAR daily grids — spot exactly which days the comp set / submarket filled while we did not.</div></div>`:''}
     <div class="panel"><h3>Short-term pace (Weekly / Daily STAR)</h3>
       <table><thead><tr><th>Window</th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead><tbody>${paceHtml||'<tr><td colspan=6>'+na('Weekly/Daily STAR not loaded')+'</td></tr>'}</tbody></table></div>`;
+
+  if(st.daily){
+    const dl=st.daily; const days=[...Array(31)].map((_,i)=>i+1).filter(d2=>dl.revpar?.my?.[d2-1]!=null||dl.revpar?.comp?.[d2-1]!=null);
+    mkChart('chDailyCmp',{type:'line',data:{labels:days,datasets:[
+        {label:'My Property',data:days.map(d2=>dl.revpar?.my?.[d2-1]==null?null:cv(dl.revpar.my[d2-1])),borderColor:'#C9A227',borderWidth:2.5,tension:.3,pointRadius:2},
+        {label:'Comp set',data:days.map(d2=>dl.revpar?.comp?.[d2-1]==null?null:cv(dl.revpar.comp[d2-1])),borderColor:'#0B1F3A',borderWidth:2,tension:.3,pointRadius:2},
+        {label:'Industry',data:days.map(d2=>dl.revpar?.ind?.[d2-1]==null?null:cv(dl.revpar.ind[d2-1])),borderColor:'#9CA3AF',borderDash:[5,4],tension:.3,pointRadius:0}]},
+      options:{scales:{y:{ticks:{callback:v=>money(v,1)}},x:{title:{display:true,text:'Day of month'}}},maintainAspectRatio:false}});
+  }
 
   /* quadrant: x=MPI, y=ARI, points = last 12 months */
   const co=st.comp?.occ, ca=st.comp?.adr;
