@@ -1811,7 +1811,9 @@ function applyStaticI18n(){ $$('[data-i18n]').forEach(el=>{ el.innerHTML=t(el.da
 function destroyChart(id){ if(state.charts[id]){ state.charts[id].destroy(); delete state.charts[id]; } }
 function mkChart(id,cfg){ destroyChart(id); const el=document.getElementById(id); if(!el) return;
   Chart.defaults.color='#4b5563'; Chart.defaults.borderColor='rgba(107,114,128,.15)'; Chart.defaults.font.size=11;
-  state.charts[id]=new Chart(el,cfg); }
+  try{ state.charts[id]=new Chart(el,cfg); }
+  catch(e){ console.error('chart '+id,e);
+    if(el.parentElement) el.parentElement.innerHTML=`<div class="small" style="color:var(--red);padding:20px">⚠ Chart "${id}" failed: ${e.message}</div>`; } }
 
 function kpiCard(title,valHtml,vsBud,vsLY,invert){
   let cl2='';
@@ -2882,7 +2884,8 @@ function renderHeat(d){
           ${[['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly']].map(([k,l])=>`<button class="heatbtn ${gran===k?'on':''}" onclick="__setTrendGran('${k}')">${l}</button>`).join(' ')}
           <button class="heatbtn ${state.trendCmp?'on':''}" onclick="__setTrendCmp()" title="Overlay the same period one year earlier">vs previous year</button>
         </span></h3>
-      <div class="chartbox"><canvas id="chTrend"></canvas></div>
+      ${ts.labels.length?'<div class="chartbox"><canvas id="chTrend"></canvas></div>'
+        :'<div class="small" style="padding:20px">No '+gran+' series could be built from the stored months — '+(gran==='daily'||gran==='weekly'?'the stored STAR files carry no "Daily by Month" grids':'no Comp-sheet history parsed')+'. Re-drop the Monthly STAR files in Settings &amp; Data.</div>'}
       <div class="small" style="margin-top:6px">${gran==='daily'||gran==='weekly'?'Aggregated from the STAR daily grids ('+months.length+' stored months); weekly = Monday-start weeks':'From the merged 18-month STAR histories ('+ts.labels.length+' '+(gran==='yearly'?'years':'months')+')'}${met==='adr'?'; ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc)':''}. “vs previous year” overlays the same ${gran==='yearly'?'year −1':gran==='monthly'?'month':gran==='weekly'?'week':'calendar day'} one year back (dashed grey) — gaps mean that period is not stored yet.</div></div>
     <div class="heatwrap">${ents.map(([e,l])=>grid(e,l)).join('')}</div>
     <div class="panel"><h3>Pattern insights — ${idxName}</h3>
@@ -3522,9 +3525,16 @@ function refreshMonths(){
 function renderAll(){
   applyStaticI18n();
   const d=derive();
-  renderCockpit(d); renderOffice(d); renderRooms(d); renderSeg(d); renderFnb(d); renderOther(d);
-  renderUndist(d); renderMarket(d); renderBench(d); renderConso(d); renderDQ(d);
-  renderForecast(d); renderHeat(d); renderRevA(d); renderEng(d); renderExec(d); renderSettings();
+  /* isolate each tab: one renderer throwing must not blank the tabs after it */
+  const safe=(fn,id)=>{ try{ fn(d); }catch(e){ console.error('render '+id,e);
+    const el=document.getElementById('tab-'+id);
+    if(el) el.innerHTML=`<div class="panel"><h3 style="color:var(--red)">⚠ This tab failed to render</h3>
+      <div class="small">${e.message}</div><div class="small" style="margin-top:6px">Please screenshot this message — the other tabs are unaffected.</div></div>`; } };
+  safe(renderCockpit,'cockpit'); safe(renderOffice,'office'); safe(renderRooms,'rooms'); safe(renderSeg,'seg');
+  safe(renderFnb,'fnb'); safe(renderOther,'other'); safe(renderUndist,'undist'); safe(renderMarket,'market');
+  safe(renderBench,'bench'); safe(renderConso,'conso'); safe(renderDQ,'dq'); safe(renderForecast,'forecast');
+  safe(renderHeat,'heat'); safe(renderRevA,'reva'); safe(renderEng,'eng'); safe(renderExec,'exec');
+  safe(renderSettings,'settings');
 }
 
 /* ---------- generic table sort + filter (event delegation survives re-renders) ---------- */
@@ -3821,6 +3831,9 @@ $$('#tabs button').forEach(b=>b.addEventListener('click',()=>{
   $$('#tabs button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
   $$('section.tab').forEach(s=>s.classList.remove('on')); $('#tab-'+b.dataset.tab).classList.add('on');
   $('#pageTitle').textContent=b.textContent.replace(/\d+$/,'').trim();
+  /* nudge charts on the newly visible tab — covers ResizeObserver misses (zoomed displays etc.) */
+  requestAnimationFrame(()=>{ $$('#tab-'+b.dataset.tab+' canvas').forEach(c=>{
+    const ch=state.charts[c.id]; try{ ch?.resize(); ch?.update('none'); }catch(e){} }); });
 }));
 
 /* expose for automated verification */
