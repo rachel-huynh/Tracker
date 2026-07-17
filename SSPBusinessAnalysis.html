@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SSP Executive Analytics — Sofitel Saigon Plaza</title>
+<title>Plaza Hotel Company Limited — Business Analysis</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <style>
@@ -124,12 +124,12 @@ tr.bad td{background:#fdeeec}
 <div id="app">
 <!-- ================= SIDEBAR ================= -->
 <aside id="side">
-  <div class="logo">SOFITEL SAIGON PLAZA<small data-i18n="subtitle">Owner / BOD Revenue &amp; Profit Analytics — 284 keys</small></div>
+  <div class="logo">PLAZA HOTEL COMPANY LIMITED<small data-i18n="subtitle">Sofitel Saigon Plaza · Central Plaza — BOD Analytics</small></div>
   <div id="tabs">
     <div class="navgroup" data-i18n="grpOverview">Overview</div>
     <button data-tab="conso" class="on" data-i18n="tabConso">Consolidated</button>
-    <button data-tab="cockpit" data-i18n="tabCockpit">Hotel</button>
-    <button data-tab="office" data-i18n="tabOffice">Office Building</button>
+    <button data-tab="cockpit" data-i18n="tabCockpit">Sofitel Saigon Plaza</button>
+    <button data-tab="office" data-i18n="tabOffice">Central Plaza</button>
     <button data-tab="exec" data-i18n="tabExec">Exec Summary ✉</button>
     <button data-tab="forecast" data-i18n="tabForecast">Forecast</button>
     <div class="navgroup" data-i18n="grpOps">Operations</div>
@@ -171,7 +171,7 @@ tr.bad td{background:#fdeeec}
 <!-- ================= SIGN-IN MODAL (portal style) ================= -->
 <div id="loginModal" class="noprint">
   <div class="logincard">
-    <div class="head">SSP BUSINESS ANALYSIS<small>Plaza Hotel Company Limited</small></div>
+    <div class="head">PLAZA HOTEL COMPANY LIMITED<small>Sofitel Saigon Plaza · Central Plaza</small></div>
     <div class="body">
       <div class="err" id="loginErr"></div>
       <input id="loginEmail" type="email" placeholder="Email" autocomplete="username">
@@ -1199,6 +1199,21 @@ function parseFS(wb){
       else o[k]=read(re);
       if(!o[k]&&k!=='fx'&&k!=='rent') W(warns,name+': FS row not found: '+k);
     }
+    /* Central Plaza detail: capture every labelled line sitting between HOTEL GOP and
+       CENTRAL GOP — that block is the office building's revenue & cost section.
+       Generic by design: whatever line names the FS uses are shown verbatim. */
+    if(o.hotelGop?._row!=null&&o.centralGop?._row!=null&&o.centralGop._row>o.hotelGop._row+1){
+      o.centralLines=[];
+      for(let r=o.hotelGop._row+1;r<o.centralGop._row;r++){
+        const row=gd[r]||[];
+        const lbl=cellStr(row[0])||cellStr(row[1])||cellStr(row[2]);
+        if(!lbl) continue;
+        const v={label:lbl, act:num(row[cAct]), bud:cBud!=null?num(row[cBud]):null, ly:cLy!=null?num(row[cLy]):null,
+                 yact:cYact!=null?num(row[cYact]):null, ybud:cYbud!=null?num(row[cYbud]):null};
+        if(v.act==null&&v.bud==null&&v.ly==null&&v.yact==null) continue;
+        o.centralLines.push(v);
+      }
+    }
     out.months[key]=o;
   }
   if(!Object.keys(out.months).length) throw new Error('No FSyy.mm sheets found');
@@ -1732,12 +1747,12 @@ function runRules(d){
  *  I18N
  * ===================================================================== */
 const I18N={
-en:{ subtitle:'Owner / BOD Revenue & Profit Analytics — 284 keys',
+en:{ subtitle:'Sofitel Saigon Plaza · Central Plaza — BOD Analytics',
   export:'💾 Backup JSON', import:'📂 Restore JSON', clearMonth:'Clear month',
   xlsx:'⬇ Export Excel', printPdf:'🖨 Print / PDF',
   dropTitle:'Drag & drop workbooks here', orClick:'…or click to choose files', dropPanel:'Load monthly files',
   dropNote:'(parsed in your browser — data stays local unless you sign in and Publish to your private Supabase)',
-  tabCockpit:'Hotel', tabOffice:'Office Building', tabRooms:'Rooms', tabFnb:'F&B', tabOther:'Other Ops',
+  tabCockpit:'Sofitel Saigon Plaza', tabOffice:'Central Plaza', tabRooms:'Rooms', tabFnb:'F&B', tabOther:'Other Ops',
   grpSystem:'System', tabSettings:'Settings & Data',
   tabUndist:'Undistributed', tabMarket:'Market — STR', tabBench:'Benchmark — HotStats', tabConso:'Consolidated',
   grpOverview:'Overview', grpOps:'Operations', grpMarket:'Market', grpGroup:'Group',
@@ -1772,7 +1787,7 @@ vi:{ subtitle:'Phân tích Doanh thu & Lợi nhuận cho Chủ đầu tư / HĐQ
   xlsx:'⬇ Xuất Excel', printPdf:'🖨 In / PDF',
   dropTitle:'Kéo & thả file Excel vào đây', orClick:'…hoặc bấm để chọn file', dropPanel:'Nạp file hàng tháng',
   dropNote:'(xử lý trên trình duyệt — dữ liệu chỉ đồng bộ lên Supabase riêng khi bạn đăng nhập và Publish)',
-  tabCockpit:'Khách sạn', tabOffice:'Toà văn phòng', tabRooms:'Phòng', tabFnb:'Ẩm thực', tabOther:'BP khác',
+  tabCockpit:'Sofitel Saigon Plaza', tabOffice:'Central Plaza', tabRooms:'Phòng', tabFnb:'Ẩm thực', tabOther:'BP khác',
   grpSystem:'Hệ thống', tabSettings:'Cài đặt & Dữ liệu',
   tabUndist:'Chi phí chung', tabMarket:'Thị trường — STR', tabBench:'So chuẩn — HotStats', tabConso:'Hợp nhất',
   grpOverview:'Tổng hợp', grpOps:'Vận hành', grpMarket:'Thị trường', grpGroup:'Tập đoàn',
@@ -2458,8 +2473,8 @@ function renderMarket(d){
 
   /* ---------- Occupancy bandwidth data: daily occupancy across the last 3 stored months,
      property line vs the comp-set ↔ industry envelope (member-level min/max is not in the STAR export) ---------- */
-  const bwMonths=Object.keys(state.store.months)
-    .filter(k=>state.store.months[k].star?.daily?.occ&&k<=st.monthKey).sort().slice(-3);
+  const bwAll=Object.keys(state.store.months).filter(k=>state.store.months[k].star?.daily?.occ).sort();
+  const bwMonths=(state.tsFrom||state.tsTo)? bwAll.filter(tsInRange) : bwAll.filter(k=>k<=st.monthKey).slice(-3);
   const bw={labels:[],my:[],comp:[],ind:[],we:[]};
   for(const mk2 of bwMonths){
     const s2=state.store.months[mk2].star.daily.occ; const [y2,m2]=mk2.split('-').map(Number);
@@ -2500,7 +2515,7 @@ function renderMarket(d){
         <table><thead><tr><th>Day</th><th>My Occ</th><th>Comp Occ</th><th>MPI</th><th>My ADR</th><th>Comp ADR</th></tr></thead><tbody>${dow||'<tr><td colspan=6>'+na('Day of Week sheet missing')+'</td></tr>'}</tbody></table></div>
     </div>
     ${dailyPanel}
-    ${hasBw?`<div class="panel"><h3>Occupancy bandwidth — daily, last ${bwMonths.length} stored month(s)</h3>
+    ${hasBw?`<div class="panel"><h3>Occupancy bandwidth — daily, ${(state.tsFrom||state.tsTo)?'focus period ('+bwMonths.length+' month(s) — set in Patterns tab)':'last '+bwMonths.length+' stored month(s)'}</h3>
       <div class="chartbox"><canvas id="chBand"></canvas></div>
       <div class="small" style="margin-top:6px">Green = Sofitel SSP daily occupancy; shaded band = comp-set ↔ industry envelope${hasBwInd?'':' (industry rows missing — comp set shown as dashed line only)'};
         grey columns = STR weekends (Fri–Sat). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
@@ -2736,6 +2751,21 @@ function heatColor(v,min,max,diverge){
 }
 window.__setTrendGran=g2=>{ state.trendGran=g2; renderHeat(derive()); };
 window.__setTrendCmp=()=>{ state.trendCmp=!state.trendCmp; renderHeat(derive()); };
+/* focus period is shared by the trend explorer, the ADR↔Occ scatter and the occupancy bandwidth chart */
+window.__setTsRange=(f,t)=>{ if(f!==null) state.tsFrom=f; if(t!==null) state.tsTo=t;
+  if(state.tsFrom&&state.tsTo&&state.tsFrom>state.tsTo){ const x=state.tsFrom; state.tsFrom=state.tsTo; state.tsTo=x; }
+  renderAll(); };
+function tsInRange(mk){ const from=state.tsFrom||'', to=state.tsTo||'';
+  return (!from||mk>=from)&&(!to||mk<=to); }
+function tsRangeSel(){ // From/To month selects, options = every month in the merged history
+  const set=new Set(Object.keys(state.store.months));
+  for(const k of Object.keys(state.store.months)){ const c2=state.store.months[k].star?.comp;
+    (c2?.occ?.months||[]).forEach(m2=>{ if(m2) set.add(m2); }); }
+  const opts=[...set].sort();
+  const sel=(id,cur,ph)=>`<select onchange="__setTsRange(${id==='f'?'this.value,null':'null,this.value'})" style="padding:2px 4px">
+    <option value="">${ph}</option>${opts.map(m2=>`<option value="${m2}" ${m2===cur?'selected':''}>${fmtMonthKey(m2)}</option>`).join('')}</select>`;
+  return `<span class="small">Focus:</span> ${sel('f',state.tsFrom,'start')} → ${sel('t',state.tsTo,'end')}`;
+}
 /* Build the trend series for the explorer chart.
    Daily/weekly aggregate the STAR daily grids; monthly/yearly use the merged 18-month
    Comp-sheet histories (longer range, official monthly numbers).
@@ -2792,6 +2822,10 @@ function trendSeries(met,gran){
       if(met==='occ') return u['o'+who]??null;
       if(met==='revpar') return u['r'+who]??null;
       return u['a'+who]??null; };
+    const grpVal=(ms,who)=>{ if(!ms) return null;
+      const o=ms.map(mk=>U[mk]['o'+who]).filter(v=>v!=null), r=ms.map(mk=>U[mk]['r'+who]).filter(v=>v!=null),
+            a=ms.map(mk=>U[mk]['a'+who]).filter(v=>v!=null);
+      return wAvg(o,r,a); };
     if(gran==='monthly'){
       for(const mk of mks){
         out.keys.push(mk); out.mks.push(mk); out.labels.push(fmtMonthKey(mk));
@@ -2799,20 +2833,32 @@ function trendSeries(met,gran){
         const [y,m]=mk.split('-').map(Number);
         out.prev.push(pick(U[(y-1)+'-'+String(m).padStart(2,'0')],'My'));
       }
+    } else if(gran==='quarterly'){
+      const byQ={};
+      for(const mk of mks){ const [y,m]=mk.split('-').map(Number); const q=y+'-Q'+Math.ceil(m/3); (byQ[q]=byQ[q]||[]).push(mk); }
+      for(const q of Object.keys(byQ).sort()){
+        out.keys.push(q); out.mks.push(byQ[q][byQ[q].length-1]);
+        out.labels.push(q.replace('-',' ')+(byQ[q].length<3?'*':''));
+        out.my.push(grpVal(byQ[q],'My')); out.comp.push(grpVal(byQ[q],'C'));
+        const [y,qq]=q.split('-Q');
+        out.prev.push(grpVal(byQ[(y-1)+'-Q'+qq],'My'));
+      }
     } else { /* yearly */
       const byY={};
       for(const mk of mks){ const y=mk.split('-')[0]; (byY[y]=byY[y]||[]).push(mk); }
-      const yVal=(y,who)=>{ const ms=byY[y]; if(!ms) return null;
-        const o=ms.map(mk=>U[mk]['o'+who]).filter(v=>v!=null), r=ms.map(mk=>U[mk]['r'+who]).filter(v=>v!=null),
-              a=ms.map(mk=>U[mk]['a'+who]).filter(v=>v!=null);
-        return wAvg(o,r,a); };
       for(const y of Object.keys(byY).sort()){
         out.keys.push(y); out.mks.push(byY[y][byY[y].length-1]);
         out.labels.push(y+(byY[y].length<12?' ('+byY[y].length+'m)':''));
-        out.my.push(yVal(y,'My')); out.comp.push(yVal(y,'C'));
-        out.prev.push(yVal(String(+y-1),'My'));
+        out.my.push(grpVal(byY[y],'My')); out.comp.push(grpVal(byY[y],'C'));
+        out.prev.push(grpVal(byY[String(+y-1)],'My'));
       }
     }
+  }
+  /* focus period: keep only points whose month falls inside [tsFrom, tsTo] */
+  const from=state.tsFrom||'', to=state.tsTo||'';
+  if(from||to){
+    const keep=out.mks.map(mk=>{ const m2=(mk||'').slice(0,7); return (!from||m2>=from)&&(!to||m2<=to); });
+    for(const f of ['labels','keys','my','comp','prev','mks']) out[f]=out[f].filter((_,i)=>keep[i]);
   }
   return out;
 }
@@ -2881,10 +2927,11 @@ function renderHeat(d){
       <span class="small" style="margin-left:10px">Month × day-of-week averages from STAR daily data. Grids fill up as you drop each Monthly STAR file (${months.length} month(s) stored).</span></div>
     <div class="panel"><h3>Trend — ${metLabel}, ${gran}
         <span class="noprint" style="float:right">
-          ${[['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly']].map(([k,l])=>`<button class="heatbtn ${gran===k?'on':''}" onclick="__setTrendGran('${k}')">${l}</button>`).join(' ')}
+          ${tsRangeSel()} &nbsp;
+          ${[['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['quarterly','Quarterly'],['yearly','Yearly']].map(([k,l])=>`<button class="heatbtn ${gran===k?'on':''}" onclick="__setTrendGran('${k}')">${l}</button>`).join(' ')}
           <button class="heatbtn ${state.trendCmp?'on':''}" onclick="__setTrendCmp()" title="Overlay the same period one year earlier">vs previous year</button>
         </span></h3>
-      ${ts.labels.length?'<div class="chartbox"><canvas id="chTrend"></canvas></div>'
+      ${ts.labels.length?'<div class="chartbox"><canvas id="chTsExp"></canvas></div>'
         :'<div class="small" style="padding:20px">No '+gran+' series could be built from the stored months — '+(gran==='daily'||gran==='weekly'?'the stored STAR files carry no "Daily by Month" grids':'no Comp-sheet history parsed')+'. Re-drop the Monthly STAR files in Settings &amp; Data.</div>'}
       <div class="small" style="margin-top:6px">${gran==='daily'||gran==='weekly'?'Aggregated from the STAR daily grids ('+months.length+' stored months); weekly = Monday-start weeks':'From the merged 18-month STAR histories ('+ts.labels.length+' '+(gran==='yearly'?'years':'months')+')'}${met==='adr'?'; ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc)':''}. “vs previous year” overlays the same ${gran==='yearly'?'year −1':gran==='monthly'?'month':gran==='weekly'?'week':'calendar day'} one year back (dashed grey) — gaps mean that period is not stored yet.</div></div>
     <div class="heatwrap">${ents.map(([e,l])=>grid(e,l)).join('')}</div>
@@ -2893,12 +2940,12 @@ function renderHeat(d){
   /* trend chart — money metrics convert at each point's own monthly FX rate */
   if(ts.labels.length){
     const isMoney=met!=='occ';
-    const pmkOf=i=>{ const k=String(ts.keys[i]); const p=k.split('-');
-      return p.length>=2 ? (p[0]-1)+'-'+p[1] : (p[0]-1)+'-12'; };
+    const pmkOf=i=>{ const mk=String(ts.mks[i]||''); const p=mk.split('-');
+      return p.length===2 ? (p[0]-1)+'-'+p[1] : mk; };   // month key of the same period LY (for FX)
     const cvt=(v,i)=>v==null?null:(isMoney?cvM(v,ts.mks[i]):v);
     const cvtP=(v,i)=>v==null?null:(isMoney?cvM(v,pmkOf(i)):v);
     const bigN=ts.labels.length>40;
-    mkChart('chTrend',{type:gran==='yearly'?'bar':'line',data:{labels:ts.labels,datasets:[
+    mkChart('chTsExp',{type:gran==='yearly'?'bar':'line',data:{labels:ts.labels,datasets:[
         {label:'Sofitel SSP',data:ts.my.map(cvt),borderColor:'#C9A227',backgroundColor:gran==='yearly'?'#C9A227':'rgba(201,162,39,.1)',borderWidth:2.5,tension:.3,pointRadius:bigN?0:2},
         {label:'Comp set',data:ts.comp.map(cvt),borderColor:'#0B1F3A',backgroundColor:gran==='yearly'?'#0B1F3A':'transparent',borderWidth:1.5,borderDash:gran==='yearly'?[]:[4,3],tension:.3,pointRadius:0},
         ...(state.trendCmp?[{type:'line',label:'SSP previous year',data:ts.prev.map(cvtP),borderColor:'#9CA3AF',borderDash:[6,4],borderWidth:1.5,tension:.3,pointRadius:0}]:[])]},
@@ -3040,7 +3087,9 @@ function renderForecast(d){
   const bErr=[]; for(let t=13;t<um.length;t++){ if(uocc[t]==null) continue; const p2=ddPred(t); if(p2!=null) bErr.push(Math.abs(p2-uocc[t])); }
   const occMAE=bErr.length>=6?avgA(bErr):null;
   const occP80=bErr.length>=6?[...bErr].sort((a,b)=>a-b)[Math.floor(bErr.length*.8)]:null;
-  let modelHtml='', occFc=null, adrPts=null, adrDec=null;
+  let modelHtml='', adrPanelHtml='', occFc=null, adrPts=null, adrDec=null, adrCloud=null;
+  window.__setAdrEnt=window.__setAdrEnt||(v=>{ state.adrEnt=v; renderForecast(derive()); });
+  window.__setAdrDay=window.__setAdrDay||(v=>{ state.adrDay=v; renderForecast(derive()); });
   const dKeys=Object.keys(state.store.months).filter(k2=>state.store.months[k2].star?.daily?.occ?.my).sort();
   if(um.length>=16&&occMAE!=null){
     const lastD=[]; for(let i2=um.length-1;i2>=um.length-3;i2--){ if(i2-12>=0&&uocc[i2]!=null&&uocc[i2-12]!=null) lastD.push(uocc[i2]-uocc[i2-12]); }
@@ -3069,12 +3118,21 @@ function renderForecast(d){
           <div class="d">Running MTD occupancy <b>${n1(mtd,1)}%</b> → month-end lands at <b>${n1(mtd,1)}%</b> ±${nearest?n1(nearest.mae,1):'?'} pts (calibrated cone).</div></div>`;
       } else projHtml=`<div class="small" style="margin-bottom:6px">All stored months are complete — the live projection activates when a provisional / weekly STR month is loaded mid-month.</div>`;
     }
-    /* ADR ↔ Occ daily cloud */
-    adrPts=[];
-    for(const k2 of dKeys){ const s3=state.store.months[k2].star.daily; if(!s3?.adr?.my) continue;
+    /* ADR ↔ Occ daily cloud — entity toggle (SSP / Comp / Industry / side-by-side),
+       weekday-weekend filter, and the shared focus period */
+    const adrEnt=state.adrEnt||'my', adrDay=state.adrDay||'all';
+    adrCloud={my:[],comp:[],ind:[]};
+    for(const k2 of dKeys){ if(!tsInRange(k2)) continue;
+      const s3=state.store.months[k2].star.daily; if(!s3?.adr) continue;
       const [y3,m3]=k2.split('-').map(Number), nD=new Date(y3,m3,0).getDate();
-      for(let d2=1;d2<=nD;d2++){ const o=s3.occ?.my?.[d2-1], a=s3.adr.my[d2-1]; if(o==null||a==null) continue;
-        adrPts.push({x:o,y:a,we:(w=>w===4||w===5)(dowOf(k2,d2))}); } }
+      for(let d2=1;d2<=nD;d2++){
+        const we=(w=>w===4||w===5)(dowOf(k2,d2));
+        if(adrDay==='wd'&&we) continue; if(adrDay==='we'&&!we) continue;
+        for(const e of ['my','comp','ind']){
+          const o=s3.occ?.[e]?.[d2-1], a=s3.adr?.[e]?.[d2-1];
+          if(o!=null&&a!=null) adrCloud[e].push({x:o,y:a,we});
+        } } }
+    adrPts=adrCloud.my;
     let adrInsight='';
     if(adrPts.length>=60){
       const corr2=(xs,ys)=>{ const mx=avgA(xs),my2=avgA(ys); let sxy=0,sx=0,sy=0;
@@ -3105,13 +3163,20 @@ function renderForecast(d){
         <table><thead><tr><th>Known through day</th><th>Month-end error (± pts MAE)</th><th>Months tested</th></tr></thead>
         <tbody>${coneRows.map(r2=>`<tr><td>${r2.d}</td><td data-v="${r2.mae}">±${n1(r2.mae,1)}</td><td>${r2.n}</td></tr>`).join('')}</tbody></table>
         <div class="small" style="margin-top:6px">Backtest verdict on ${dKeys.length} stored months: <b>no day-of-week or LY-shape model beat the plain running MTD average</b> — so the honest projection is "the month lands where MTD is", with this cone as the calibrated uncertainty. It tightens sharply after mid-month; before day 10 treat any projection as indicative only.</div></div>
-    </div>
-    ${adrPts.length>=60?`<div class="panel"><h3>ADR ↔ Occupancy — ${adrPts.length} STAR days, ${dKeys.length} months</h3>
+    </div>`;
+    const entBtns=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry'],['all','Side by side']]
+      .map(([k3,l])=>`<button class="heatbtn ${adrEnt===k3?'on':''}" onclick="__setAdrEnt('${k3}')">${l}</button>`).join(' ');
+    const dayBtns=[['all','All days'],['wd','Weekday'],['we','Weekend']]
+      .map(([k3,l])=>`<button class="heatbtn ${adrDay===k3?'on':''}" onclick="__setAdrDay('${k3}')">${l}</button>`).join(' ');
+    adrPanelHtml=adrPts.length>=30?`<div class="panel"><h3>ADR ↔ Occupancy — ${adrPts.length} STAR days
+        <span class="noprint" style="float:right">${tsRangeSel()} &nbsp; ${entBtns} &nbsp;|&nbsp; ${dayBtns}</span></h3>
       <div class="chartbox tall"><canvas id="chAdrOcc"></canvas></div>
-      <div class="small" style="margin-top:6px">${adrInsight}</div></div>`:''}`;
+      <div class="small" style="margin-top:6px">${adrInsight||'Not enough days in this filter for the full pattern read — stats need ≥60 days.'}
+        <br>Stats above are computed on <b>My Property</b> with the current day filter and focus period; the entity buttons switch whose point cloud and compression curve is drawn (Side by side overlays all three).</div></div>`:'';
   }
 
   el.innerHTML=`
+    ${adrPanelHtml}
     <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
       <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>
     ${paceHtml}
@@ -3152,13 +3217,34 @@ function renderForecast(d){
       options:{plugins:{legend:{labels:{filter:i2=>!/Low|High/.test(i2.text)}}},
         scales:{y:{ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   }
-  if(adrPts&&adrPts.length>=60&&adrDec){
-    mkChart('chAdrOcc',{type:'scatter',data:{datasets:[
-        {label:'Weekday (Sun–Thu)',data:adrPts.filter(p2=>!p2.we),backgroundColor:'rgba(11,31,58,.35)',pointRadius:2.5},
-        {label:'Weekend (Fri–Sat)',data:adrPts.filter(p2=>p2.we),backgroundColor:'rgba(74,125,189,.45)',pointRadius:2.5},
-        {label:'Decile average (compression curve)',data:adrDec.map(d3=>({x:d3.x,y:d3.y})),showLine:true,
-         borderColor:'#C9A227',borderWidth:2.5,backgroundColor:'#C9A227',pointRadius:4,tension:.3,type:'line'}]},
-      options:{plugins:{tooltip:{callbacks:{label:c=>`Occ ${n1(c.raw.x,1)}% · ADR ${starMoney(c.raw.y,1)}`}}},
+  if(adrCloud&&adrPanelHtml){
+    const ent2=state.adrEnt||'my';
+    const decOf=p2=>{ if(p2.length<30) return null; const s4=[...p2].sort((a,b)=>a.x-b.x);
+      return [...Array(10)].map((_,i2)=>{ const sl=s4.slice(Math.floor(i2*s4.length/10),Math.floor((i2+1)*s4.length/10));
+        return {x:avgA(sl.map(q=>q.x)), y:avgA(sl.map(q=>q.y))}; }); };
+    const ENT_STYLE={my:['Sofitel SSP','rgba(201,162,39,.5)','#C9A227'],
+                     comp:['Comp set','rgba(11,31,58,.3)','#0B1F3A'],
+                     ind:['Industry','rgba(156,163,175,.5)','#6B7280']};
+    let dsets=[];
+    if(ent2==='all'){
+      for(const e of ['my','comp','ind']){ const pts2=adrCloud[e]; if(!pts2.length) continue;
+        const [l,fill,line]=ENT_STYLE[e];
+        dsets.push({label:l,data:pts2,backgroundColor:fill,pointRadius:2});
+        const dc=decOf(pts2);
+        if(dc) dsets.push({label:l+' decile curve',data:dc,showLine:true,type:'line',
+          borderColor:line,borderWidth:e==='my'?2.5:1.5,borderDash:e==='my'?[]:[5,4],backgroundColor:line,pointRadius:3,tension:.3});
+      }
+    } else {
+      const pts2=adrCloud[ent2]||[];
+      dsets=[
+        {label:'Weekday (Sun–Thu)',data:pts2.filter(p2=>!p2.we),backgroundColor:'rgba(11,31,58,.35)',pointRadius:2.5},
+        {label:'Weekend (Fri–Sat)',data:pts2.filter(p2=>p2.we),backgroundColor:'rgba(74,125,189,.45)',pointRadius:2.5}];
+      const dc=decOf(pts2);
+      if(dc) dsets.push({label:'Decile average (compression curve)',data:dc,showLine:true,type:'line',
+        borderColor:'#C9A227',borderWidth:2.5,backgroundColor:'#C9A227',pointRadius:4,tension:.3});
+    }
+    mkChart('chAdrOcc',{type:'scatter',data:{datasets:dsets},
+      options:{plugins:{tooltip:{callbacks:{label:c=>`${c.dataset.label}: Occ ${n1(c.raw.x,1)}% · ADR ${starMoney(c.raw.y,1)}`}}},
         scales:{x:{title:{display:true,text:'Daily occupancy %'},ticks:{callback:v=>v+'%'}},
                 y:{title:{display:true,text:'Daily ADR'},ticks:{callback:v=>starMoney(v,1)}}},maintainAspectRatio:false}});
   }
@@ -3401,6 +3487,30 @@ function renderOffice(d){
         <tbody>${rows}</tbody></table>
         <div class="small" style="margin-top:6px">Office occupancy, vacant area and rental yield are not disclosed in the FS workbook — only Central GOP. Track leasing matters in the notes below (they also feed the BOD email draft).</div></div>
     </div>
+    ${(()=>{ /* cost analysis — from the FS lines between HOTEL GOP and CENTRAL GOP */
+      const lines=fs.centralLines||[];
+      if(!lines.length) return `<div class="panel"><h3>Cost analysis — Central Plaza</h3>
+        <div class="small">${na('This FS workbook shows CENTRAL GOP as a single line — no revenue/cost rows found in the Central section. If PHCL issues a Central Plaza detail sheet, drop it and this section fills in.')}</div></div>`;
+      const vAct=l=>P==='YTD'?l.yact:l.act, vBud=l=>P==='YTD'?l.ybud:l.bud;
+      const revLine=lines.find(l=>/revenue|income|rental|rent/i.test(l.label));
+      const gopV=P==='YTD'?c.yact:c.act;
+      const costV=revLine&&vAct(revLine)!=null&&gopV!=null?vAct(revLine)-gopV:null;
+      const lrows=lines.map(l=>`<tr class="${/total/i.test(l.label)?'tot':''}"><td>${l.label}</td>
+        <td data-v="${vAct(l)??''}">${money(vAct(l))}</td><td data-v="${vBud(l)??''}">${money(vBud(l))}</td>
+        <td class="${cls(varPct(vAct(l),vBud(l)))}">${pct(varPct(vAct(l),vBud(l)))}</td>
+        ${P==='MTD'?`<td data-v="${l.ly??''}">${money(l.ly)}</td><td class="${cls(varPct(l.act,l.ly))}">${pct(varPct(l.act,l.ly))}</td>`:'<td>—</td><td>—</td>'}
+        <td>${revLine&&vAct(revLine)?pct((vAct(l)??0)/vAct(revLine)):na()}</td></tr>`).join('');
+      const trendMs=keys.filter(k=>(fsAll[k].centralLines||[]).length);
+      return `<div class="panel"><h3>Cost analysis — Central Plaza (${P})</h3>
+        <div style="overflow-x:auto"><table><thead><tr><th>Line</th><th>Actual</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>% of revenue</th></tr></thead>
+        <tbody>${lrows}
+          <tr class="tot"><td>CENTRAL GOP</td><td>${money(gopV)}</td><td>${money(P==='YTD'?c.ybud:c.bud)}</td>
+            <td class="${cls(varPct(gopV,P==='YTD'?c.ybud:c.bud))}">${pct(varPct(gopV,P==='YTD'?c.ybud:c.bud))}</td>
+            <td>${P==='MTD'?money(c.ly):'—'}</td><td>${P==='MTD'?pct(varPct(c.act,c.ly)):'—'}</td>
+            <td>${revLine&&vAct(revLine)?pct(gopV/vAct(revLine)):na()}</td></tr></tbody></table></div>
+        <div class="small" style="margin-top:6px">${costV!=null?`Implied operating cost = ${money(costV)} (revenue − GOP), a ${pct(costV/vAct(revLine))} cost ratio — GOP margin ${pct(gopV/vAct(revLine))}.`:'No revenue-type line detected in the Central section — cost ratio not derivable.'} Lines are read verbatim from the FS rows between HOTEL GOP and CENTRAL GOP.</div>
+        ${trendMs.length>1?'<div class="chartbox" style="margin-top:8px"><canvas id="chCpCost"></canvas></div>':''}</div>`;
+    })()}
     <div class="panel"><h3>Leasing & tenant notes — ${fmtMonthKey(state.month)} <span class="small">(edit in Exec Summary tab)</span></h3>
       <div class="small" style="white-space:pre-wrap">${notes||'— no notes for this month yet (add them in Exec Summary → "2/ Central Plaza") —'}</div></div>`;
   mkChart('chOffice',{type:'bar',data:{labels:keys.map(fmtMonthKey),datasets:[
