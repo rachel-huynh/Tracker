@@ -3519,6 +3519,17 @@ function renderOffice(d){
       {type:'line',label:'% of group GOP (right)',yAxisID:'y1',tension:.3,borderColor:'#1e7e4f',
         data:keys.map(k=>{const cc=fsAll[k].centralGop?.act,hh=fsAll[k].hotelGop?.act; return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;})}]},
     options:{scales:{y:{ticks:{callback:v=>money(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
+  /* Central Plaza revenue vs implied cost vs GOP across stored FS months */
+  if(document.getElementById('chCpCost')){
+    const ms2=keys.filter(k=>(fsAll[k].centralLines||[]).length);
+    const revOf=k=>{ const l=(fsAll[k].centralLines||[]).find(l2=>/revenue|income|rental|rent/i.test(l2.label)); return l?l.act:null; };
+    mkChart('chCpCost',{type:'bar',data:{labels:ms2.map(fmtMonthKey),datasets:[
+        {type:'bar',label:'Revenue',data:ms2.map(k=>cvM(revOf(k),k)),backgroundColor:'#2e5f9e'},
+        {type:'bar',label:'Implied cost (rev − GOP)',data:ms2.map(k=>{const r=revOf(k),g2=fsAll[k].centralGop?.act; return r!=null&&g2!=null?cvM(r-g2,k):null;}),backgroundColor:'rgba(192,57,43,.6)'},
+        {type:'line',label:'GOP margin % (right)',yAxisID:'y1',tension:.3,borderColor:'#1e7e4f',
+          data:ms2.map(k=>{const r=revOf(k),g2=fsAll[k].centralGop?.act; return r&&g2!=null?g2/r*100:null;})}]},
+      options:{scales:{y:{ticks:{callback:v=>money(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
+  }
 }
 
 /* ---------------- DATA QUALITY ---------------- */
