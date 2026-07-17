@@ -50,9 +50,9 @@ button.on{background:var(--navy);color:#fff;font-weight:700;border-color:var(--n
 .seg{display:flex;border:1px solid #cfd6e2;border-radius:5px;overflow:hidden}
 .seg button{border:none;border-radius:0}
 /* ---------- dropzone ---------- */
-#drop{margin:10px 16px 0;border:2px dashed #c3cbda;border-radius:8px;padding:12px;text-align:center;color:var(--grey);background:#fff;transition:.2s}
-#drop.hot{border-color:var(--gold);background:#fdf8ea;color:var(--gold)}
-#drop b{color:var(--navy)}
+#drop,.dropzone{margin:10px 16px 0;border:2px dashed #c3cbda;border-radius:8px;padding:12px;text-align:center;color:var(--grey);background:#fff;transition:.2s;cursor:pointer}
+#drop.hot,.dropzone.hot{border-color:var(--gold);background:#fdf8ea;color:var(--gold)}
+#drop b,.dropzone b{color:var(--navy)}
 main{padding:12px 16px 60px}
 section.tab{display:none}section.tab.on{display:block}
 section.tab.printshow{display:block}
@@ -198,7 +198,17 @@ tr.bad td{background:#fdeeec}
   <section class="tab" id="tab-heat"></section>
   <section class="tab" id="tab-reva"></section>
   <section class="tab" id="tab-eng"></section>
-  <section class="tab" id="tab-dq"></section>
+  <section class="tab" id="tab-dq">
+    <div id="dqDyn"></div>
+    <!-- second drop zone: same ingest pipeline as Settings & Data (one store feeds every tab) -->
+    <div class="panel" style="padding:10px">
+      <h3 data-i18n="dropPanel">Load monthly files</h3>
+      <div class="dropzone" id="dropDQ">
+        <b data-i18n="dropTitle">Drag &amp; drop workbooks here</b> — P&amp;L VND/USD · Monthly/Weekly/Daily STAR · HotStats · Consolidated FS
+        <div class="small" style="margin-top:4px"><a href="#" style="color:var(--gold)" data-i18n="orClick">…or click to choose files</a></div>
+      </div>
+    </div>
+  </section>
   <section class="tab" id="tab-settings">
     <div id="settingsDyn"></div>
     <!-- drop zone lives here (moved from the header area); listeners bind once to #drop -->
@@ -580,6 +590,7 @@ let state = {
   month:null, period:'MTD', cur:'VND', lang:'en', heatMetric:'revpar', benchMetric:'gop',
   snapPer:'cm', dailyBench:'comp',   // Market — STR: snapshot period + daily-table benchmark
   trendGran:'monthly', trendCmp:true, // Patterns tab: trend-explorer granularity + compare-to-previous-year
+  tsDay:'all', mktGran:'daily',       // shared day-type filter (all/wd/we) + Market chart granularity
   store:{ months:{}, pace:{} },   // persisted
   warnings:[],                    // parse warnings of the LAST ingest batch (also persisted per month)
   charts:{},
@@ -2473,22 +2484,51 @@ function renderMarket(d){
         ${lyDl?'% chg rows compare the same calendar day of '+fmtMonthKey(lyKey)+'.':'Drop the '+fmtMonthKey(lyKey)+' Monthly STAR to unlock the YoY % change rows.'}</div></div>`;
   }
 
-  /* ---------- Occupancy bandwidth data: daily occupancy across the last 3 stored months,
-     property line vs the comp-set ↔ industry envelope (member-level min/max is not in the STAR export) ---------- */
+  /* ---------- Market time-series window: shared focus period + Daily/Monthly/Quarterly
+     granularity + weekday/weekend/all-day filter. Drives BOTH the occupancy-bandwidth
+     and the RevPAR comparison chart. Band = comp-set ↔ industry envelope (member-level
+     min/max is not in the STAR export). ---------- */
+  const mg=state.mktGran||'daily', dayF2=state.tsDay||'all';
   const bwAll=Object.keys(state.store.months).filter(k=>state.store.months[k].star?.daily?.occ).sort();
-  const bwMonths=(state.tsFrom||state.tsTo)? bwAll.filter(tsInRange) : bwAll.filter(k=>k<=st.monthKey).slice(-3);
-  const bw={labels:[],my:[],comp:[],ind:[],we:[]};
-  for(const mk2 of bwMonths){
-    const s2=state.store.months[mk2].star.daily.occ; const [y2,m2]=mk2.split('-').map(Number);
-    const n2=new Date(y2,m2,0).getDate();
-    for(let d2=1;d2<=n2;d2++){
-      if(s2.my?.[d2-1]==null&&s2.comp?.[d2-1]==null) continue;
-      bw.labels.push(d2+' '+MONTHS[m2-1].slice(0,3));
-      bw.my.push(s2.my?.[d2-1]??null); bw.comp.push(s2.comp?.[d2-1]??null); bw.ind.push(s2.ind?.[d2-1]??null);
-      const w=dowOf(mk2,d2); bw.we.push(w===4||w===5);
+  const wMonths=(state.tsFrom||state.tsTo)? bwAll.filter(tsInRange) : bwAll.filter(k=>k<=st.monthKey).slice(-3);
+  const mkSeries=met2=>{ // means of the daily STAR values at the chosen granularity
+    const out2={labels:[],my:[],comp:[],ind:[],we:[]};
+    const dayOk=(mk2,d2)=>{ const w=dowOf(mk2,d2), isW=(w===4||w===5);
+      return !(dayF2==='wd'&&isW)&&!(dayF2==='we'&&!isW); };
+    if(mg==='daily'){
+      for(const mk2 of wMonths){ const s2=state.store.months[mk2].star.daily?.[met2]; if(!s2) continue;
+        const [y2,m2]=mk2.split('-').map(Number); const n2=new Date(y2,m2,0).getDate();
+        for(let d2=1;d2<=n2;d2++){
+          if(!dayOk(mk2,d2)) continue;
+          if(s2.my?.[d2-1]==null&&s2.comp?.[d2-1]==null) continue;
+          out2.labels.push(d2+' '+MONTHS[m2-1].slice(0,3));
+          out2.my.push(s2.my?.[d2-1]??null); out2.comp.push(s2.comp?.[d2-1]??null); out2.ind.push(s2.ind?.[d2-1]??null);
+          const w=dowOf(mk2,d2); out2.we.push(w===4||w===5);
+        } }
+    } else {
+      const groups={};
+      for(const mk2 of wMonths){ const gk=mg==='monthly'?mk2:(mk2.split('-')[0]+'-Q'+Math.ceil(+mk2.split('-')[1]/3));
+        (groups[gk]=groups[gk]||[]).push(mk2); }
+      for(const gk of Object.keys(groups).sort()){
+        const acc={my:[],comp:[],ind:[]};
+        for(const mk2 of groups[gk]){ const s2=state.store.months[mk2].star.daily?.[met2]; if(!s2) continue;
+          const [y2,m2]=mk2.split('-').map(Number); const n2=new Date(y2,m2,0).getDate();
+          for(let d2=1;d2<=n2;d2++){ if(!dayOk(mk2,d2)) continue;
+            for(const e of ['my','comp','ind']){ const v=s2[e]?.[d2-1]; if(v!=null) acc[e].push(v); } } }
+        if(!acc.my.length&&!acc.comp.length) continue;
+        out2.labels.push(mg==='monthly'?fmtMonthKey(gk):gk.replace('-',' ')); out2.we.push(false);
+        for(const e of ['my','comp','ind']) out2[e].push(acc[e].length?avgA(acc[e]):null);
+      }
     }
-  }
-  const hasBw=bw.labels.length>0, hasBwInd=bw.ind.some(v=>v!=null);
+    return out2;
+  };
+  const bw=mkSeries('occ'), rpS=mkSeries('revpar');
+  const hasBw=bw.labels.length>0, hasBwInd=bw.ind.some(v=>v!=null), hasRp=rpS.labels.length>0;
+  const winLabel=(state.tsFrom||state.tsTo)?'focus period ('+wMonths.length+' month(s))':'last '+wMonths.length+' stored month(s)';
+  const mktCtl=`<div class="panel noprint" style="padding:8px 12px"><b>Time-series view</b> &nbsp; ${tsRangeSel()} &nbsp;
+      ${[['daily','Daily'],['monthly','Monthly'],['quarterly','Quarterly']].map(([k,l])=>`<button class="heatbtn ${mg===k?'on':''}" onclick="__setMktGran('${k}')">${l}</button>`).join(' ')} &nbsp;|&nbsp;
+      ${tsDayBtns()}
+      <span class="small" style="margin-left:8px">applies to the two charts below; the focus period is shared with the Patterns & Forecast tabs</span></div>`;
 
   el.innerHTML=`
     <div class="cols c2">
@@ -2517,45 +2557,47 @@ function renderMarket(d){
         <table><thead><tr><th>Day</th><th>My Occ</th><th>Comp Occ</th><th>MPI</th><th>My ADR</th><th>Comp ADR</th></tr></thead><tbody>${dow||'<tr><td colspan=6>'+na('Day of Week sheet missing')+'</td></tr>'}</tbody></table></div>
     </div>
     ${dailyPanel}
-    ${hasBw?`<div class="panel"><h3>Occupancy bandwidth — daily, ${(state.tsFrom||state.tsTo)?'focus period ('+bwMonths.length+' month(s) — set in Patterns tab)':'last '+bwMonths.length+' stored month(s)'}</h3>
+    ${(hasBw||hasRp)?mktCtl:''}
+    ${hasBw?`<div class="panel"><h3>Occupancy bandwidth — ${mg}, ${winLabel}${dayF2!=='all'?' · '+(dayF2==='wd'?'weekdays only':'weekends only'):''}</h3>
       <div class="chartbox"><canvas id="chBand"></canvas></div>
-      <div class="small" style="margin-top:6px">Green = Sofitel SSP daily occupancy; shaded band = comp-set ↔ industry envelope${hasBwInd?'':' (industry rows missing — comp set shown as dashed line only)'};
-        grey columns = STR weekends (Fri–Sat). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
-    ${st.daily?`<div class="panel"><h3>Daily RevPAR — ${fmtMonthKey(st.monthKey)} · My Property vs Comp Set vs Industry ${st.provisional?'<span class="tag a">provisional</span>':''}</h3>
+      <div class="small" style="margin-top:6px">Green = Sofitel SSP occupancy; shaded band = comp-set ↔ industry envelope${hasBwInd?'':' (industry rows missing — comp set shown as dashed line only)'};
+        grey columns = STR weekends (Fri–Sat, daily view). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
+    ${hasRp?`<div class="panel"><h3>RevPAR — ${mg}, ${winLabel}${dayF2!=='all'?' · '+(dayF2==='wd'?'weekdays only':'weekends only'):''} · My Property vs Comp Set vs Industry</h3>
       <div class="chartbox"><canvas id="chDailyCmp"></canvas></div>
-      <div class="small" style="margin-top:6px">Direct day-by-day comparison from the STAR daily grids — spot exactly which days the comp set / submarket filled while we did not.</div></div>`:''}
+      <div class="small" style="margin-top:6px">From the STAR daily grids — spot exactly which days/periods the comp set or submarket monetised while we did not. Values are STR-denominated; aggregated points are simple day averages.</div></div>`:''}
     <div class="panel"><h3>Short-term pace (Weekly / Daily STAR)</h3>
       <table><thead><tr><th>Window</th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead><tbody>${paceHtml||'<tr><td colspan=6>'+na('Weekly/Daily STAR not loaded')+'</td></tr>'}</tbody></table></div>`;
 
-  if(st.daily){
-    const dl2=st.daily; const days=[...Array(31)].map((_,i)=>i+1).filter(d2=>dl2.revpar?.my?.[d2-1]!=null||dl2.revpar?.comp?.[d2-1]!=null);
-    mkChart('chDailyCmp',{type:'line',data:{labels:days,datasets:[
-        {label:'My Property',data:days.map(d2=>dl2.revpar?.my?.[d2-1]??null),borderColor:'#C9A227',borderWidth:2.5,tension:.3,pointRadius:2},
-        {label:'Comp set',data:days.map(d2=>dl2.revpar?.comp?.[d2-1]??null),borderColor:'#0B1F3A',borderWidth:2,tension:.3,pointRadius:2},
-        {label:'Industry',data:days.map(d2=>dl2.revpar?.ind?.[d2-1]??null),borderColor:'#9CA3AF',borderDash:[5,4],tension:.3,pointRadius:0}]},
-      options:{scales:{y:{ticks:{callback:v=>starMoney(v,1)}},x:{title:{display:true,text:'Day of month'}}},maintainAspectRatio:false}});
+  /* weekend-column shading plugin factory (only meaningful on the daily view) */
+  const weBandOf=flags=>({id:'weBand',beforeDatasetsDraw(ch){ const {ctx,chartArea,scales:{x}}=ch; if(!chartArea) return;
+    ctx.save(); ctx.fillStyle='rgba(107,114,128,.08)';
+    flags.forEach((f,i)=>{ if(!f) return;
+      const l=Math.max(x.getPixelForValue(i-0.5),chartArea.left), r=Math.min(x.getPixelForValue(i+0.5),chartArea.right);
+      if(r>l) ctx.fillRect(l,chartArea.top,r-l,chartArea.bottom-chartArea.top); });
+    ctx.restore(); }});
+  if(hasRp){
+    mkChart('chDailyCmp',{type:'line',data:{labels:rpS.labels,datasets:[
+        {label:'My Property',data:rpS.my,borderColor:'#C9A227',borderWidth:2.5,tension:.3,pointRadius:rpS.labels.length>60?0:2},
+        {label:'Comp set',data:rpS.comp,borderColor:'#0B1F3A',borderWidth:2,tension:.3,pointRadius:rpS.labels.length>60?0:2},
+        {label:'Industry',data:rpS.ind,borderColor:'#9CA3AF',borderDash:[5,4],tension:.3,pointRadius:0}]},
+      options:{plugins:{tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${starMoney(c.raw,1)}`}}},
+        scales:{y:{ticks:{callback:v=>starMoney(v,1)}},x:{ticks:{maxTicksLimit:18,maxRotation:0}}},maintainAspectRatio:false},
+      plugins:mg==='daily'?[weBandOf(rpS.we)]:[]});
   }
-
-  /* occupancy bandwidth chart — weekend columns shaded, band = comp↔industry envelope */
+  /* occupancy bandwidth chart — band = comp↔industry envelope */
   if(hasBw){
     const lo=bw.labels.map((_,i)=>{const a=bw.comp[i],b=bw.ind[i];return a==null?b:(b==null?a:Math.min(a,b));});
     const hi=bw.labels.map((_,i)=>{const a=bw.comp[i],b=bw.ind[i];return a==null?b:(b==null?a:Math.max(a,b));});
-    const weBand={id:'weBand',beforeDatasetsDraw(ch){ const {ctx,chartArea,scales:{x}}=ch; if(!chartArea) return;
-      ctx.save(); ctx.fillStyle='rgba(107,114,128,.08)';
-      bw.we.forEach((f,i)=>{ if(!f) return;
-        const l=Math.max(x.getPixelForValue(i-0.5),chartArea.left), r=Math.min(x.getPixelForValue(i+0.5),chartArea.right);
-        if(r>l) ctx.fillRect(l,chartArea.top,r-l,chartArea.bottom-chartArea.top); });
-      ctx.restore(); }};
     mkChart('chBand',{type:'line',data:{labels:bw.labels,datasets:[
         ...(hasBwInd?[
           {label:'_lo',data:lo,borderWidth:0,pointRadius:0,fill:false},
           {label:'Comp ↔ Industry band',data:hi,borderWidth:0,pointRadius:0,fill:'-1',backgroundColor:'rgba(232,163,61,.28)'}]:[]),
         {label:'Comp set',data:bw.comp,borderColor:'#0B1F3A',borderWidth:1.5,borderDash:[4,3],pointRadius:0,tension:.3},
-        {label:'Sofitel SSP',data:bw.my,borderColor:'#1E7E4F',borderWidth:2.5,pointRadius:2,tension:.3}]},
+        {label:'Sofitel SSP',data:bw.my,borderColor:'#1E7E4F',borderWidth:2.5,pointRadius:bw.labels.length>60?0:2,tension:.3}]},
       options:{plugins:{legend:{labels:{filter:it=>it.text!=='_lo'}},
           tooltip:{callbacks:{label:c=>c.dataset.label==='_lo'?null:`${c.dataset.label}: ${n1(c.raw)}%`}}},
         scales:{y:{ticks:{callback:v=>v+'%'}},x:{ticks:{maxTicksLimit:18,maxRotation:0}}},maintainAspectRatio:false},
-      plugins:[weBand]});
+      plugins:mg==='daily'?[weBandOf(bw.we)]:[]});
   }
 
   /* quadrant: x=MPI, y=ARI, points = last 12 months */
@@ -2637,7 +2679,8 @@ function renderBench(d){
   const gop=hs.rows.gop?.[per]?.ty;
   const leak = (gop&&d.ok&&gop.comp>gop.you)? `Profit leakage if we matched comp-set GOP%: <b style="color:var(--red)">${money((gop.comp-gop.you)/100*d.totalRev.act)}</b> (${n1(gop.comp-gop.you)} pts on ${money(d.totalRev.act)})` : (gop? 'GOP conversion at or above comp set — no leakage on this measure.':'');
   /* ---- efficiency trend across all stored HotStats months ---- */
-  const monthsH=Object.keys(state.store.months).filter(k=>state.store.months[k].hotstats).sort();
+  const monthsHAll=Object.keys(state.store.months).filter(k=>state.store.months[k].hotstats).sort();
+  const monthsH=(state.tsFrom||state.tsTo)?monthsHAll.filter(tsInRange):monthsHAll;   // honours the shared focus period
   const mk4=state.benchMetric;
   const selLine=BENCH_LINES.find(l=>l[1]===mk4)||BENCH_LINES[0];
   const secs=[...new Set(BENCH_LINES.map(l=>l[0]))];
@@ -2759,6 +2802,10 @@ window.__setTsRange=(f,t)=>{ if(f!==null) state.tsFrom=f; if(t!==null) state.tsT
   renderAll(); };
 function tsInRange(mk){ const from=state.tsFrom||'', to=state.tsTo||'';
   return (!from||mk>=from)&&(!to||mk<=to); }
+window.__setTsDay=v=>{ state.tsDay=v; renderAll(); };
+window.__setMktGran=v=>{ state.mktGran=v; renderMarket(derive()); };
+function tsDayBtns(){ return [['all','All days'],['wd','Weekday'],['we','Weekend']]
+  .map(([k,l])=>`<button class="heatbtn ${(state.tsDay||'all')===k?'on':''}" onclick="__setTsDay('${k}')">${l}</button>`).join(' '); }
 function tsRangeSel(){ // From/To month selects, options = every month in the merged history
   const set=new Set(Object.keys(state.store.months));
   for(const k of Object.keys(state.store.months)){ const c2=state.store.months[k].star?.comp;
@@ -2787,6 +2834,8 @@ function trendSeries(met,gran){
       const [y,m]=mk.split('-').map(Number); const nD=new Date(y,m,0).getDate();
       for(let d2=1;d2<=nD;d2++){
         if(dl.occ.my?.[d2-1]==null&&dl.adr?.my?.[d2-1]==null) continue;
+        const wd2=dowOf(mk,d2), isWE2=(wd2===4||wd2===5);   // day-type filter (daily/weekly only)
+        if(state.tsDay==='wd'&&isWE2) continue; if(state.tsDay==='we'&&!isWE2) continue;
         let kd=new Date(y,m-1,d2);
         if(gran==='weekly'){ const w=(kd.getDay()+6)%7; kd=new Date(y,m-1,d2-w); } // Monday of that week
         const key=kd.getFullYear()+'-'+String(kd.getMonth()+1).padStart(2,'0')+'-'+String(kd.getDate()).padStart(2,'0');
@@ -2866,8 +2915,9 @@ function trendSeries(met,gran){
 }
 function renderHeat(d){
   const el=$('#tab-heat');
-  const months=Object.keys(state.store.months).filter(k=>state.store.months[k].star?.daily).sort();
-  if(!months.length){ el.innerHTML=noData(); return; }
+  const monthsAllH=Object.keys(state.store.months).filter(k=>state.store.months[k].star?.daily).sort();
+  if(!monthsAllH.length){ el.innerHTML=noData(); return; }
+  const months=(state.tsFrom||state.tsTo)?monthsAllH.filter(tsInRange):monthsAllH;   // grids honour the focus period
   const met=state.heatMetric;                        // occ | adr | revpar
   const idxName={occ:'MPI',adr:'ARI',revpar:'RGI'}[met];
   /* index grids hold unitless index numbers (≈70–130) — never format them as money */
@@ -2931,14 +2981,15 @@ function renderHeat(d){
         <span class="noprint" style="float:right">
           ${tsRangeSel()} &nbsp;
           ${[['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['quarterly','Quarterly'],['yearly','Yearly']].map(([k,l])=>`<button class="heatbtn ${gran===k?'on':''}" onclick="__setTrendGran('${k}')">${l}</button>`).join(' ')}
+          &nbsp;|&nbsp; ${tsDayBtns()}
           <button class="heatbtn ${state.trendCmp?'on':''}" onclick="__setTrendCmp()" title="Overlay the same period one year earlier">vs previous year</button>
         </span></h3>
       ${ts.labels.length?'<div class="chartbox"><canvas id="chTsExp"></canvas></div>'
         :'<div class="small" style="padding:20px">No '+gran+' series could be built from the stored months — '+(gran==='daily'||gran==='weekly'?'the stored STAR files carry no "Daily by Month" grids':'no Comp-sheet history parsed')+'. Re-drop the Monthly STAR files in Settings &amp; Data.</div>'}
-      <div class="small" style="margin-top:6px">${gran==='daily'||gran==='weekly'?'Aggregated from the STAR daily grids ('+months.length+' stored months); weekly = Monday-start weeks':'From the merged 18-month STAR histories ('+ts.labels.length+' '+(gran==='yearly'?'years':'months')+')'}${met==='adr'?'; ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc)':''}. “vs previous year” overlays the same ${gran==='yearly'?'year −1':gran==='monthly'?'month':gran==='weekly'?'week':'calendar day'} one year back (dashed grey) — gaps mean that period is not stored yet.</div></div>
-    <div class="heatwrap">${ents.map(([e,l])=>grid(e,l)).join('')}</div>
-    <div class="panel"><h3>Pattern insights — ${idxName}</h3>
-      ${insights.map(a=>`<div class="alert ${a[0]}"><div class="h">${a[1]}</div><div class="d">${a[2]}</div></div>`).join('')||'<div class="small">—</div>'}</div>`;
+      <div class="small" style="margin-top:6px">${gran==='daily'||gran==='weekly'?'Aggregated from the STAR daily grids ('+months.length+' stored months); weekly = Monday-start weeks':'From the merged 18-month STAR histories ('+ts.labels.length+' '+(gran==='yearly'?'years':'months')+')'}${met==='adr'?'; ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc)':''}. “vs previous year” overlays the same ${gran==='yearly'?'year −1':gran==='monthly'?'month':gran==='weekly'?'week':'calendar day'} one year back (dashed grey) — gaps mean that period is not stored yet.${(state.tsDay||'all')!=='all'?' <b>Day filter ('+(state.tsDay==='wd'?'weekdays':'weekends')+') applies to the Daily/Weekly views only</b> — monthly and coarser use the official STAR monthly figures.':''}</div></div>
+    <div class="panel"><h3>Pattern insights — ${idxName}${(state.tsFrom||state.tsTo)?' <span class="tag a">focus period</span>':''}</h3>
+      ${insights.map(a=>`<div class="alert ${a[0]}"><div class="h">${a[1]}</div><div class="d">${a[2]}</div></div>`).join('')||'<div class="small">—</div>'}</div>
+    <div class="heatwrap">${ents.map(([e,l])=>grid(e,l)).join('')}</div>`;
   /* trend chart — money metrics convert at each point's own monthly FX rate */
   if(ts.labels.length){
     const isMoney=met!=='occ';
@@ -3029,7 +3080,7 @@ function renderForecast(d){
   if(ota){
     const sspH=ota.hotels.find(h=>/sofitel/i.test(h));
     const comps=ota.hotels.filter(h=>h!==sspH);
-    const oM=ota.months.slice(-18);
+    const oM=((state.tsFrom||state.tsTo)?ota.months.filter(tsInRange):ota.months).slice(-18);
     const basket=oM.map(m=>{ const vs=comps.map(h=>ota.series[h][m]?.avg).filter(v=>v!=null); return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null; });
     const strM=ch.adr?.months||[], strComp=ch.adr?.comp||[];
     const strOnOta=oM.map(m=>{ const i=strM.indexOf(m); return i>=0?strComp[i]:null; });
@@ -3189,13 +3240,15 @@ function renderForecast(d){
       <div class="small" style="margin-top:6px">Method: same-month-LY × (1 + median YoY of trailing 6 months); band = ±1σ of that growth. Rooms revenue = RevPAR × 284 × days; total revenue via rooms share ${pct(share)}; GOP at trailing ${gopPcts.length}-month margin ${pct(gopPct)}. RGI projected by linear trend of last 12 months. This is a control-tool projection, not a commitment.</div></div>
     ${modelHtml}
     ${otaHtml}`;
-  /* forecast chart */
-  const labels=[...M,...H].map(fmtMonthKey);
-  const act=[...series.revpar.map((v,i)=>v==null?null:cvM(v,M[i])),...H.map(()=>null)];
-  const fcl=[...M.map(()=>null),...fc.map(f=>f.revpar==null?null:cvM(f.revpar,f.ym))];
+  /* forecast chart — history window can be trimmed with the shared focus period (From) */
+  let labels=[...M,...H].map(fmtMonthKey);
+  let act=[...series.revpar.map((v,i)=>v==null?null:cvM(v,M[i])),...H.map(()=>null)];
+  let fcl=[...M.map(()=>null),...fc.map(f=>f.revpar==null?null:cvM(f.revpar,f.ym))];
   fcl[M.length-1]=act[M.length-1];
-  const lo=[...M.map(()=>null),...fc.map(f=>f.revparLo==null?null:cvM(f.revparLo,f.ym))];
-  const hi=[...M.map(()=>null),...fc.map(f=>f.revparHi==null?null:cvM(f.revparHi,f.ym))];
+  let lo=[...M.map(()=>null),...fc.map(f=>f.revparLo==null?null:cvM(f.revparLo,f.ym))];
+  let hi=[...M.map(()=>null),...fc.map(f=>f.revparHi==null?null:cvM(f.revparHi,f.ym))];
+  const cut0=state.tsFrom?M.findIndex(m2=>m2>=state.tsFrom):0;
+  if(cut0>0){ labels=labels.slice(cut0); act=act.slice(cut0); fcl=fcl.slice(cut0); lo=lo.slice(cut0); hi=hi.slice(cut0); }
   mkChart('chFc',{type:'line',data:{labels,datasets:[
       {label:'RevPAR actual',data:act,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
       {label:'Forecast',data:fcl,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
@@ -3204,7 +3257,8 @@ function renderForecast(d){
     options:{plugins:{legend:{labels:{filter:i=>!/Low|High/.test(i.text)}}},scales:{y:{ticks:{callback:v=>money(v,1)}}},maintainAspectRatio:false}});
   /* model lab charts */
   if(occFc){
-    const histN=Math.min(18,um.length);
+    let histN=Math.min(18,um.length);
+    if(state.tsFrom){ const i0=um.findIndex(m2=>m2>=state.tsFrom); if(i0>=0) histN=Math.max(3,um.length-i0); }
     const lb=[...um.slice(-histN),...occFc.map(f2=>f2.ym)].map(fmtMonthKey);
     const actA=[...uocc.slice(-histN),...occFc.map(()=>null)];
     const fcA=[...um.slice(-histN).map(()=>null),...occFc.map(f2=>f2.v)];
@@ -3536,7 +3590,7 @@ function renderOffice(d){
 
 /* ---------------- DATA QUALITY ---------------- */
 function renderDQ(d){
-  const el=$('#tab-dq'); const m=curMonth();
+  const el=$('#dqDyn'); if(!el) return; const m=curMonth();
   const checks=[];
   const warns=m.warns||[];
   if(d.ok){
@@ -3567,13 +3621,33 @@ function renderDQ(d){
     /* LY missing */
     checks.push([d.totalRev.ly!=null,'LY comparatives present','']);
   }
-  const files=[['pnlVND','P&L VND'],['pnlUSD','P&L USD'],['star','Monthly STAR'],['hotstats','HotStats'],['fs','Consolidated FS']];
-  const loaded=files.map(([k,l])=>`<tr><td>${l}</td><td>${m[k]?'<span class="tag g">loaded</span>':'<span class="tag r">missing</span>'}</td></tr>`).join('');
+  /* ---- document × month coverage matrix — see at a glance what is missing ---- */
+  const mkeysAll=Object.keys(state.store.months).sort().reverse();
+  const DOCS=[['pnlVND','P&L VND'],['pnlUSD','P&L USD'],['star','Monthly STAR'],['hotstats','HotStats'],['fs','Consolidated FS'],['eng','Engineering PDF']];
+  let missCount=0, provCount=0;
+  const cellOf=(slot,k)=>{ const v=slot[k];
+    if(!v){ missCount++; return '<td style="background:#fbe4e1;text-align:center;color:var(--red)" data-v="0">✗</td>'; }
+    if(k==='star'&&v.provisional){ provCount++; return '<td style="background:#faf0dc;text-align:center;color:var(--amber);font-weight:700" data-v="1" title="Provisional (weekly STR extract) — official Monthly STAR pending">P</td>'; }
+    return '<td style="background:#e3f3ea;text-align:center;color:var(--green)" data-v="2">✓</td>'; };
+  const matrixRows=mkeysAll.map(mk=>{ const slot=state.store.months[mk];
+    return `<tr class="${mk===state.month?'tot':''}"><td>${fmtMonthKey(mk)}</td>${DOCS.map(([k])=>cellOf(slot,k)).join('')}</tr>`; }).join('');
+  /* store-wide (non-monthly) documents */
+  const globalDocs=[
+    ['Rolling forecast (SUM FY Forecast)',!!state.store.rf, state.store.rf?.title||''],
+    ['Cashflow forecast',!!state.store.cf,''],
+    ['Weekly STAR pace',!!state.store.pace.weekly, state.store.pace.weekly?.label||''],
+    ['Daily STAR pace',!!state.store.pace.daily, state.store.pace.daily?.label||''],
+    ...Object.entries(REV_LABELS).map(([k,l])=>[l,!!state.store.rev?.[k],'']),
+  ].map(([l,ok,note])=>`<tr><td>${l}</td><td>${ok?'<span class="tag g">loaded</span>':'<span class="tag r">missing</span>'}</td><td class="small">${note}</td></tr>`).join('');
   el.innerHTML=`
+    <div class="panel"><h3>Document coverage — every stored month</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Month</th>${DOCS.map(([,l])=>`<th style="text-align:center">${l}</th>`).join('')}</tr></thead>
+      <tbody>${matrixRows||'<tr><td colspan="7" class="small">No months stored yet.</td></tr>'}</tbody></table></div>
+      <div class="small" style="margin-top:6px">${missCount?`<b style="color:var(--red)">${missCount} document(s) missing</b>`:'<b style="color:var(--green)">Complete</b>'}${provCount?` · <b style="color:var(--amber)">${provCount} provisional STAR month(s)</b> (official Monthly STAR replaces them on drop)`:''} — drop the missing files in the zone below (or in Settings &amp; Data; both feed the same store, so every tab updates either way). The highlighted row is the selected month.</div></div>
     <div class="cols c2">
-      <div class="panel"><h3>Files loaded — ${fmtMonthKey(state.month)}</h3><table><tbody>${loaded}</tbody></table>
-        <div class="small" style="margin-top:6px">Weekly pace: ${state.store.pace.weekly?state.store.pace.weekly.label:'—'} · Daily pace: ${state.store.pace.daily?state.store.pace.daily.label:'—'}</div></div>
-      <div class="panel"><h3>Automated checks</h3>
+      <div class="panel"><h3>One-off / portfolio documents</h3>
+        <table><thead><tr><th>Document</th><th>Status</th><th></th></tr></thead><tbody>${globalDocs}</tbody></table></div>
+      <div class="panel"><h3>Automated checks — ${fmtMonthKey(state.month)}</h3>
         <table><thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody>
         ${checks.map(c=>`<tr><td>${c[1]}</td><td>${c[0]===null?'<span class="tag a">n/a</span>':c[0]?'<span class="tag g">PASS</span>':'<span class="tag r">FAIL</span>'}</td><td class="small">${c[2]}</td></tr>`).join('')||'<tr><td colspan=3>'+t('noData')+'</td></tr>'}
         </tbody></table></div>
@@ -3847,12 +3921,16 @@ $('#loginPw').addEventListener('keydown',e=>{ if(e.key==='Enter') cloudSignInGo(
 $('#loginCancel').addEventListener('click',__loginClose);
 $('#loginModal').addEventListener('click',e=>{ if(e.target.id==='loginModal') __loginClose(); });
 
-const drop=$('#drop');
-;['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('hot');}));
-;['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('hot');}));
-drop.addEventListener('drop',ev=>ingestFiles([...ev.dataTransfer.files]));
-$('#pickFiles').addEventListener('click',e=>{e.preventDefault();$('#fileIn').click();});
-drop.addEventListener('click',e=>{ if(e.target.id!=='pickFiles') $('#fileIn').click(); });
+/* both drop zones (Settings & Data + Data Quality) feed the SAME ingestFiles →
+   one store → every tab; the shared hidden #fileIn drives click-to-choose */
+function bindDrop(dz){
+  if(!dz) return;
+  ;['dragover','dragenter'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.add('hot');}));
+  ;['dragleave','drop'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.remove('hot');}));
+  dz.addEventListener('drop',ev=>ingestFiles([...ev.dataTransfer.files]));
+  dz.addEventListener('click',e=>{ e.preventDefault(); $('#fileIn').click(); });
+}
+bindDrop($('#drop')); bindDrop($('#dropDQ'));
 $('#fileIn').addEventListener('change',e=>{ ingestFiles([...e.target.files]); e.target.value=''; });
 
 $('#selMonth').addEventListener('change',e=>{ state.month=e.target.value; renderAll(); });
