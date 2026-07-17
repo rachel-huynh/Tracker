@@ -578,6 +578,7 @@ function fmtMonthKey(k){ if(!k) return '—'; const [y,m]=k.split('-'); return M
 let state = {
   month:null, period:'MTD', cur:'VND', lang:'en', heatMetric:'revpar', benchMetric:'gop',
   snapPer:'cm', dailyBench:'comp',   // Market — STR: snapshot period + daily-table benchmark
+  trendGran:'monthly', trendCmp:true, // Patterns tab: trend-explorer granularity + compare-to-previous-year
   store:{ months:{}, pace:{} },   // persisted
   warnings:[],                    // parse warnings of the LAST ingest batch (also persisted per month)
   charts:{},
@@ -2731,13 +2732,96 @@ function heatColor(v,min,max,diverge){
   const t=max>min?(v-min)/(max-min):0;
   return `background:rgba(232,163,61,${.06+.75*t})`;
 }
+window.__setTrendGran=g2=>{ state.trendGran=g2; renderHeat(derive()); };
+window.__setTrendCmp=()=>{ state.trendCmp=!state.trendCmp; renderHeat(derive()); };
+/* Build the trend series for the explorer chart.
+   Daily/weekly aggregate the STAR daily grids; monthly/yearly use the merged 18-month
+   Comp-sheet histories (longer range, official monthly numbers).
+   ADR aggregates are revenue-weighted: meanRevPAR ÷ meanOcc. prev = same period one year back. */
+function trendSeries(met,gran){
+  const out={labels:[],keys:[],my:[],comp:[],prev:[],mks:[]};
+  const wAvg=(o,rp,ad)=>{ // metric value from occ/revpar/adr arrays
+    if(met==='occ') return o.length?avgA(o):null;
+    if(met==='revpar') return rp.length?avgA(rp):null;
+    const mo=avgA(o),mr=avgA(rp);
+    return (mo&&mr!=null)?mr/(mo/100):(ad.length?avgA(ad):null);
+  };
+  if(gran==='daily'||gran==='weekly'){
+    const buckets={}; // key -> {recs my arrays..., mk}
+    for(const mk of Object.keys(state.store.months).sort()){
+      const dl=state.store.months[mk].star?.daily; if(!dl?.occ) continue;
+      const [y,m]=mk.split('-').map(Number); const nD=new Date(y,m,0).getDate();
+      for(let d2=1;d2<=nD;d2++){
+        if(dl.occ.my?.[d2-1]==null&&dl.adr?.my?.[d2-1]==null) continue;
+        let kd=new Date(y,m-1,d2);
+        if(gran==='weekly'){ const w=(kd.getDay()+6)%7; kd=new Date(y,m-1,d2-w); } // Monday of that week
+        const key=kd.getFullYear()+'-'+String(kd.getMonth()+1).padStart(2,'0')+'-'+String(kd.getDate()).padStart(2,'0');
+        const b=buckets[key]=buckets[key]||{oMy:[],rMy:[],aMy:[],oC:[],rC:[],aC:[],mk};
+        const push=(a,v)=>{ if(v!=null) a.push(v); };
+        push(b.oMy,dl.occ.my?.[d2-1]); push(b.rMy,dl.revpar?.my?.[d2-1]); push(b.aMy,dl.adr?.my?.[d2-1]);
+        push(b.oC,dl.occ.comp?.[d2-1]); push(b.rC,dl.revpar?.comp?.[d2-1]); push(b.aC,dl.adr?.comp?.[d2-1]);
+      }
+    }
+    const keys=Object.keys(buckets).sort();
+    const valOf={};
+    for(const k of keys) valOf[k]=wAvg(buckets[k].oMy,buckets[k].rMy,buckets[k].aMy);
+    for(const k of keys){
+      const b=buckets[k]; const [y,m,d2]=k.split('-').map(Number);
+      out.keys.push(k); out.mks.push(b.mk);
+      out.labels.push((gran==='weekly'?'wk ':'')+d2+' '+MONTHS[m-1].slice(0,3)+' '+String(y).slice(2));
+      out.my.push(valOf[k]); out.comp.push(wAvg(b.oC,b.rC,b.aC));
+      let pk;
+      if(gran==='weekly'){ const pd=new Date(y,m-1,d2); pd.setDate(pd.getDate()-364);
+        pk=pd.getFullYear()+'-'+String(pd.getMonth()+1).padStart(2,'0')+'-'+String(pd.getDate()).padStart(2,'0'); }
+      else pk=(y-1)+'-'+String(m).padStart(2,'0')+'-'+String(d2).padStart(2,'0');
+      out.prev.push(valOf[pk]??null);
+    }
+  } else {
+    /* monthly / yearly from the merged Comp-sheet history */
+    const U={};
+    for(const k of Object.keys(state.store.months)){ const c2=state.store.months[k].star?.comp; if(!c2?.occ) continue;
+      c2.occ.months.forEach((mk2,i2)=>{ if(!mk2) return; U[mk2]=U[mk2]||{};
+        const set=(f,v)=>{ if(v!=null) U[mk2][f]=v; };
+        set('oMy',c2.occ.my[i2]); set('oC',c2.occ.comp[i2]);
+        set('aMy',c2.adr?.my[i2]); set('aC',c2.adr?.comp[i2]);
+        set('rMy',c2.revpar?.my[i2]); set('rC',c2.revpar?.comp[i2]); });}
+    const mks=Object.keys(U).sort();
+    const pick=(u,who)=>{ if(!u) return null;
+      if(met==='occ') return u['o'+who]??null;
+      if(met==='revpar') return u['r'+who]??null;
+      return u['a'+who]??null; };
+    if(gran==='monthly'){
+      for(const mk of mks){
+        out.keys.push(mk); out.mks.push(mk); out.labels.push(fmtMonthKey(mk));
+        out.my.push(pick(U[mk],'My')); out.comp.push(pick(U[mk],'C'));
+        const [y,m]=mk.split('-').map(Number);
+        out.prev.push(pick(U[(y-1)+'-'+String(m).padStart(2,'0')],'My'));
+      }
+    } else { /* yearly */
+      const byY={};
+      for(const mk of mks){ const y=mk.split('-')[0]; (byY[y]=byY[y]||[]).push(mk); }
+      const yVal=(y,who)=>{ const ms=byY[y]; if(!ms) return null;
+        const o=ms.map(mk=>U[mk]['o'+who]).filter(v=>v!=null), r=ms.map(mk=>U[mk]['r'+who]).filter(v=>v!=null),
+              a=ms.map(mk=>U[mk]['a'+who]).filter(v=>v!=null);
+        return wAvg(o,r,a); };
+      for(const y of Object.keys(byY).sort()){
+        out.keys.push(y); out.mks.push(byY[y][byY[y].length-1]);
+        out.labels.push(y+(byY[y].length<12?' ('+byY[y].length+'m)':''));
+        out.my.push(yVal(y,'My')); out.comp.push(yVal(y,'C'));
+        out.prev.push(yVal(String(+y-1),'My'));
+      }
+    }
+  }
+  return out;
+}
 function renderHeat(d){
   const el=$('#tab-heat');
   const months=Object.keys(state.store.months).filter(k=>state.store.months[k].star?.daily).sort();
   if(!months.length){ el.innerHTML=noData(); return; }
   const met=state.heatMetric;                        // occ | adr | revpar
   const idxName={occ:'MPI',adr:'ARI',revpar:'RGI'}[met];
-  const fmtV=(v,mk)=>v==null?'':(met==='occ'?n1(v,0):moneyM(v,mk,1)); // each row converts at its own month's FX
+  /* index grids hold unitless index numbers (≈70–130) — never format them as money */
+  const fmtV=(v,mk,e)=>v==null?'':(e==='idx'?idx(v):met==='occ'?n1(v,0):moneyM(v,mk,1));
   /* build cells[entity][month] = [7 dow avgs, total] */
   const ents=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry / submarket'],['idx','Index '+idxName+' (SSP ÷ Comp)']];
   const grids={};
@@ -2763,7 +2847,7 @@ function renderHeat(d){
     const mn=Math.min(...vals),mx=Math.max(...vals);
     let h=`<div class="panel"><h3>${label}</h3><div style="overflow-x:auto"><table class="heat"><thead><tr><th>Month</th>${DOWS.map(x=>'<th>'+x+'</th>').join('')}<th>Total</th></tr></thead><tbody>`;
     for(const mk of rows){ const r=grids[e][mk];
-      h+=`<tr><td>${fmtMonthKey(mk)}</td>${r.slice(0,7).map(v=>`<td style="${heatColor(v,mn,mx,e==='idx')}" data-v="${v??''}">${fmtV(v,mk)}</td>`).join('')}<td data-v="${r[7]??''}"><b>${fmtV(r[7],mk)}</b></td></tr>`; }
+      h+=`<tr><td>${fmtMonthKey(mk)}</td>${r.slice(0,7).map(v=>`<td style="${heatColor(v,mn,mx,e==='idx')}" data-v="${v??''}">${fmtV(v,mk,e)}</td>`).join('')}<td data-v="${r[7]??''}"><b>${fmtV(r[7],mk,e)}</b></td></tr>`; }
     return h+'</tbody></table></div></div>';
   };
   /* DOW insights across all stored months */
@@ -2785,13 +2869,39 @@ function renderHeat(d){
     const gap=myD.map((v,i)=>v!=null&&indD[i]!=null?v-indD[i]:null).filter(v=>v!=null);
     if(gap.length) insights.push([avg(gap)>=0?'good':'warn','vs Industry (submarket)',`Occupancy runs ${n1(Math.abs(avg(gap)))} pts ${avg(gap)>=0?'above':'below'} the submarket on average.`]);
   }
+  /* trend explorer */
+  const gran=state.trendGran||'monthly';
+  const ts=trendSeries(met,gran);
+  const metLabel={occ:'Occupancy',adr:'ADR',revpar:'RevPAR'}[met];
   el.innerHTML=`
     <div class="panel noprint"><h3>Metric</h3>
       ${[['occ','Occupancy'],['adr','ADR'],['revpar','RevPAR']].map(([k,l])=>`<button class="heatbtn ${met===k?'on':''}" onclick="__setHeat('${k}')">${l}</button>`).join(' ')}
       <span class="small" style="margin-left:10px">Month × day-of-week averages from STAR daily data. Grids fill up as you drop each Monthly STAR file (${months.length} month(s) stored).</span></div>
+    <div class="panel"><h3>Trend — ${metLabel}, ${gran}
+        <span class="noprint" style="float:right">
+          ${[['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly']].map(([k,l])=>`<button class="heatbtn ${gran===k?'on':''}" onclick="__setTrendGran('${k}')">${l}</button>`).join(' ')}
+          <button class="heatbtn ${state.trendCmp?'on':''}" onclick="__setTrendCmp()" title="Overlay the same period one year earlier">vs previous year</button>
+        </span></h3>
+      <div class="chartbox"><canvas id="chTrend"></canvas></div>
+      <div class="small" style="margin-top:6px">${gran==='daily'||gran==='weekly'?'Aggregated from the STAR daily grids ('+months.length+' stored months); weekly = Monday-start weeks':'From the merged 18-month STAR histories ('+ts.labels.length+' '+(gran==='yearly'?'years':'months')+')'}${met==='adr'?'; ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc)':''}. “vs previous year” overlays the same ${gran==='yearly'?'year −1':gran==='monthly'?'month':gran==='weekly'?'week':'calendar day'} one year back (dashed grey) — gaps mean that period is not stored yet.</div></div>
     <div class="heatwrap">${ents.map(([e,l])=>grid(e,l)).join('')}</div>
     <div class="panel"><h3>Pattern insights — ${idxName}</h3>
       ${insights.map(a=>`<div class="alert ${a[0]}"><div class="h">${a[1]}</div><div class="d">${a[2]}</div></div>`).join('')||'<div class="small">—</div>'}</div>`;
+  /* trend chart — money metrics convert at each point's own monthly FX rate */
+  if(ts.labels.length){
+    const isMoney=met!=='occ';
+    const pmkOf=i=>{ const k=String(ts.keys[i]); const p=k.split('-');
+      return p.length>=2 ? (p[0]-1)+'-'+p[1] : (p[0]-1)+'-12'; };
+    const cvt=(v,i)=>v==null?null:(isMoney?cvM(v,ts.mks[i]):v);
+    const cvtP=(v,i)=>v==null?null:(isMoney?cvM(v,pmkOf(i)):v);
+    const bigN=ts.labels.length>40;
+    mkChart('chTrend',{type:gran==='yearly'?'bar':'line',data:{labels:ts.labels,datasets:[
+        {label:'Sofitel SSP',data:ts.my.map(cvt),borderColor:'#C9A227',backgroundColor:gran==='yearly'?'#C9A227':'rgba(201,162,39,.1)',borderWidth:2.5,tension:.3,pointRadius:bigN?0:2},
+        {label:'Comp set',data:ts.comp.map(cvt),borderColor:'#0B1F3A',backgroundColor:gran==='yearly'?'#0B1F3A':'transparent',borderWidth:1.5,borderDash:gran==='yearly'?[]:[4,3],tension:.3,pointRadius:0},
+        ...(state.trendCmp?[{type:'line',label:'SSP previous year',data:ts.prev.map(cvtP),borderColor:'#9CA3AF',borderDash:[6,4],borderWidth:1.5,tension:.3,pointRadius:0}]:[])]},
+      options:{plugins:{tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${met==='occ'?n1(c.raw,1)+'%':moneyFmt(c.raw,1)}`}}},
+        scales:{y:{ticks:{callback:v=>met==='occ'?v+'%':moneyFmt(v,1)}},x:{ticks:{maxTicksLimit:18,maxRotation:0}}},maintainAspectRatio:false}});
+  }
 }
 window.__setHeat=m=>{ state.heatMetric=m; renderHeat(derive()); };
 
