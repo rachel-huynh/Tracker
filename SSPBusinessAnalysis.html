@@ -1492,7 +1492,7 @@ async function parseEngPdf(buf){
     else cur+=' '+l;
   }
   if(cur.trim().length>10) items2.push(cur.trim());
-  for(const it of items2){ if(MAP.engCritical.test(it)&&it.length>25&&critical.length<16) critical.push(it.replace(/\s+/g,' ').slice(0,500)); }
+  for(const it of items2){ if(MAP.engCritical.test(it)&&it.length>25&&critical.length<20) critical.push(it.replace(/\s+/g,' ')); }  // full technician text (no truncation)
   return {monthKey,wo,locs,sys,critical,items:maxItem,pages:pdf.numPages};
 }
 
@@ -3667,32 +3667,9 @@ function renderOffice(d){
       return top.length?`<div class="panel"><h3>Top 5 things to look at — Central Plaza</h3>
         ${top.map((a,i)=>`<div class="alert ${a[0]}"><div class="h">${i+1}. ${a[1]}</div><div class="d">${a[2]}</div></div>`).join('')}</div>`:'';
     })();
-  el.innerHTML=`
-    <div class="kgrid">
-      ${kpiCard('Central Plaza NOI — '+P,money(noiV),varPct(c[f],c[fb]),P==='MTD'?varPct(c.act,c.ly):null)}
-      ${cp&&revV?statCard('NOI margin',pct(noiV/revV),expV!=null?'cost ratio '+pct(expV/revV):''):''}
-      ${cp&&revV?statCard('Leasing revenue',money(revV),'base rent + BOC + parking + other'):''}
-      ${cst.occ?kpiCard('Office occupancy',pct(cst.occ.act),varPct(cst.occ.act,cst.occ.bud),varPct(cst.occ.act,cst.occ.ly)):''}
-      ${cst.avgRent?kpiCard('Avg rent / m²',money(pick(cst.avgRent)),varPct(cst.avgRent.act,cst.avgRent.bud),varPct(cst.avgRent.act,cst.avgRent.ly)):''}
-      ${cst.leased?statCard('Leased area',n1(cst.leased.act,0)+' m²','of '+n1(cst.totalArea?.act,0)+' m² total · '+n1(cst.publicArea?.act,0)+' m² public'):''}
-      ${cst.vacant?statCard('Vacant area',n1(cst.vacant.act,0)+' m²',cst.inHouse?n1(cst.inHouse.act,0)+' m² JV in-house use':'',cst.vacant.act>0?'a':''):''}
-      ${kpiCard('Share of consolidated GOP',grp?pct(c[f]/grp):na(),null,null)}
-    </div>
-    ${!cp?`<div class="panel" style="padding:8px 12px"><div class="small">⚠ The <b>office scorecard & cost detail</b> below (occupancy, rent/m², leased area, expense lines) come from the <b>Central Plaza P&amp;L block of the PHCL consolidated FS</b>. This month's stored FS predates that parser — re-drop the <b>“PHCL (VIET NAM) financial statements for ${String(+state.month.slice(5)).padStart(2,'0')}.${state.month.slice(0,4)}”</b> workbook in Settings &amp; Data to populate it.</div></div>`:''}
-    <div class="cols c2">
-      <div class="panel"><h3>Central Plaza GOP by month <span class="small">(from stored Consolidated FS)</span></h3>
-        <div class="chartbox"><canvas id="chOffice"></canvas></div></div>
-      ${top5Html}
-    </div>
-    <div class="cols c2">
-      <div class="panel"><h3>Monthly detail</h3>
-        <table><thead><tr><th>Month</th><th>GOP</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>% of consolidated</th></tr></thead>
-        <tbody>${rows}</tbody></table>
-        <div class="small" style="margin-top:6px">Central GOP = NET OPERATING INCOME of the office building. Occupancy, rent/m² and cost detail are on the scorecard above and the cost analysis below. Leasing matters go in the notes.</div></div>
-      <div class="panel"><h3>Leasing & tenant notes — ${fmtMonthKey(state.month)} <span class="small">(edit in Exec Summary tab)</span></h3>
-        <div class="small" style="white-space:pre-wrap">${notes||'— no notes for this month yet (add them in Exec Summary → "2/ Central Plaza") —'}</div></div>
-    </div>
-    ${(()=>{ /* cost analysis — from the "CENTRAL PLAZA - PROFIT AND LOSS STATEMENT" block of the FS */
+  /* shared focus period trims the time-series charts (like Market/Patterns/Forecast) */
+  const fkeys=(state.tsFrom||state.tsTo)?keys.filter(tsInRange):keys;
+  const costHtml=(()=>{ /* cost analysis — from the "CENTRAL PLAZA - PROFIT AND LOSS STATEMENT" block of the FS */
       if(!cp) return '';   // the banner above already explains how to populate it
       const rev=cp.totalRev?.act, full=!!state.cpFull;
       const isSummary=l=>l.header||/^\d\.\s|^TOTAL|^NET OPERATING/i.test(l.label);
@@ -3718,17 +3695,41 @@ function renderOffice(d){
         <tbody>${lrows}</tbody></table></div>
         <div class="small" style="margin-top:6px">${full?'Full line-by-line P&L. ':'Summary — top-level revenue categories & totals. Switch to Full detail for every line. '}${cp.totalRev&&cp.totalExp&&cp.noi?`Operating cost ratio <b>${pct(cp.totalExp.act/rev)}</b> (budget ${pct((cp.totalExp.bud??0)/(cp.totalRev.bud||1))}, LY ${pct((cp.totalExp.ly??0)/(cp.totalRev.ly||1))}) — NOI margin <b>${pct(cp.noi.act/rev)}</b>. NOI ties to the CENTRAL GOP line of the consolidated cascade.`:''}</div>
         ${keys.filter(k=>fsAll[k].centralPL).length>1?'<div class="chartbox" style="margin-top:8px"><canvas id="chCpCost"></canvas></div>':''}</div>`;
-    })()}
+    })();
+  el.innerHTML=`
+    <div class="kgrid">
+      ${kpiCard('Central Plaza NOI — '+P,money(noiV),varPct(c[f],c[fb]),P==='MTD'?varPct(c.act,c.ly):null)}
+      ${cp&&revV?statCard('NOI margin',pct(noiV/revV),expV!=null?'cost ratio '+pct(expV/revV):''):''}
+      ${cp&&revV?statCard('Leasing revenue',money(revV),'base rent + BOC + parking + other'):''}
+      ${cst.occ?kpiCard('Office occupancy',pct(cst.occ.act),varPct(cst.occ.act,cst.occ.bud),varPct(cst.occ.act,cst.occ.ly)):''}
+      ${cst.avgRent?kpiCard('Avg rent / m²',money(pick(cst.avgRent)),varPct(cst.avgRent.act,cst.avgRent.bud),varPct(cst.avgRent.act,cst.avgRent.ly)):''}
+      ${cst.leased?statCard('Leased area',n1(cst.leased.act,0)+' m²','of '+n1(cst.totalArea?.act,0)+' m² total · '+n1(cst.publicArea?.act,0)+' m² public'):''}
+      ${cst.vacant?statCard('Vacant area',n1(cst.vacant.act,0)+' m²',cst.inHouse?n1(cst.inHouse.act,0)+' m² JV in-house use':'',cst.vacant.act>0?'a':''):''}
+      ${kpiCard('Share of consolidated GOP',grp?pct(c[f]/grp):na(),null,null)}
+    </div>
+    ${!cp?`<div class="panel" style="padding:8px 12px"><div class="small">⚠ The <b>office scorecard & cost detail</b> below (occupancy, rent/m², leased area, expense lines) come from the <b>Central Plaza P&amp;L block of the PHCL consolidated FS</b>. This month's stored FS predates that parser — re-drop the <b>“PHCL (VIET NAM) financial statements for ${String(+state.month.slice(5)).padStart(2,'0')}.${state.month.slice(0,4)}”</b> workbook in Settings &amp; Data to populate it.</div></div>`:''}
+    <div class="cols c2">
+      <div class="panel"><h3>Central Plaza GOP by month <span class="small">(from stored Consolidated FS)</span><span class="noprint" style="float:right;font-weight:400">${tsRangeSel()}</span></h3>
+        <div class="chartbox"><canvas id="chOffice"></canvas></div></div>
+      ${top5Html}
+    </div>
+    <div class="cols c2">
+      <div class="panel"><h3>Monthly detail</h3>
+        <table><thead><tr><th>Month</th><th>GOP</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>% of consolidated</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+        <div class="small" style="margin-top:6px">Central GOP = NET OPERATING INCOME of the office building. Occupancy, rent/m² and cost detail are on the scorecard above and in the cost analysis at right. (Leasing notes are edited on the Exec Summary tab.)</div></div>
+      ${costHtml}
+    </div>
 `;
-  mkChart('chOffice',{type:'bar',data:{labels:keys.map(fmtMonthKey),datasets:[
-      {type:'bar',label:'Central GOP',data:keys.map(k=>cvM(fsAll[k].centralGop?.act,k)),backgroundColor:'#2e5f9e'},
-      {type:'bar',label:'Budget',data:keys.map(k=>cv(fsAll[k].centralGop?.bud)),backgroundColor:'rgba(201,162,39,.55)'},
+  mkChart('chOffice',{type:'bar',data:{labels:fkeys.map(fmtMonthKey),datasets:[
+      {type:'bar',label:'Central GOP',data:fkeys.map(k=>cvM(fsAll[k].centralGop?.act,k)),backgroundColor:'#2e5f9e'},
+      {type:'bar',label:'Budget',data:fkeys.map(k=>cvM(fsAll[k].centralGop?.bud,k)),backgroundColor:'rgba(201,162,39,.55)'},
       {type:'line',label:'% of consolidated GOP (right)',yAxisID:'y1',tension:.3,borderColor:'#1e7e4f',
-        data:keys.map(k=>{const cc=fsAll[k].centralGop?.act,hh=fsAll[k].hotelGop?.act; return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;})}]},
+        data:fkeys.map(k=>{const cc=fsAll[k].centralGop?.act,hh=fsAll[k].hotelGop?.act; return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;})}]},
     options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   /* Central Plaza leasing revenue vs operating cost vs NOI margin across stored FS months */
   if(document.getElementById('chCpCost')){
-    const ms2=keys.filter(k=>fsAll[k].centralPL);
+    const ms2=fkeys.filter(k=>fsAll[k].centralPL);
     mkChart('chCpCost',{type:'bar',data:{labels:ms2.map(fmtMonthKey),datasets:[
         {type:'bar',label:'Leasing revenue',data:ms2.map(k=>cvM(fsAll[k].centralPL.totalRev?.act,k)),backgroundColor:'#2e5f9e'},
         {type:'bar',label:'Operating expenses',data:ms2.map(k=>cvM(fsAll[k].centralPL.totalExp?.act,k)),backgroundColor:'rgba(192,57,43,.6)'},
