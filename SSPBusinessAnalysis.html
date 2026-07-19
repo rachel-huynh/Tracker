@@ -1456,10 +1456,24 @@ async function parseEngPdf(buf){
   const lines=[];
   for(let p=1;p<=pdf.numPages;p++){
     const tc=await (await pdf.getPage(p)).getTextContent();
-    const rows={};
-    for(const it of tc.items){ const y=Math.round(it.transform[5]); (rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str}); }
-    Object.entries(rows).sort((a,b)=>b[0]-a[0]).forEach(([,items])=>{
-      const s=items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim(); if(s) lines.push(s); });
+    const raw=tc.items.filter(it=>it.str.trim()!=='').map(it=>({x:it.transform[4],y:it.transform[5],s:it.str}));
+    /* Row clustering: this report's table does NOT row-align its columns — the item
+       number, location, description and date cells are each independently vertically
+       centered against the row's tallest cell, so "1" can sit at y=373 while its own
+       row's location sits at y=374 (a 1px gap) but its own description text can start
+       many lines ABOVE that (paragraph centred around the marker, not top-aligned).
+       A hard Math.round(y) bucket only fixes the 1px case; cluster by proximity
+       (tolerance a few px, well under the ~19px real line spacing) for that part. */
+    raw.sort((a,b)=>b.y-a.y);
+    const rows=[]; let cur=null;
+    for(const it of raw){
+      if(cur&&Math.abs(cur.y-it.y)<=3) cur.items.push(it);
+      else { cur={y:it.y,items:[it]}; rows.push(cur); }
+    }
+    for(const r of rows){
+      const s=r.items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();
+      if(s) lines.push(s);
+    }
   }
   /* month: first "APRIL 2026"-style line */
   let monthKey=null;
@@ -1475,6 +1489,11 @@ async function parseEngPdf(buf){
   const locRe=/\b(B[12]|\d{1,2}\s?F|Roof|Lobby|Club|Bistro|Mezz|Banquet|Pool|Spa|Kitchen)\b/gi;
   const locs={},sys={},critical=[];
   const skip=/^(APRIL|MAY|JUNE|JULY|MARCH|JANUARY|FEBRUARY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)|ENGINEERING DEPARTMENT|MONTHLY REPORT|BÁO CÁO/i;
+  /* rows that are table furniture, never part of an item's own description —
+     both Vietnamese diacritics (section titles are bilingual, items are English-only)
+     and the known English column/section labels */
+  const VN_CHARS=/[À-ỹ]/;
+  const skipRow=l=>skip.test(l)||VN_CHARS.test(l)||/^(STT|No|Location|Systems|Date|Total|Frequency|Responsible)\b/i.test(l)||/^(I{1,3}|IV|V)\.\s/.test(l)||/DAILY REPAIR WORK|MAJOR JOBS|WORK ORDER/i.test(l);
   let maxItem=0;
   for(const l of lines){
     if(skip.test(l)) continue;
@@ -1483,16 +1502,65 @@ async function parseEngPdf(buf){
     while((m2=locRe.exec(l))){ const k=m2[1].toUpperCase().replace(/\s/g,''); if(!seen.has(k)){ locs[k]=(locs[k]||0)+1; seen.add(k); } }
     for(const [label,re] of MAP.engSys) if(re.test(l)) sys[label]=(sys[label]||0)+1;
   }
-  /* rebuild logical items (PDF wraps one entry across several text lines) so the
-     critical watchlist shows the FULL sentence, not truncated fragments */
-  const items2=[]; let cur='';
-  for(const l of lines){
-    if(skip.test(l)) continue;
-    if(/^\d{1,3}[\.\s]/.test(l)){ if(cur.trim().length>10) items2.push(cur.trim()); cur=l; }
-    else cur+=' '+l;
+  /* Rebuild each numbered item's FULL text. The item marker ("1", "2", …) is not
+     top-aligned with its own description — it, the location and the date are each
+     vertically centred against the row's tallest cell (the wrapped description), so
+     a marker's own text line can sit in the MIDDLE of its paragraph, with real
+     continuation lines both above and below it. Splitting "start a new item whenever
+     a line begins with a number" therefore truncates most multi-line entries (the
+     lines that appear ABOVE the marker get orphaned onto the previous item).
+     Fix: find every marker row (sequential integers), then assign every OTHER row to
+     whichever marker is fewest ROWS away (not fewest pixels — pixel gaps are uneven
+     because each column centres independently); ties go to the earlier item, which
+     matches the observed trailing-lines-outnumber-leading-lines pattern. */
+  /* The report has SEVERAL independently-numbered sections (e.g. "I. Contractor
+     Services" 1..15, then "II. Daily Repair Work" restarting at 1..100+) — each
+     headed by a Roman-numeral title. A single monotonic 1,2,3.. check across the
+     whole document rejects every section after the first (their numbers are
+     smaller than what's already been seen), so the sequence resets at each
+     section break, and marker→row matching never crosses a section boundary. */
+  const sectionOf=new Array(lines.length).fill(0);
+  { let sec=0; lines.forEach((l,i)=>{ if(/^(I{1,3}|IV|V|VI)\.\s/.test(l)) sec++; sectionOf[i]=sec; }); }
+  const markerIdx=[]; let expectNext=1, lastSec=0;
+  lines.forEach((l,i)=>{
+    if(sectionOf[i]!==lastSec){ expectNext=1; lastSec=sectionOf[i]; }
+    if(skipRow(l)) return;
+    const m=l.match(/^(\d{1,3})[\.\s]/);
+    /* a real item row always carries descriptive text; require at least one letter so a
+       bare numeric row (e.g. the "Total/Done/Open" work-order summary "28 23 5") can
+       never be mistaken for a marker — one false hit there poisons expectNext for
+       every real item after it */
+    if(m&&/[A-Za-zÀ-ỹ]/.test(l)&&+m[1]>=expectNext){ markerIdx.push(i); expectNext=+m[1]+1; }
+  });
+  const items2=[];
+  if(markerIdx.length){
+    const groupOf=new Array(lines.length).fill(-1);
+    for(let i=0;i<lines.length;i++){
+      if(skipRow(lines[i])) continue;
+      let best=-1,bestDist=Infinity;
+      for(let g=0; g<markerIdx.length; g++){
+        if(sectionOf[markerIdx[g]]!==sectionOf[i]) continue;   // never assign across a section break
+        const d=Math.abs(i-markerIdx[g]);
+        if(d<bestDist){ bestDist=d; best=g; }
+      }
+      groupOf[i]=best;
+    }
+    for(let g=0; g<markerIdx.length; g++){
+      const text=lines.filter((_,i)=>groupOf[i]===g).join(' ').replace(/\s+/g,' ').trim();
+      if(text.length>10) items2.push(text);
+    }
+  } else {
+    /* no sequential markers found on this page layout — fall back to the simple
+       start-new-item-on-numbered-line join (better than nothing for odd templates) */
+    let cur2='';
+    for(const l of lines){
+      if(skip.test(l)) continue;
+      if(/^\d{1,3}[\.\s]/.test(l)){ if(cur2.trim().length>10) items2.push(cur2.trim()); cur2=l; }
+      else cur2+=' '+l;
+    }
+    if(cur2.trim().length>10) items2.push(cur2.trim());
   }
-  if(cur.trim().length>10) items2.push(cur.trim());
-  for(const it of items2){ if(MAP.engCritical.test(it)&&it.length>25&&critical.length<20) critical.push(it.replace(/\s+/g,' ')); }  // full technician text (no truncation)
+  for(const it of items2){ if(MAP.engCritical.test(it)&&it.length>25&&critical.length<20) critical.push(it.replace(/\s+/g,' ')); }
   return {monthKey,wo,locs,sys,critical,items:maxItem,pages:pdf.numPages};
 }
 
