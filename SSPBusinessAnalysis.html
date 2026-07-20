@@ -754,7 +754,12 @@ function parsePnl(wb){
   /* month from title cell */
   let monthKey=null;
   for(let r=0;r<8;r++){ const s=cellStr((gd[r]||[])[1]); const m=s.match(MAP.pnlSummary.monthTitle); if(m){ monthKey=monthKeyFromText(m[1]); break; } }
-  if(!monthKey) W(warns,'P&L: month not found in Summary P&L title — using file order');
+  if(!monthKey){
+    /* older exports print "For The Month Ending:" with no date in the title itself —
+       the actual month sits one or two rows below as a raw Excel date serial number
+       (e.g. 45473) rather than readable text. */
+    for(let r=0;r<8;r++){ const n=num((gd[r]||[])[1]); if(n!=null&&n>30000&&n<60000){ monthKey=serialYM(n); break; } }
+  }
 
   /* --- column blocks: scan the row holding "MTD" and the row below it --- */
   let hdrRow=-1;
@@ -1652,6 +1657,7 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
   let parsed,label;
   try{
     if(type==='pnl'){ parsed=parsePnl(wb);
+      if(!parsed.monthKey) toast(name+': P&L period month NOT detected — filing under the selected month '+fmtMonthKey(state.month)+'. If that is wrong, check the title cell (row 1-8, column B) of the Summary P&L sheet and re-drop.',true);
       const key=parsed.monthKey||state.month||'unknown';
       const slot=monthSlot(key);
       slot['pnl'+parsed.currency]=parsed; slot.warns=(slot.warns||[]).filter(w=>!w.startsWith('P&L '+parsed.currency)).concat(parsed.warns.map(w=>'P&L '+parsed.currency+': '+w));
