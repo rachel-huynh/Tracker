@@ -3531,12 +3531,12 @@ function renderEng(d){
   const eng=state.store.months[key].eng;
   const wo=eng.wo||{};
   const rate=wo.total?wo.done/wo.total:null;
+  const statCard2=(title,val,sub)=>`<div class="kpi"><div class="t">${title}</div><div class="v">${val}</div><div class="s">${sub||''}</div></div>`;
   const kpis=
-    kpiCard('Work orders — '+fmtMonthKey(key),n1(wo.total,0),null,null)+
-    kpiCard('Completed',n1(wo.done,0),null,null)+
+    statCard2('Work orders — '+fmtMonthKey(key),n1(wo.total,0))+
+    statCard2('Completed',n1(wo.done,0))+
     `<div class="kpi ${rate==null?'':rate>=.9?'g':rate>=.75?'a':'r'}"><div class="t">Completion rate</div><div class="v">${pct(rate)}</div><div class="s">open: ${n1(wo.open,0)}</div></div>`+
-    kpiCard('Logged maintenance items',n1(eng.items,0),null,null)+
-    kpiCard('Report pages',n1(eng.pages,0),null,null);
+    statCard2('Logged maintenance items',n1(eng.items,0));
   const topLocs=Object.entries(eng.locs||{}).sort((a,b)=>b[1]-a[1]).slice(0,12);
   const topSys=Object.entries(eng.sys||{}).sort((a,b)=>b[1]-a[1]);
   const locRows=topLocs.map(([k,v],i)=>`<tr class="${i===0?'bad':''}"><td>${k}${i===0?' <span class="tag r">hotspot</span>':''}</td><td data-v="${v}">${v}</td></tr>`).join('');
