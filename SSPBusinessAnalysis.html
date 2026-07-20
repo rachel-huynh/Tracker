@@ -3529,16 +3529,32 @@ function renderEng(d){
   if(!monthsE.length){ el.innerHTML=`<div class="panel"><span class="small">${na('Drop the monthly "Engineer Monthly report" PDF into the drop zone — parsed in-browser with pdf.js')}</span></div>`; return; }
   const key=state.store.months[state.month]?.eng?state.month:monthsE[monthsE.length-1];
   const eng=state.store.months[key].eng;
-  const wo=eng.wo||{};
+  /* MTD/YTD (the global period toggle in the header) — Engineering has no native YTD
+     figure in the PDF (each report is a single month's snapshot), so YTD here means
+     "summed from January through the selected month, same year" — consistent with
+     how every other tab treats YTD. Only the numeric KPIs / mentions aggregate; the
+     Critical watchlist stays scoped to the selected month (quoting 12 months of PDF
+     text at once would bury the ones that matter). */
+  const P=state.period;
+  const scopeMonths = P==='YTD' ? monthsE.filter(m=>m.slice(0,4)===key.slice(0,4)&&m<=key) : [key];
+  const sumEng=f=>{ const vs=scopeMonths.map(m=>f(state.store.months[m].eng)).filter(v=>v!=null); return vs.length?vs.reduce((a,b)=>a+b,0):null; };
+  const wo={total:sumEng(e=>e.wo?.total), done:sumEng(e=>e.wo?.done), open:sumEng(e=>e.wo?.open)};
+  const itemsScoped=sumEng(e=>e.items);
+  const locsScoped={}, sysScoped={};
+  for(const m of scopeMonths){ const e2=state.store.months[m].eng;
+    for(const [k2,v2] of Object.entries(e2.locs||{})) locsScoped[k2]=(locsScoped[k2]||0)+v2;
+    for(const [k2,v2] of Object.entries(e2.sys||{})) sysScoped[k2]=(sysScoped[k2]||0)+v2;
+  }
+  const periodLabel=P==='YTD'?`YTD ${key.slice(0,4)} (Jan–${fmtMonthKey(key)})`:fmtMonthKey(key);
   const rate=wo.total?wo.done/wo.total:null;
   const statCard2=(title,val,sub)=>`<div class="kpi"><div class="t">${title}</div><div class="v">${val}</div><div class="s">${sub||''}</div></div>`;
   const kpis=
-    statCard2('Work orders — '+fmtMonthKey(key),n1(wo.total,0))+
+    statCard2('Work orders — '+periodLabel,n1(wo.total,0))+
     statCard2('Completed',n1(wo.done,0))+
     `<div class="kpi ${rate==null?'':rate>=.9?'g':rate>=.75?'a':'r'}"><div class="t">Completion rate</div><div class="v">${pct(rate)}</div><div class="s">open: ${n1(wo.open,0)}</div></div>`+
-    statCard2('Logged maintenance items',n1(eng.items,0));
-  const topLocs=Object.entries(eng.locs||{}).sort((a,b)=>b[1]-a[1]).slice(0,12);
-  const topSys=Object.entries(eng.sys||{}).sort((a,b)=>b[1]-a[1]);
+    statCard2('Logged maintenance items',n1(itemsScoped,0));
+  const topLocs=Object.entries(locsScoped).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  const topSys=Object.entries(sysScoped).sort((a,b)=>b[1]-a[1]);
   const locRows=topLocs.map(([k,v],i)=>`<tr class="${i===0?'bad':''}"><td>${k}${i===0?' <span class="tag r">hotspot</span>':''}</td><td data-v="${v}">${v}</td></tr>`).join('');
   const crit=(eng.critical||[]).map(c=>`<div class="alert warn"><div class="d">${c}</div></div>`).join('')||'<div class="small">No critical-keyword lines detected.</div>';
   const insight= topSys.length? `<div class="alert ${topSys[0][1]>15?'crit':'info'}"><div class="h">Most stressed system: ${topSys[0][0]} (${topSys[0][1]} mentions)</div>
@@ -3559,14 +3575,15 @@ function renderEng(d){
   el.innerHTML=`
     <div class="kgrid">${kpis}</div>
     ${insight}
-    <div class="cols c3">
-      <div class="panel"><h3>Work-order trend ${trendCtl}</h3><div class="chartbox"><canvas id="chEngWo"></canvas></div></div>
-      <div class="panel"><h3>Mentions by system — ${fmtMonthKey(key)}</h3><div class="chartbox"><canvas id="chEngSys"></canvas></div></div>
-      <div class="panel"><h3>Mentions by location <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+    <div class="panel"><h3>Work-order trend ${trendCtl}</h3>
+      <div class="chartbox tall" style="margin-top:14px"><canvas id="chEngWo"></canvas></div></div>
+    <div class="cols c2">
+      <div class="panel"><h3>Mentions by system — ${periodLabel}</h3><div class="chartbox"><canvas id="chEngSys"></canvas></div></div>
+      <div class="panel"><h3>Mentions by location — ${periodLabel} <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
         <table><thead><tr><th>Location</th><th>Mentions</th></tr></thead><tbody>${locRows}</tbody></table>
         <div class="small" style="margin-top:4px">Counted from the report text — a proxy for where Engineering effort is going, not a defect count.</div></div>
     </div>
-    <div class="panel"><h3>Critical watchlist — lines flagged by keyword (leak / broken / fail / damage / clog…)</h3>${crit}</div>`;
+    <div class="panel"><h3>Critical watchlist — ${fmtMonthKey(key)} — lines flagged by keyword (leak / broken / fail / damage / clog…)</h3>${crit}</div>`;
   mkChart('chEngWo',{type:'bar',data:{labels:gks.map(gLabel),datasets:[
       {type:'bar',label:'Requested',data:gks.map(gk=>sumOf(gk,e=>e.wo?.total)),backgroundColor:'#0B1F3A'},
       {type:'bar',label:'Completed',data:gks.map(gk=>sumOf(gk,e=>e.wo?.done)),backgroundColor:'#C9A227'},
