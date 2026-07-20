@@ -294,7 +294,7 @@ async function enter(session) {
   $('#user-box').innerHTML = `<b>${esc(prof.full_name || prof.email)}</b><br>${esc(orgName(prof.org_unit_id))}${prof.is_admin ? ' · Admin' : ''}`;
   $('#logout-btn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
   $('#lang-toggle').onclick = () => { S.lang = S.lang === 'vi' ? 'en' : 'vi'; localStorage.setItem('portal_lang', S.lang); location.reload(); };
-  renderSidebar();
+  await renderSidebar();
   window.addEventListener('hashchange', route);
   route();
 }
@@ -339,13 +339,38 @@ const ROUTES = [
   { hash: '#/admin/audit', section: 'sec_admin', label: 'nav_audit', show: () => S.profile?.is_admin, render: pageAudit },
   { hash: '#/admin/backup', section: 'sec_admin', label: 'nav_backup', show: () => S.profile?.is_admin, render: pageBackup }
 ];
-function renderSidebar() {
+/* Đếm số Memo/SOP đang chờ NGƯỜI DÙNG HIỆN TẠI xử lý (kiểm tra hoặc phê
+   duyệt) — chỉ tính với ai có quyền review/approve tương ứng, để hiện số
+   nhắc trên menu Memo/SOP. */
+async function fetchSidebarBadges() {
+  const badges = { memo: 0, sop: 0 };
+  const countByStatuses = async (table, statuses) => {
+    if (!statuses.length) return 0;
+    const { count } = await sb.from(table).select('id', { count: 'exact', head: true }).in('status', statuses);
+    return count || 0;
+  };
+  const memoStatuses = new Set();
+  if (hasPerm('memo', 'review')) { memoStatuses.add('submitted'); memoStatuses.add('under_review'); }
+  if (hasPerm('memo', 'approve')) { memoStatuses.add('under_review'); memoStatuses.add('approved'); }
+  badges.memo = await countByStatuses('memos', [...memoStatuses]);
+
+  const sopStatuses = new Set();
+  if (hasSopPerm('review')) { sopStatuses.add('submitted'); sopStatuses.add('under_review'); }
+  if (hasSopPerm('approve')) { sopStatuses.add('under_review'); sopStatuses.add('approved'); }
+  badges.sop = await countByStatuses('sops', [...sopStatuses]);
+  return badges;
+}
+async function renderSidebar() {
   const nav = $('#sidebar-nav');
+  const badges = await fetchSidebarBadges().catch(() => ({ memo: 0, sop: 0 }));
+  const BADGE_FOR = { '#/memos': badges.memo, '#/sops': badges.sop };
   let html = '', lastSec = '';
   for (const r of ROUTES) {
     if (!r.show()) continue;
     if (r.section !== lastSec) { html += `<div class="px-4 pt-4 pb-1 text-[10px] tracking-widest text-white/40 font-bold">${esc(t(r.section))}</div>`; lastSec = r.section; }
-    html += `<a href="${r.hash}" class="nav-item block px-4 py-2 text-white/90" data-route="${r.hash}">${esc(t(r.label))}</a>`;
+    const n = BADGE_FOR[r.hash] || 0;
+    const badgeHtml = n > 0 ? `<span class="ml-2 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-gold text-navy text-[10px] font-bold" title="${esc(t('badge_pending_action'))}">${n > 99 ? '99+' : n}</span>` : '';
+    html += `<a href="${r.hash}" class="nav-item flex items-center justify-between px-4 py-2 text-white/90" data-route="${r.hash}"><span>${esc(t(r.label))}</span>${badgeHtml}</a>`;
   }
   nav.innerHTML = html;
 }
@@ -445,14 +470,18 @@ async function pageDashboard() {
     const q = e.target.value.trim();
     if (q.length < 2) { $('#gsearch-results').innerHTML = ''; return; }
     timer = setTimeout(async () => {
-      const { data } = await sb.rpc('search_all', { q });
+      const { data, error } = await sb.rpc('search_all', { q });
+      if (error) { $('#gsearch-results').innerHTML = `<div class="px-3 py-2 text-sm text-red-600 bg-white border border-slate-200 rounded-lg mt-1">${esc(error.message)}</div>`; return; }
+      const KIND_BADGE = { legal: ['bg-navy text-white', 'type_badge_legal'], memo: ['bg-gold/20 text-yellow-800', 'type_badge_memo'], sop: ['bg-emerald-100 text-emerald-800', 'type_badge_sop'] };
       $('#gsearch-results').innerHTML = `<div class="bg-white rounded-lg shadow-md border border-slate-200 mt-1 divide-y divide-slate-100">` +
-        (data || []).map(r => `<div class="px-3 py-2 text-sm flex items-center gap-2 hover:bg-slate-50 cursor-pointer" data-kind="${r.kind}" data-rid="${r.id}">
-          <span class="badge ${r.kind === 'legal' ? 'bg-navy text-white' : 'bg-gold/20 text-yellow-800'}">${r.kind === 'legal' ? t('type_badge_legal') : t('type_badge_memo')}</span>
-          <b class="whitespace-nowrap">${esc(r.code)}</b><span class="flex-1 truncate">${esc(r.title)}</span></div>`).join('') +
+        (data || []).map(r => { const [cls, key] = KIND_BADGE[r.kind] || KIND_BADGE.memo; return `<div class="px-3 py-2 text-sm flex items-center gap-2 hover:bg-slate-50 cursor-pointer" data-kind="${r.kind}" data-rid="${r.id}">
+          <span class="badge ${cls}">${esc(t(key))}</span>
+          <b class="whitespace-nowrap">${esc(r.code)}</b><span class="flex-1 truncate">${esc(r.title)}</span></div>`; }).join('') +
         ((data || []).length ? '' : `<div class="px-3 py-2 text-sm text-slate-400">${t('no_data')}</div>`) + '</div>';
       $('#gsearch-results').querySelectorAll('[data-rid]').forEach(el => el.addEventListener('click', () => {
-        if (el.dataset.kind === 'legal') openDocDrawer(el.dataset.rid); else openMemoDrawer(el.dataset.rid);
+        if (el.dataset.kind === 'legal') openDocDrawer(el.dataset.rid);
+        else if (el.dataset.kind === 'sop') openSopDrawer(el.dataset.rid);
+        else openMemoDrawer(el.dataset.rid);
       }));
     }, 300);
   });
@@ -944,20 +973,20 @@ async function openMemoDrawer(id) {
 async function moveMemo(m, status, extra = {}) {
   const { error } = await sb.from('memos').update({ status, ...extra }).eq('id', m.id);
   if (error) { toast(error.message, false); return; }
-  toast(t('saved')); closeDrawer(); pageMemos();
+  toast(t('saved')); closeDrawer(); pageMemos(); renderSidebar();
 }
 async function sendBack(m) {
   const note = prompt(t('wf_note_required')); if (!note) return;
   const { error } = await sb.from('memos').update({ status: 'draft' }).eq('id', m.id);
   if (error) { toast(error.message, false); return; }
   await audit('memos', m.id, 'send_back', note, m.status, 'draft');
-  toast(t('saved')); closeDrawer(); pageMemos();
+  toast(t('saved')); closeDrawer(); pageMemos(); renderSidebar();
 }
 async function revokeMemo(m) {
   const reason = prompt(t('wf_note_required')); if (!reason) return;
   const { error } = await sb.from('memos').update({ status: 'revoked', revoke_reason: reason }).eq('id', m.id);
   if (error) { toast(error.message, false); return; }
-  toast(t('saved')); closeDrawer(); pageMemos();
+  toast(t('saved')); closeDrawer(); pageMemos(); renderSidebar();
 }
 async function supersedeMemo(m) {
   // tạo bản nháp version+1 rồi đánh dấu bản cũ superseded khi bản mới được publish
@@ -1178,20 +1207,20 @@ async function openSopDrawer(id) {
 async function moveSop(s, status, extra = {}) {
   const { error } = await sb.from('sops').update({ status, ...extra }).eq('id', s.id);
   if (error) { toast(error.message, false); return; }
-  toast(t('saved')); closeDrawer(); pageSops();
+  toast(t('saved')); closeDrawer(); pageSops(); renderSidebar();
 }
 async function sendBackSop(s) {
   const note = prompt(t('wf_note_required')); if (!note) return;
   const { error } = await sb.from('sops').update({ status: 'draft' }).eq('id', s.id);
   if (error) { toast(error.message, false); return; }
   await audit('sops', s.id, 'send_back', note, s.status, 'draft');
-  toast(t('saved')); closeDrawer(); pageSops();
+  toast(t('saved')); closeDrawer(); pageSops(); renderSidebar();
 }
 async function revokeSop(s) {
   const reason = prompt(t('wf_note_required')); if (!reason) return;
   const { error } = await sb.from('sops').update({ status: 'revoked', revoke_reason: reason }).eq('id', s.id);
   if (error) { toast(error.message, false); return; }
-  toast(t('saved')); closeDrawer(); pageSops();
+  toast(t('saved')); closeDrawer(); pageSops(); renderSidebar();
 }
 async function supersedeSop(s) {
   const copy = { ...s };
@@ -1211,7 +1240,7 @@ async function toggleSopHidden(s) {
   const { error } = await sb.from('sops').update({ is_hidden: !s.is_hidden }).eq('id', s.id);
   if (error) { toast(error.message, false); return; }
   await audit('sops', s.id, s.is_hidden ? 'unhide' : 'hide', s.title_vi);
-  toast(t('saved')); closeDrawer(); pageSops();
+  toast(t('saved')); closeDrawer(); pageSops(); renderSidebar();
 }
 
 async function openSopEditor(s) {
@@ -1681,7 +1710,7 @@ function openBulkImport(kind) {
     if (error) { toast(error.message, false); return; }
     await audit(kind, '', 'csv_import', `inserted=${inserted} skipped=${skipped}`);
     toast(tf('import_result', { inserted, skipped })); closeModal();
-    isMemo ? pageMemos() : pageSops();
+    isMemo ? pageMemos() : pageSops(); renderSidebar();
   });
 }
 /* Gán bộ phận (visible_to) hàng loạt cho Memo/SOP: chọn nhiều mục + chọn đơn vị */
@@ -1737,7 +1766,7 @@ async function openBulkAssign(kind) {
     if (firstErr) toast(`${tf('bulk_done', { n: ok })} — ${firstErr.message}`, false);
     else toast(tf('bulk_done', { n: ok }));
     closeModal();
-    isMemo ? pageMemos() : pageSops();
+    isMemo ? pageMemos() : pageSops(); renderSidebar();
   });
 }
 /* Xóa 1/nhiều VBPL, Memo, SOP — CHỈ admin (RLS cũng chặn ở tầng DB) */
@@ -1984,7 +2013,7 @@ async function pageRoles() {
     const { error } = await sb.from('role_matrix').upsert(rows, { onConflict: 'org_unit_id,permission_id,module' });
     if (error) { toast(error.message, false); return; }
     await audit('role_matrix', '', 'update_matrix');
-    await loadRefData(); renderSidebar();
+    await loadRefData(); await renderSidebar();
     toast(t('saved'));
   });
 }

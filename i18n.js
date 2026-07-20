@@ -206,6 +206,7 @@ window.I18N = {
     bulk_done: 'Đã cập nhật {n} mục',
     bulk_none_selected: 'Chưa chọn văn bản nào',
     print_popup_blocked: 'Trình duyệt chặn cửa sổ in — hãy cho phép popup cho trang này.',
+    badge_pending_action: 'Số mục đang chờ bạn kiểm tra/phê duyệt',
     print_cols_missing: 'Đã lưu, nhưng CSDL chưa có các cột in ấn — chạy tools/add-print-templates-2026-07.sql trong Supabase rồi lưu lại.',
     docx_lib_failed: 'Không tải được thư viện tạo file Word — kiểm tra kết nối mạng rồi thử lại.',
     admin_users: 'Người dùng & Đơn vị',
@@ -279,6 +280,7 @@ window.I18N = {
     lang_toggle: 'EN',
     type_badge_legal: 'VBPL',
     type_badge_memo: 'MEMO',
+    type_badge_sop: 'SOP',
     all_departments: 'Tất cả đơn vị'
   },
   en: {
@@ -487,6 +489,7 @@ window.I18N = {
     bulk_done: '{n} items updated',
     bulk_none_selected: 'No documents selected',
     print_popup_blocked: 'The browser blocked the print window — please allow popups for this site.',
+    badge_pending_action: 'Items awaiting your review/approval',
     print_cols_missing: 'Saved, but the database is missing the print columns — run tools/add-print-templates-2026-07.sql in Supabase, then save again.',
     docx_lib_failed: 'Could not load the Word generator library — check your connection and retry.',
     admin_users: 'Users & Units',
@@ -560,6 +563,7 @@ window.I18N = {
     lang_toggle: 'VI',
     type_badge_legal: 'LEGAL',
     type_badge_memo: 'MEMO',
+    type_badge_sop: 'SOP',
     all_departments: 'All units'
   }
 };
