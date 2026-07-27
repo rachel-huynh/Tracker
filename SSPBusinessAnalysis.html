@@ -2675,7 +2675,13 @@ function renderMarket(d){
      and the RevPAR comparison chart. Band = comp-set ↔ industry envelope (member-level
      min/max is not in the STAR export). ---------- */
   const mg=state.mktGran||'daily', dayF2=state.tsDay||'all';
-  const bwAll=Object.keys(state.store.months).filter(k=>state.store.months[k].star?.daily?.occ).sort();
+  /* a month only "counts" if its daily.occ actually holds at least one real value —
+     `star?.daily?.occ` alone is truthy even for an empty {} skeleton (e.g. a
+     provisional/partial STAR upload), which was inflating the "N stored months"
+     label while those months contributed zero visible points to the chart below */
+  const hasRealDaily=k=>{ const o=state.store.months[k]?.star?.daily?.occ; if(!o) return false;
+    return (o.my&&o.my.some(v=>v!=null))||(o.comp&&o.comp.some(v=>v!=null)); };
+  const bwAll=Object.keys(state.store.months).filter(hasRealDaily).sort();
   const wMonths=(state.tsFrom||state.tsTo)? bwAll.filter(tsInRange) : bwAll.filter(k=>k<=st.monthKey).slice(-3);
   const mkSeries=met2=>{ // means of the daily STAR values at the chosen granularity
     const out2={labels:[],my:[],comp:[],ind:[],we:[]};
