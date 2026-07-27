@@ -1573,32 +1573,47 @@ function renderModCaiDat() {
       '<button class="btn sec" onclick="sbDoPull(false)">⬇ Tải mới về (gộp)</button>' +
       '<button class="btn warn" onclick="sbDoPull(true)">⬇ Tải về &amp; thay thế</button>' +
     '</div>' +
+    '<div class="btnrow"><button class="btn sec" onclick="sbMakeLink()">🔗 Tạo link cài sẵn cho máy khác</button>' +
+      '<span class="note">Người nhận bấm link 1 lần là máy họ tự đồng bộ, không phải nhập gì.</span></div>' +
+    '<div id="sbLinkBox" style="display:none;margin-top:6px"><textarea readonly style="width:100%;min-height:52px;font-family:Consolas,monospace;font-size:11.5px;padding:6px;border:1px solid #cbd5e1;border-radius:4px" onclick="this.select()"></textarea></div>' +
     '<p class="note">Đẩy gần nhất: <b>' + esc(s.sb.lastPush || 'chưa có') + '</b> · Tải gần nhất: <b>' + esc(s.sb.lastPull || 'chưa có') + '</b> · Mã máy này: <b>' + esc(SB_DEVICE) + '</b></p>' +
     '<div class="msg" id="sbMsg"></div>' +
     (SB_DEAD.length ? '<div class="warnbox">⚠ Có <b>' + SB_DEAD.length + '</b> thay đổi không gửi lên Supabase được. Lỗi gần nhất: ' + esc(String(SB_DEAD[SB_DEAD.length - 1].err || '').slice(0, 150)) + '<br>Hãy sửa lỗi rồi bấm <b>Đẩy toàn bộ lên</b> để gửi lại. <button class="mini" onclick="sbClearDead()">Bỏ qua cảnh báo</button></div>' : '') +
     '<hr class="sep">' +
     '<p class="note"><b>Cài đặt lần đầu:</b> vào Supabase → SQL Editor → New query → dán toàn bộ file <b>congdoan-supabase.sql</b> (để cùng thư mục với file này) → Run. File chỉ tạo 5 bảng <code>cd_*</code>, không đụng dữ liệu sẵn có. Sau đó bật công tắc trên, nhập URL + key, bấm <b>Lưu &amp; kết nối</b>, rồi bấm <b>Đẩy toàn bộ lên</b> một lần để đưa dữ liệu hiện có lên.<br>' +
-    '<b>Lưu ý bảo mật:</b> app không có đăng nhập, nên <u>ai có URL + API key đều xem và sửa được</u> — chỉ gửi key cho người trong Ban chấp hành, không dán key vào file HTML công khai trên GitHub Pages.</p>' +
+    '<b>Cho máy khác dùng:</b> bấm <b>🔗 Tạo link cài sẵn</b> rồi gửi link đó cho từng người trong Ban chấp hành. Họ mở link một lần, máy tự lưu cấu hình và từ đó cứ mở app là đồng bộ — không phải nhập URL/key. (Muốn nhúng thẳng vào file thì điền hằng số <code>SB_PRESET</code> ở đầu phần script, chỉ nên làm với bản để trong OneDrive nội bộ.)<br>' +
+    '<b>Lưu ý bảo mật:</b> app không có đăng nhập, nên <u>ai có URL + API key đều xem và sửa được sổ quỹ</u>. Bản trên GitHub Pages là trang công khai — đừng dán key vào file đó, và gửi link cài sẵn theo đường riêng.</p>' +
+    (SB_PRESET.url && /github\.io|githubusercontent/.test(location.hostname) ?
+      '<div class="warnbox">🚨 <b>NGUY HIỂM:</b> file đang chạy trên trang công khai (' + esc(location.hostname) + ') mà lại có sẵn key trong mã nguồn (SB_PRESET). Bất kỳ ai trên mạng cũng đọc được key này và sửa dữ liệu công đoàn. Hãy xóa giá trị trong SB_PRESET ở bản đăng công khai.</div>' : '') +
     '</div></div>' +
   '<div class="card"><h3>Vùng nguy hiểm</h3><div class="btnrow"><button class="btn warn" onclick="wipeData()">🗑 Xóa toàn bộ dữ liệu trên máy này</button></div></div>';
   $('importFile').addEventListener('change', function () { importFromFile(this); });
   moneyInput($('s_sdtm')); moneyInput($('s_sdnh'));
+  // ghi lại giá trị lúc vẽ, để saveSettings biết ô nào người dùng thực sự sửa
+  ['s_captren', 's_donvi', 's_diachi', 's_ketoan', 's_chutich', 's_thuquy', 's_nhten', 's_nhstk', 's_nhnh', 's_sdtm', 's_sdnh']
+    .forEach(function (id) { const el = $(id); if (el) el.dataset.init = el.value; });
 }
 function saveSettings() {
   const s = DB.settings;
-  s.capTren = $('s_captren').value.trim();
-  s.donVi = $('s_donvi').value.trim();
-  s.diaChi = $('s_diachi').value.trim();
-  s.keToan = $('s_ketoan').value.trim();
-  s.chuTich = $('s_chutich').value.trim();
-  s.thuQuy = $('s_thuquy').value.trim();
-  s.nhTen = $('s_nhten').value.trim();
-  s.nhSTK = $('s_nhstk').value.trim();
-  s.nhNganHang = $('s_nhnh').value.trim();
+  // CHỈ ghi những ô người dùng thực sự sửa. Nếu ô không đụng tới thì giữ nguyên giá trị
+  // trong DB — vì màn hình Cài đặt không tự vẽ lại khi có cập nhật từ máy khác, ghi đè
+  // nguyên cả cụm sẽ làm mất thay đổi vừa đồng bộ về (đã từng làm số dư đầu kỳ về 0).
+  const doi = function (id) { const el = $(id); return el && el.value !== el.dataset.init; };
+  if (doi('s_captren')) s.capTren = $('s_captren').value.trim();
+  if (doi('s_donvi')) s.donVi = $('s_donvi').value.trim();
+  if (doi('s_diachi')) s.diaChi = $('s_diachi').value.trim();
+  if (doi('s_ketoan')) s.keToan = $('s_ketoan').value.trim();
+  if (doi('s_chutich')) s.chuTich = $('s_chutich').value.trim();
+  if (doi('s_thuquy')) s.thuQuy = $('s_thuquy').value.trim();
+  if (doi('s_nhten')) s.nhTen = $('s_nhten').value.trim();
+  if (doi('s_nhstk')) s.nhSTK = $('s_nhstk').value.trim();
+  if (doi('s_nhnh')) s.nhNganHang = $('s_nhnh').value.trim();
   const nam = new Date().getFullYear();
-  if (!s.soDu[nam]) s.soDu[nam] = { TM: 0, NH: 0 };
-  s.soDu[nam].TM = parseMoney($('s_sdtm').value);
-  s.soDu[nam].NH = parseMoney($('s_sdnh').value);
+  if (doi('s_sdtm') || doi('s_sdnh')) {
+    if (!s.soDu[nam]) s.soDu[nam] = { TM: 0, NH: 0 };
+    if (doi('s_sdtm')) s.soDu[nam].TM = parseMoney($('s_sdtm').value);
+    if (doi('s_sdnh')) s.soDu[nam].NH = parseMoney($('s_sdnh').value);
+  }
   saveDB();
   $('s_msg').innerHTML = '<span style="color:#15803d;font-weight:600">Đã lưu ✓</span>';
   setTimeout(() => { const m = $('s_msg'); if (m) m.innerHTML = ''; }, 4000);
@@ -1672,6 +1687,14 @@ function reRenderAllModules() {
    ĐỒNG BỘ SUPABASE — REST (PostgREST) + Realtime (WebSocket thuần)
    Không dùng thư viện ngoài. Tắt đồng bộ → app chạy 100% offline như cũ.
    ================================================================ */
+/* CẤU HÌNH NHÚNG SẴN (tùy chọn) — điền vào đây thì mở file lên là tự đồng bộ ngay,
+   không phải nhập tay trên từng máy.
+   ⚠ CHỈ điền khi bản HTML này KHÔNG nằm ở nơi công khai. Bản trên GitHub Pages
+   (rachel-huynh.github.io) ai trên mạng cũng mở và xem mã nguồn được — điền key vào đó
+   là công khai toàn bộ sổ quỹ công đoàn cho người lạ sửa. Với bản công khai, hãy dùng
+   nút "Tạo link cài sẵn" trong Cài đặt để gửi riêng cho từng người. */
+const SB_PRESET = { url: '', key: '' };
+
 const SB_T = { phieu: 'cd_phieu', unc: 'cd_unc', tv: 'cd_tham_vieng', kv: 'cd_kv', file: 'cd_file' };
 const SB_KINDS = ['phieu', 'unc', 'tv', 'kv'];
 const SB_OUT_KEY = 'cdcs_outbox_v1';
@@ -1688,6 +1711,7 @@ let SB_DEAD = [];          // các mục gửi mãi không được (để báo 
 let SB_FLUSHING = false;
 let SB_WS = null, SB_HB = null, SB_RETRY = 0, SB_RETRY_TIMER = null;
 let SB_STATE = 'off', SB_STATE_MSG = '';
+let SB_API_OK = null;   // null=chưa thử, true=đọc/ghi bảng được, false=bảng chưa tạo hoặc bị chặn
 
 function sbCfg() {
   const s = (DB && DB.settings && DB.settings.sb) || {};
@@ -1710,8 +1734,10 @@ async function sbReq(path, opts) {
     if (/cd_[a-z_]*/.test(t) && /schema cache|does not exist|relation/i.test(t)) {
       t += ' → Bảng chưa được tạo. Hãy chạy file congdoan-supabase.sql trong Supabase → SQL Editor.';
     }
+    SB_API_OK = false; sbPill();     // đèn trạng thái phải báo lỗi, không được báo "Trực tuyến"
     throw new Error('HTTP ' + res.status + ': ' + t.slice(0, 300));
   }
+  SB_API_OK = true;
   const txt = await res.text();
   return txt ? JSON.parse(txt) : null;
 }
@@ -1935,12 +1961,24 @@ async function sbPullAll(replace, silent) {
   if (!silent) reRenderAllModules(); else sbRefreshUI();
   return { p: ph.length, u: un.length, t: tv.length, k: kv.length };
 }
+function sbKvIsEmpty(k, v) {
+  if (v == null) return true;
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v !== 'object') return false;
+  const keys = Object.keys(v);
+  if (!keys.length) return true;
+  if (k === 'sodu') return keys.every(y => !((v[y] || {}).TM) && !((v[y] || {}).NH));
+  if (k === 'org') return keys.every(f => !v[f]);
+  return false;
+}
 async function sbPushAll(onProgress) {
   const items = [];
   (DB.phieu || []).forEach(p => items.push({ k: 'phieu', id: p.id, f: true }));
   (DB.unc || []).forEach(u => items.push({ k: 'unc', id: u.id, f: true }));
   (DB.thamVieng || []).forEach(t => items.push({ k: 'tv', id: t.id, f: false }));
-  sbKvEntries().forEach(e => items.push({ k: 'kv', id: e[0], f: false }));
+  // Không đẩy các mục cài đặt còn trống — máy mới chưa có dữ liệu mà đẩy lên
+  // sẽ xóa trắng cài đặt (số dư đầu kỳ, thông tin đơn vị…) của mọi người.
+  sbKvEntries().forEach(e => { if (!sbKvIsEmpty(e[0], e[1])) items.push({ k: 'kv', id: e[0], f: false }); });
   for (let i = 0; i < items.length; i++) {
     const b = sbBuildRow(items[i].k, items[i].id);
     if (b) {
@@ -2074,7 +2112,14 @@ function sbLoadFiles(kind, id) {
   }).catch(e => console.warn('Tải file đính kèm:', e.message));
 }
 function sbRefreshUI() {
-  if (currentMod === 'caidat') return;      // tránh xóa mất chữ đang gõ trong Cài đặt
+  if (currentMod === 'caidat') {
+    // Cài đặt: chỉ vẽ lại khi người dùng KHÔNG đang gõ, để vừa không mất chữ
+    // vừa không để ô hiển thị giá trị cũ (dễ bị lưu đè lên dữ liệu mới về).
+    const a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && $('mod-caidat').contains(a)) return;
+    try { renderModCaiDat(); } catch (e) { }
+    return;
+  }
   try { renderAll(); } catch (e) { }
 }
 
@@ -2090,7 +2135,10 @@ function sbPill() {
     offline: ['wait', '◌ Mất kết nối — sẽ tự nối lại'],
     err: ['err', '⚠ Lỗi đồng bộ']
   };
-  const m = map[(SB_STATE === 'off' && sbOn()) ? 'connecting' : SB_STATE] || map.off;
+  let st = SB_STATE;
+  if (st === 'off' && sbOn()) st = 'connecting';
+  if (sbOn() && SB_API_OK === false) st = 'err';     // bảng chưa tạo / bị chặn → không báo "Trực tuyến"
+  const m = map[st] || map.off;
   el.className = 'sbpill ' + m[0];
   el.textContent = m[1] + (pend ? ' · ' + pend + ' chờ gửi' : '') + (SB_FLUSHING ? ' · đang gửi…' : '');
   el.title = (SB_STATE_MSG || '') + (pend ? '\n' + pend + ' thay đổi chờ đẩy lên.' : '');
@@ -2135,7 +2183,10 @@ function sbTestConn() {
 function sbDoPush() {
   if (!sbOn()) { sbMsg('Chưa bật hoặc chưa lưu cấu hình Supabase.', false); return; }
   showModal('Đẩy toàn bộ dữ liệu lên Supabase',
-    'Sẽ ghi <b>' + DB.phieu.length + ' phiếu</b>, <b>' + DB.unc.length + ' ủy nhiệm chi</b>, <b>' + DB.thamVieng.length + ' dòng thăm viếng</b> và các bảng kê lên Supabase.<br>Dòng nào đã có (trùng mã) sẽ được ghi đè bằng bản trên máy này.<br><br>Dùng lần đầu để đưa dữ liệu sẵn có lên. Tiếp tục?', [
+    'Sẽ ghi <b>' + DB.phieu.length + ' phiếu</b>, <b>' + DB.unc.length + ' ủy nhiệm chi</b>, <b>' + DB.thamVieng.length + ' dòng thăm viếng</b> và các bảng kê lên Supabase.<br>Dòng nào đã có (trùng mã) sẽ được ghi đè bằng bản trên máy này.<br><br>' +
+    (DB.phieu.length === 0
+      ? '<span style="color:#b91c1c"><b>⚠ Máy này chưa có phiếu nào.</b> Nếu chỉ muốn xem dữ liệu của người khác thì hãy bấm <b>“Tải mới về (gộp)”</b> chứ đừng đẩy lên.</span><br><br>'
+      : 'Dùng lần đầu để đưa dữ liệu sẵn có lên. ') + 'Tiếp tục?', [
     {
       text: 'Đẩy lên', onClick: function () {
         sbMsg('Đang đẩy dữ liệu lên Supabase…', true);
@@ -2162,9 +2213,48 @@ function sbDoPull(replace) {
   } else run();
 }
 
+/* ---------- Nhận cấu hình tự động (link chia sẻ hoặc nhúng sẵn trong file) ---------- */
+function sbAdoptLinkCfg() {
+  const m = /[#&]sbcfg=([^&]+)/.exec(location.hash || '');
+  if (!m) return false;
+  let cfg = null;
+  try { cfg = JSON.parse(atob(decodeURIComponent(m[1]))); } catch (e) { cfg = null; }
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }  // xóa key khỏi thanh địa chỉ
+  if (!cfg || !cfg.url || !cfg.key) return false;
+  DB.settings.sb.url = String(cfg.url).trim().replace(/\/+$/, '');
+  DB.settings.sb.key = String(cfg.key).trim();
+  DB.settings.sb.enabled = true;
+  saveDB();
+  setTimeout(function () { sbToast('✅ Đã nhận cấu hình đồng bộ từ link — đang kết nối…'); }, 900);
+  return true;
+}
+function sbAdoptPreset() {
+  if (!SB_PRESET.url || !SB_PRESET.key) return;
+  const s = DB.settings.sb;
+  if (s.url || s.key) return;                 // máy đã tự cấu hình rồi thì giữ nguyên
+  s.url = String(SB_PRESET.url).trim().replace(/\/+$/, '');
+  s.key = String(SB_PRESET.key).trim();
+  s.enabled = true;
+  saveDB();
+}
+function sbMakeLink() {
+  const c = sbCfg();
+  if (!c.url || !c.key) { sbMsg('Chưa có Project URL / API key để tạo link. Hãy nhập và bấm "Lưu & kết nối" trước.', false); return; }
+  const link = location.href.split('#')[0] + '#sbcfg=' + btoa(JSON.stringify({ url: c.url, key: c.key }));
+  const box = $('sbLinkBox');
+  if (box) { box.style.display = 'block'; const ta = box.querySelector('textarea'); ta.value = link; ta.focus(); ta.select(); }
+  const nhac = 'Đã tạo link cài sẵn. Người nhận chỉ cần bấm vào link một lần là máy họ tự đồng bộ. Gửi RIÊNG cho người trong Ban chấp hành (Zalo/email cá nhân), đừng đăng lên nhóm hay nơi công khai.';
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(function () { sbMsg('📋 ' + nhac + ' (đã chép vào clipboard)', true); })
+      .catch(function () { sbMsg(nhac + ' Hãy copy thủ công ở ô bên dưới.', true); });
+  } else sbMsg(nhac + ' Hãy copy thủ công ở ô bên dưới.', true);
+}
+
 /* ---------- Khởi động đồng bộ ---------- */
 function sbInit() {
   sbLoadOut();
+  sbAdoptLinkCfg();      // ưu tiên cấu hình gửi kèm trong link
+  sbAdoptPreset();       // hoặc cấu hình nhúng sẵn trong file
   if (!sbOn()) { sbSetState('off'); return; }
   SB_SNAP = sbSnapshot();
   sbSetState('connecting');
