@@ -100,6 +100,14 @@ table.tbl td input.num { text-align: right; }
 .warnbox { background: #fef2f2; border: 1px solid #fca5a5; color: #7f1d1d; border-radius: 4px; padding: 8px 10px; font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
 .okbox { background: #f0fdf4; border: 1px solid #86efac; color: #14532d; border-radius: 4px; padding: 8px 10px; font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
 td.over { color: #b91c1c; font-weight: 700; }
+/* trạng thái đồng bộ Supabase */
+.sbpill { display: inline-block; margin-bottom: 6px; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; line-height: 1.5; }
+.sbpill.off { background: #33465f; color: #9db4cc; }
+.sbpill.live { background: #14532d; color: #86efac; }
+.sbpill.wait { background: #5a4408; color: #fcd34d; }
+.sbpill.err { background: #5f1f1f; color: #fca5a5; }
+#sbToast { position: fixed; right: 18px; bottom: 18px; z-index: 70; background: #1e3a5f; color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 13px; box-shadow: 0 4px 14px rgba(15,23,42,.28); opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; pointer-events: none; max-width: 340px; }
+#sbToast.show { opacity: 1; transform: translateY(0); }
 hr.sep { border: none; border-top: 1px dashed #cbd5e1; margin: 14px 0; }
 
 /* ===== Modal ===== */
@@ -156,7 +164,7 @@ hr.sep { border: none; border-top: 1px dashed #cbd5e1; margin: 14px 0; }
     <h1>QUẢN LÝ THU – CHI<br>TÀI CHÍNH CÔNG ĐOÀN</h1>
     <div class="sub">CĐCS Công ty TNHH LDKS Plaza<br>(Sofitel Saigon Plaza)</div>
     <nav id="nav"></nav>
-    <div class="foot">Dữ liệu lưu trên trình duyệt.<br>Nhớ Xuất dữ liệu để sao lưu định kỳ.</div>
+    <div class="foot"><span class="sbpill off" id="sbPill" onclick="goMod('caidat')" style="cursor:pointer">○ Đồng bộ: TẮT</span><br>Dữ liệu lưu trên trình duyệt.<br>Nhớ Xuất dữ liệu để sao lưu định kỳ.</div>
   </aside>
   <main id="main">
     <div class="module" id="mod-dashboard"></div>
@@ -233,7 +241,8 @@ function defaultDB() {
       nhSTK: '', nhNganHang: '',
       soDu: {},        // { '2026': { TM: 0, NH: 0 } }
       chiTieu: {},     // { '2026': { laoDong, doanVien, chuyenTrach, quyLuong } }
-      cloud: { enabled: false, cfg: '', lastPush: '', lastPull: '' }
+      // Cấu hình Supabase — chỉ lưu trên máy này, KHÔNG đồng bộ lên mây
+      sb: { enabled: false, url: '', key: '', lastPush: '', lastPull: '' }
     },
     phieu: [],   // {id, loai, so, ngay, nguoi, diaChi, lyDo, dienGiai, soTien, bangChu, maSo, taiKhoan, hinhThuc, no, co, puRef, files[], createdAt}
     unc: [],     // {id, so, ngay, traTen, traSTK, traNH, nhanTen, nhanSTK, nhanNH, soTien, bangChu, noiDung, pcRef, files[], createdAt}
@@ -264,12 +273,15 @@ function migrateData() {
       const m = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(r.ghiChu || '');
       r.nam = m ? Number(m[3]) : new Date().getFullYear();
     }
+    if (!r.id) r.id = uid();          // cần mã riêng để đồng bộ từng dòng
   });
   (DB.phieu || []).forEach(p => { if (p.boPhan === undefined) p.boPhan = ''; });
+  if (DB.settings && DB.settings.cloud) delete DB.settings.cloud;   // bỏ cấu hình Firebase cũ
 }
 function saveDB() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
   catch (e) { alert('KHÔNG LƯU ĐƯỢC DỮ LIỆU!\nDung lượng lưu trữ trình duyệt có thể đã đầy (thường do file đính kèm quá lớn).\nHãy xóa bớt file đính kèm hoặc Xuất dữ liệu để sao lưu.\n\nChi tiết: ' + e.message); }
+  try { sbAfterSave(); } catch (e) { console.warn('Đồng bộ:', e); }
 }
 
 /* ================================================================
@@ -630,6 +642,7 @@ function savePhieu(loai) {
   if (loai === 'PC' && p.maSo === '33' && $('pc33chk').checked && idx < 0) {
     const lv = $('pc33loai').value;
     const row = {
+      id: uid(),
       hoTen: $('pc33ten').value.trim() || p.nguoi,
       boPhan: $('pc33bophan').value.trim() || p.boPhan,
       nam: yearOf(p.ngay),
@@ -1374,7 +1387,7 @@ function thamHoiStatsHTML(nam) {
 function tvSet(ri, k, v) { DB.thamVieng[ri][k] = v.trim(); saveDB(); }
 function tvSetNam(ri, v) { DB.thamVieng[ri].nam = Number(String(v).replace(/\D/g, '')) || new Date().getFullYear(); saveDB(); renderAll(); }
 function tvSetMoney(ri, k, v) { DB.thamVieng[ri][k] = parseMoney(v); saveDB(); renderAll(); }
-function tvAddRow() { DB.thamVieng.push({ hoTen: '', boPhan: '', nam: tvState.nam, thamBenh: 0, thamVieng: 0, mungCuoi: 0, thaiSan: 0, ghiChu: '' }); saveDB(); renderAll(); }
+function tvAddRow() { DB.thamVieng.push({ id: uid(), hoTen: '', boPhan: '', nam: tvState.nam, thamBenh: 0, thamVieng: 0, mungCuoi: 0, thaiSan: 0, ghiChu: '' }); saveDB(); renderAll(); }
 function tvDelRow(ri) {
   showModal('Xóa dòng', 'Xóa dòng "<b>' + esc(DB.thamVieng[ri].hoTen || '(trống)') + '</b>"?', [
     { text: 'Xóa', warn: true, onClick: function () { DB.thamVieng.splice(ri, 1); saveDB(); renderAll(); } },
@@ -1545,16 +1558,28 @@ function renderModCaiDat() {
     '<div class="btnrow"><button class="btn" onclick="exportData()">⬇ Xuất dữ liệu (.json)</button>' +
     '<button class="btn sec" onclick="document.getElementById(\'importFile\').click()">⬆ Nhập dữ liệu từ file…</button>' +
     '<input type="file" id="importFile" accept=".json,application/json" style="display:none"></div></div>' +
-  '<div class="card"><h3>Đồng bộ trên mây (không bắt buộc)</h3>' +
-    '<div class="chkline" style="margin-bottom:8px"><input type="checkbox" id="s_cloudon"' + (s.cloud.enabled ? ' checked' : '') + ' onchange="toggleCloud(this.checked)"> <label for="s_cloudon" style="margin:0"><b>Bật đồng bộ trên mây</b> (mặc định TẮT — app hoạt động 100% offline)</label></div>' +
-    '<div id="cloudBox" style="display:' + (s.cloud.enabled ? 'block' : 'none') + '">' +
-    '<p class="note">Dán cấu hình Firebase của dự án dùng chung (object gồm apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId). Dữ liệu được ghi lên Cloud Firestore, collection <b>congdoan</b>, document <b>data</b> qua REST API — không cần cài thêm thư viện. Lưu ý: Firestore giới hạn 1 MB/document, nên hạn chế file đính kèm lớn nếu dùng đồng bộ mây.</p>' +
-    '<div class="fld"><textarea id="s_cloudcfg" style="min-height:90px;font-family:Consolas,monospace;font-size:12px" placeholder=\'{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}\'>' + esc(s.cloud.cfg) + '</textarea></div>' +
+  '<div class="card"><h3>Đồng bộ Supabase — mọi người xem cùng lúc (realtime)</h3>' +
+    '<div class="chkline" style="margin-bottom:8px"><input type="checkbox" id="sb_on"' + (s.sb.enabled ? ' checked' : '') + ' onchange="sbToggle(this.checked)"> <label for="sb_on" style="margin:0"><b>Bật đồng bộ Supabase</b> (mặc định TẮT — app chạy 100% offline bằng localStorage)</label></div>' +
+    '<div id="sbBox" style="display:' + (s.sb.enabled ? 'block' : 'none') + '">' +
+    '<p class="note">Mỗi máy nhập <b>Project URL</b> và <b>API key (publishable / anon)</b> một lần, lưu ngay trên máy đó. Khi bật, mọi thay đổi được đẩy lên Supabase và máy khác thấy <b>ngay lập tức</b> không cần tải lại trang. Mất mạng vẫn dùng bình thường, có mạng lại sẽ tự gửi phần còn thiếu.</p>' +
+    '<div class="frm">' +
+      '<div class="fld half"><label>Project URL</label><input type="text" id="sb_url" placeholder="https://xxxxxxxx.supabase.co" value="' + esc(s.sb.url) + '"></div>' +
+      '<div class="fld half"><label>API key (publishable hoặc anon)</label><input type="text" id="sb_key" placeholder="sb_publishable_… hoặc eyJhbGci…" value="' + esc(s.sb.key) + '"></div>' +
+    '</div>' +
     '<div class="btnrow">' +
-      '<button class="btn" onclick="cloudPush()">☁⬆ Đẩy lên mây</button>' +
-      '<button class="btn sec" onclick="cloudPull()">☁⬇ Tải về từ mây</button>' +
-      '<span class="note">Đẩy gần nhất: <b id="lastPush">' + esc(s.cloud.lastPush || 'chưa có') + '</b> · Tải gần nhất: <b id="lastPull">' + esc(s.cloud.lastPull || 'chưa có') + '</b></span>' +
-    '</div><div class="msg" id="cloudMsg"></div></div></div>' +
+      '<button class="btn" onclick="sbSaveCfg()">💾 Lưu &amp; kết nối</button>' +
+      '<button class="btn sec" onclick="sbTestConn()">🔌 Kiểm tra kết nối</button>' +
+      '<button class="btn sec" onclick="sbDoPush()">⬆ Đẩy toàn bộ lên</button>' +
+      '<button class="btn sec" onclick="sbDoPull(false)">⬇ Tải mới về (gộp)</button>' +
+      '<button class="btn warn" onclick="sbDoPull(true)">⬇ Tải về &amp; thay thế</button>' +
+    '</div>' +
+    '<p class="note">Đẩy gần nhất: <b>' + esc(s.sb.lastPush || 'chưa có') + '</b> · Tải gần nhất: <b>' + esc(s.sb.lastPull || 'chưa có') + '</b> · Mã máy này: <b>' + esc(SB_DEVICE) + '</b></p>' +
+    '<div class="msg" id="sbMsg"></div>' +
+    (SB_DEAD.length ? '<div class="warnbox">⚠ Có <b>' + SB_DEAD.length + '</b> thay đổi không gửi lên Supabase được. Lỗi gần nhất: ' + esc(String(SB_DEAD[SB_DEAD.length - 1].err || '').slice(0, 150)) + '<br>Hãy sửa lỗi rồi bấm <b>Đẩy toàn bộ lên</b> để gửi lại. <button class="mini" onclick="sbClearDead()">Bỏ qua cảnh báo</button></div>' : '') +
+    '<hr class="sep">' +
+    '<p class="note"><b>Cài đặt lần đầu:</b> vào Supabase → SQL Editor → New query → dán toàn bộ file <b>congdoan-supabase.sql</b> (để cùng thư mục với file này) → Run. File chỉ tạo 5 bảng <code>cd_*</code>, không đụng dữ liệu sẵn có. Sau đó bật công tắc trên, nhập URL + key, bấm <b>Lưu &amp; kết nối</b>, rồi bấm <b>Đẩy toàn bộ lên</b> một lần để đưa dữ liệu hiện có lên.<br>' +
+    '<b>Lưu ý bảo mật:</b> app không có đăng nhập, nên <u>ai có URL + API key đều xem và sửa được</u> — chỉ gửi key cho người trong Ban chấp hành, không dán key vào file HTML công khai trên GitHub Pages.</p>' +
+    '</div></div>' +
   '<div class="card"><h3>Vùng nguy hiểm</h3><div class="btnrow"><button class="btn warn" onclick="wipeData()">🗑 Xóa toàn bộ dữ liệu trên máy này</button></div></div>';
   $('importFile').addEventListener('change', function () { importFromFile(this); });
   moneyInput($('s_sdtm')); moneyInput($('s_sdnh'));
@@ -1574,16 +1599,9 @@ function saveSettings() {
   if (!s.soDu[nam]) s.soDu[nam] = { TM: 0, NH: 0 };
   s.soDu[nam].TM = parseMoney($('s_sdtm').value);
   s.soDu[nam].NH = parseMoney($('s_sdnh').value);
-  if ($('s_cloudcfg')) s.cloud.cfg = $('s_cloudcfg').value.trim();
   saveDB();
   $('s_msg').innerHTML = '<span style="color:#15803d;font-weight:600">Đã lưu ✓</span>';
   setTimeout(() => { const m = $('s_msg'); if (m) m.innerHTML = ''; }, 4000);
-}
-function toggleCloud(on) {
-  DB.settings.cloud.enabled = on;
-  if ($('s_cloudcfg')) DB.settings.cloud.cfg = $('s_cloudcfg').value.trim();
-  saveDB();
-  $('cloudBox').style.display = on ? 'block' : 'none';
 }
 function wipeData() {
   showModal('Xóa toàn bộ dữ liệu', 'Toàn bộ phiếu, sổ, bảng kê và cài đặt trên máy này sẽ bị xóa vĩnh viễn. Bạn nên <b>Xuất dữ liệu</b> trước. Tiếp tục?', [
@@ -1642,6 +1660,7 @@ function mergeData(inc) {
   const st = inc.settings || {};
   for (const y in (st.soDu || {})) if (!DB.settings.soDu[y]) DB.settings.soDu[y] = st.soDu[y];
   for (const y in (st.chiTieu || {})) if (!DB.settings.chiTieu[y]) DB.settings.chiTieu[y] = st.chiTieu[y];
+  migrateData();   // cấp mã id cho các dòng nhập từ file cũ (cần cho đồng bộ)
   return { p: np, u: nu };
 }
 function reRenderAllModules() {
@@ -1649,69 +1668,511 @@ function reRenderAllModules() {
   goMod(currentMod);
 }
 
-/* ---------- Đồng bộ mây (Cloud Firestore REST) ---------- */
-function cloudCfg() {
-  const raw = ($('s_cloudcfg') ? $('s_cloudcfg').value : DB.settings.cloud.cfg || '').trim();
-  if (!raw) return null;
-  let cfg = null;
-  try { cfg = JSON.parse(raw); }
-  catch (e) {
-    try { cfg = (new Function('return (' + raw + ')'))(); } catch (e2) { return null; }
+/* ================================================================
+   ĐỒNG BỘ SUPABASE — REST (PostgREST) + Realtime (WebSocket thuần)
+   Không dùng thư viện ngoài. Tắt đồng bộ → app chạy 100% offline như cũ.
+   ================================================================ */
+const SB_T = { phieu: 'cd_phieu', unc: 'cd_unc', tv: 'cd_tham_vieng', kv: 'cd_kv', file: 'cd_file' };
+const SB_KINDS = ['phieu', 'unc', 'tv', 'kv'];
+const SB_OUT_KEY = 'cdcs_outbox_v1';
+const SB_DEVICE = (function () {
+  let d = '';
+  try { d = localStorage.getItem('cdcs_device_id') || ''; } catch (e) { }
+  if (!d) { d = 'may-' + Math.random().toString(36).slice(2, 8); try { localStorage.setItem('cdcs_device_id', d); } catch (e) { } }
+  return d;
+})();
+let SB_SNAP = null;        // ảnh chụp trạng thái đã đồng bộ, để tính thay đổi
+let SB_APPLYING = false;   // đang áp thay đổi từ máy khác → không đẩy ngược lên
+let SB_OUT = [];           // hàng đợi gửi lên (giữ lại được khi mất mạng)
+let SB_DEAD = [];          // các mục gửi mãi không được (để báo cho người dùng)
+let SB_FLUSHING = false;
+let SB_WS = null, SB_HB = null, SB_RETRY = 0, SB_RETRY_TIMER = null;
+let SB_STATE = 'off', SB_STATE_MSG = '';
+
+function sbCfg() {
+  const s = (DB && DB.settings && DB.settings.sb) || {};
+  return { enabled: !!s.enabled, url: String(s.url || '').trim().replace(/\/+$/, ''), key: String(s.key || '').trim() };
+}
+function sbOn() { const c = sbCfg(); return !!(c.enabled && c.url && c.key); }
+function sbPk(kind) { return kind === 'kv' ? 'k' : 'id'; }
+async function sbReq(path, opts) {
+  const c = sbCfg();
+  if (!c.url || !c.key) throw new Error('Chưa nhập Project URL / API key của Supabase.');
+  opts = opts || {};
+  const res = await fetch(c.url + '/rest/v1/' + path, {
+    method: opts.method || 'GET',
+    headers: Object.assign({ apikey: c.key, Authorization: 'Bearer ' + c.key, 'Content-Type': 'application/json' }, opts.headers || {}),
+    body: opts.body
+  });
+  if (!res.ok) {
+    let t = await res.text();
+    try { const j = JSON.parse(t); t = (j.message || t) + (j.hint ? ' — ' + j.hint : ''); } catch (e) { }
+    if (/cd_[a-z_]*/.test(t) && /schema cache|does not exist|relation/i.test(t)) {
+      t += ' → Bảng chưa được tạo. Hãy chạy file congdoan-supabase.sql trong Supabase → SQL Editor.';
+    }
+    throw new Error('HTTP ' + res.status + ': ' + t.slice(0, 300));
   }
-  if (!cfg || !cfg.projectId || !cfg.apiKey) return null;
-  return cfg;
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
 }
-function cloudUrl(cfg) {
-  return 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(cfg.projectId) + '/databases/(default)/documents/congdoan/data?key=' + encodeURIComponent(cfg.apiKey);
+async function sbFetchAll(table, extra) {
+  const out = [], step = 500;
+  for (let from = 0; ; from += step) {
+    const rows = await sbReq(table + '?select=*' + (extra || '') + '&order=' + (table === SB_T.kv ? 'k' : 'id') + '&limit=' + step + '&offset=' + from);
+    if (!rows || !rows.length) break;
+    out.push.apply(out, rows);
+    if (rows.length < step) break;
+  }
+  return out;
 }
-function cloudMsg(txt, ok) {
-  const el = $('cloudMsg'); if (!el) { alert(txt); return; }
+
+/* ---------- Chuyển đổi giữa dữ liệu app (camelCase) và bảng (snake_case) ---------- */
+function sbRowPhieu(p) {
+  return {
+    id: p.id, loai: p.loai, so: p.so || '', ngay: p.ngay || null, nguoi: p.nguoi || '', bo_phan: p.boPhan || '',
+    dia_chi: p.diaChi || '', dien_giai: p.dienGiai || '', so_tien: Number(p.soTien) || 0, bang_chu: p.bangChu || '',
+    ma_so: p.maSo || '', tai_khoan: p.taiKhoan || '', hinh_thuc: p.hinhThuc || 'TM', no_tk: p.no || '', co_tk: p.co || '',
+    pu_ref: p.puRef || '', has_files: (p.files || []).length > 0, created_at: p.createdAt || null
+  };
+}
+function sbPhieuFromRow(r, old) {
+  return {
+    id: r.id, loai: r.loai, so: r.so || '', ngay: r.ngay || '', nguoi: r.nguoi || '', boPhan: r.bo_phan || '',
+    diaChi: r.dia_chi || '', dienGiai: r.dien_giai || '', soTien: Number(r.so_tien) || 0, bangChu: r.bang_chu || '',
+    maSo: r.ma_so || '', taiKhoan: r.tai_khoan || 'Công đoàn', hinhThuc: r.hinh_thuc || 'TM', no: r.no_tk || '', co: r.co_tk || '',
+    puRef: r.pu_ref || '', files: (old && old.files) ? old.files : [], createdAt: r.created_at || ''
+  };
+}
+function sbRowUnc(u) {
+  return {
+    id: u.id, so: u.so || '', ngay: u.ngay || null, tra_ten: u.traTen || '', tra_stk: u.traSTK || '', tra_nh: u.traNH || '',
+    nhan_ten: u.nhanTen || '', nhan_stk: u.nhanSTK || '', nhan_nh: u.nhanNH || '', so_tien: Number(u.soTien) || 0,
+    bang_chu: u.bangChu || '', noi_dung: u.noiDung || '', pc_ref: u.pcRef || '', has_files: (u.files || []).length > 0,
+    created_at: u.createdAt || null
+  };
+}
+function sbUncFromRow(r, old) {
+  return {
+    id: r.id, so: r.so || '', ngay: r.ngay || '', traTen: r.tra_ten || '', traSTK: r.tra_stk || '', traNH: r.tra_nh || '',
+    nhanTen: r.nhan_ten || '', nhanSTK: r.nhan_stk || '', nhanNH: r.nhan_nh || '', soTien: Number(r.so_tien) || 0,
+    bangChu: r.bang_chu || '', noiDung: r.noi_dung || '', pcRef: r.pc_ref || '', files: (old && old.files) ? old.files : [],
+    createdAt: r.created_at || ''
+  };
+}
+function sbRowTv(t) {
+  return {
+    id: t.id, ho_ten: t.hoTen || '', bo_phan: t.boPhan || '', nam: Number(t.nam) || null,
+    tham_benh: Number(t.thamBenh) || 0, tham_vieng: Number(t.thamVieng) || 0,
+    mung_cuoi: Number(t.mungCuoi) || 0, thai_san: Number(t.thaiSan) || 0, ghi_chu: t.ghiChu || ''
+  };
+}
+function sbTvFromRow(r) {
+  return {
+    id: r.id, hoTen: r.ho_ten || '', boPhan: r.bo_phan || '', nam: Number(r.nam) || new Date().getFullYear(),
+    thamBenh: Number(r.tham_benh) || 0, thamVieng: Number(r.tham_vieng) || 0,
+    mungCuoi: Number(r.mung_cuoi) || 0, thaiSan: Number(r.thai_san) || 0, ghiChu: r.ghi_chu || ''
+  };
+}
+/* Các mục dạng khóa–giá trị (cài đặt đơn vị, số dư, bảng kê…) */
+function sbKvEntries() {
+  const s = DB.settings, out = [];
+  out.push(['org', { capTren: s.capTren, donVi: s.donVi, diaChi: s.diaChi, keToan: s.keToan, chuTich: s.chuTich, thuQuy: s.thuQuy, nhTen: s.nhTen, nhSTK: s.nhSTK, nhNganHang: s.nhNganHang }]);
+  out.push(['sodu', s.soDu || {}]);
+  out.push(['chitieu', s.chiTieu || {}]);
+  for (const y in (DB.kpdp || {})) out.push(['kpdp:' + y, DB.kpdp[y]]);
+  for (const k in (DB.phuCap || {})) out.push(['phucap:' + k, DB.phuCap[k]]);
+  return out;
+}
+function sbKvValue(k) { const e = sbKvEntries().find(x => x[0] === k); return e ? e[1] : null; }
+function sbApplyKv(k, v) {
+  if (v == null) return;
+  if (k === 'org') ['capTren', 'donVi', 'diaChi', 'keToan', 'chuTich', 'thuQuy', 'nhTen', 'nhSTK', 'nhNganHang'].forEach(f => { if (v[f] !== undefined) DB.settings[f] = v[f]; });
+  else if (k === 'sodu') DB.settings.soDu = v;
+  else if (k === 'chitieu') DB.settings.chiTieu = v;
+  else if (k.indexOf('kpdp:') === 0) DB.kpdp[k.slice(5)] = v;
+  else if (k.indexOf('phucap:') === 0) DB.phuCap[k.slice(7)] = v;
+}
+function sbKvLabel(k) {
+  if (k === 'org') return 'thông tin đơn vị';
+  if (k === 'sodu') return 'số dư đầu kỳ';
+  if (k === 'chitieu') return 'chỉ tiêu cơ bản';
+  if (k.indexOf('kpdp:') === 0) return 'bảng kê KP&ĐP ' + k.slice(5);
+  if (k.indexOf('phucap:') === 0) return 'bảng kê phụ cấp ' + k.slice(7);
+  return k;
+}
+
+/* ---------- Phát hiện thay đổi cục bộ & hàng đợi gửi lên ---------- */
+function sbFileSig(o) { return (o.files || []).map(f => (f.name || '') + ':' + String(f.data || '').length).join(','); }
+function sbSnapshot() {
+  const s = { phieu: {}, unc: {}, tv: {}, kv: {} };
+  (DB.phieu || []).forEach(p => { s.phieu[p.id] = { r: JSON.stringify(sbRowPhieu(p)), f: sbFileSig(p) }; });
+  (DB.unc || []).forEach(u => { s.unc[u.id] = { r: JSON.stringify(sbRowUnc(u)), f: sbFileSig(u) }; });
+  (DB.thamVieng || []).forEach(t => { s.tv[t.id] = { r: JSON.stringify(sbRowTv(t)), f: '' }; });
+  sbKvEntries().forEach(e => { s.kv[e[0]] = { r: JSON.stringify(e[1]), f: '' }; });
+  return s;
+}
+function sbAfterSave() {
+  if (!sbOn()) return;
+  if (SB_APPLYING || !SB_SNAP) { SB_SNAP = sbSnapshot(); return; }   // mốc so sánh, không đẩy
+  const cur = sbSnapshot();
+  let n = 0;
+  SB_KINDS.forEach(k => {
+    for (const id in cur[k]) {
+      const a = SB_SNAP[k][id], b = cur[k][id];
+      if (!a || a.r !== b.r || a.f !== b.f) { sbQueue(k, 'up', id, !a || a.f !== b.f); n++; }
+    }
+    for (const id in SB_SNAP[k]) if (!cur[k][id]) { sbQueue(k, 'del', id, false); n++; }
+  });
+  SB_SNAP = cur;
+  if (n) sbFlush();
+}
+function sbQueue(k, t, id, withFiles) {
+  const i = SB_OUT.findIndex(o => o.k === k && o.id === id);
+  if (i >= 0) { SB_OUT[i].t = t; SB_OUT[i].f = SB_OUT[i].f || !!withFiles; }
+  else SB_OUT.push({ k: k, t: t, id: id, f: !!withFiles });
+  sbSaveOut();
+}
+function sbSaveOut() { try { localStorage.setItem(SB_OUT_KEY, JSON.stringify(SB_OUT)); } catch (e) { } sbPill(); }
+function sbSaveDead() { try { localStorage.setItem(SB_OUT_KEY + '_dead', JSON.stringify(SB_DEAD.slice(-50))); } catch (e) { } }
+function sbLoadOut() {
+  try { SB_OUT = JSON.parse(localStorage.getItem(SB_OUT_KEY) || '[]') || []; } catch (e) { SB_OUT = []; }
+  try { SB_DEAD = JSON.parse(localStorage.getItem(SB_OUT_KEY + '_dead') || '[]') || []; } catch (e) { SB_DEAD = []; }
+}
+function sbBuildRow(k, id) {
+  if (k === 'phieu') { const p = (DB.phieu || []).find(x => x.id === id); return p ? { row: sbRowPhieu(p), files: p.files || [] } : null; }
+  if (k === 'unc') { const u = (DB.unc || []).find(x => x.id === id); return u ? { row: sbRowUnc(u), files: u.files || [] } : null; }
+  if (k === 'tv') { const t = (DB.thamVieng || []).find(x => x.id === id); return t ? { row: sbRowTv(t), files: null } : null; }
+  if (k === 'kv') { const v = sbKvValue(id); return v == null ? null : { row: { k: id, v: v }, files: null }; }
+  return null;
+}
+async function sbUpsert(kind, row) {
+  row.updated_at = new Date().toISOString();
+  row.updated_by = SB_DEVICE;
+  await sbReq(SB_T[kind], { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(row) });
+}
+async function sbPushFiles(ownerId, files) {
+  await sbReq(SB_T.file + '?owner_id=eq.' + encodeURIComponent(ownerId), { method: 'DELETE' });
+  for (let i = 0; i < (files || []).length; i++) {
+    const f = files[i];
+    await sbReq(SB_T.file, {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ id: ownerId + '#' + i, owner_id: ownerId, ten: f.name || ('file-' + (i + 1)), loai: f.type || '', data: f.data || '' })
+    });
+  }
+}
+function sbIsNetErr(e) {
+  return (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+    /Failed to fetch|NetworkError|Load failed|network/i.test(e && e.message || '');
+}
+async function sbFlush() {
+  if (!sbOn() || SB_FLUSHING || !SB_OUT.length) return;
+  SB_FLUSHING = true; sbPill();
+  let sent = 0;
+  try {
+    while (SB_OUT.length) {
+      const op = SB_OUT[0];
+      try {
+        if (op.t === 'del') {
+          await sbReq(SB_T[op.k] + '?' + sbPk(op.k) + '=eq.' + encodeURIComponent(op.id), { method: 'DELETE' });
+          if (op.k === 'phieu' || op.k === 'unc') await sbReq(SB_T.file + '?owner_id=eq.' + encodeURIComponent(op.id), { method: 'DELETE' });
+        } else {
+          const b = sbBuildRow(op.k, op.id);
+          if (b) {
+            await sbUpsert(op.k, b.row);
+            if (op.f && b.files) await sbPushFiles(op.id, b.files);
+          }
+        }
+        SB_OUT.shift(); sbSaveOut(); sent++;
+      } catch (e) {
+        SB_STATE_MSG = e.message;
+        op.n = (op.n || 0) + 1;
+        // Lỗi mạng → dừng, giữ nguyên hàng đợi, thử lại sau.
+        // Lỗi dữ liệu (sai cột, vi phạm ràng buộc…) → thử 3 lần rồi để riêng,
+        // không để 1 mục hỏng chặn toàn bộ các thay đổi phía sau.
+        if (sbIsNetErr(e) || op.n < 3) throw e;
+        SB_OUT.shift();
+        SB_DEAD.push({ k: op.k, id: op.id, t: op.t, err: e.message, at: new Date().toLocaleString('vi-VN') });
+        sbSaveDead();
+        console.warn('Supabase — bỏ qua mục lỗi:', op, e.message);
+      }
+    }
+    if (sent) {
+      DB.settings.sb.lastPush = new Date().toLocaleString('vi-VN');
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch (e) { }
+    }
+  } catch (e) {
+    SB_STATE_MSG = e.message;
+    console.warn('Supabase:', e.message);
+    setTimeout(sbFlush, 15000);   // thử lại sau
+  }
+  SB_FLUSHING = false; sbPill();
+}
+
+/* ---------- Tải toàn bộ về / Đẩy toàn bộ lên ---------- */
+async function sbPullAll(replace, silent) {
+  const ph = await sbFetchAll(SB_T.phieu);
+  const un = await sbFetchAll(SB_T.unc);
+  const tv = await sbFetchAll(SB_T.tv);
+  const kv = await sbFetchAll(SB_T.kv);
+  let files = [];
+  if (ph.some(r => r.has_files) || un.some(r => r.has_files)) files = await sbFetchAll(SB_T.file);
+  const byOwner = {};
+  files.forEach(f => { (byOwner[f.owner_id] = byOwner[f.owner_id] || []).push(f); });
+  const mkFiles = id => (byOwner[id] || []).sort((a, b) => String(a.id).localeCompare(String(b.id))).map(f => ({ name: f.ten, type: f.loai, data: f.data }));
+  SB_APPLYING = true;
+  if (replace) { DB.phieu = []; DB.unc = []; DB.thamVieng = []; }
+  const ip = {}; DB.phieu.forEach((p, i) => ip[p.id] = i);
+  ph.forEach(r => { const np = sbPhieuFromRow(r, DB.phieu[ip[r.id]]); if (r.has_files) np.files = mkFiles(r.id); if (ip[r.id] !== undefined) DB.phieu[ip[r.id]] = np; else DB.phieu.push(np); });
+  const iu = {}; DB.unc.forEach((u, i) => iu[u.id] = i);
+  un.forEach(r => { const nu = sbUncFromRow(r, DB.unc[iu[r.id]]); if (r.has_files) nu.files = mkFiles(r.id); if (iu[r.id] !== undefined) DB.unc[iu[r.id]] = nu; else DB.unc.push(nu); });
+  const it = {}; DB.thamVieng.forEach((t, i) => it[t.id] = i);
+  tv.forEach(r => { const nt = sbTvFromRow(r); if (it[r.id] !== undefined) DB.thamVieng[it[r.id]] = nt; else DB.thamVieng.push(nt); });
+  kv.forEach(r => sbApplyKv(r.k, r.v));
+  DB.settings.sb.lastPull = new Date().toLocaleString('vi-VN');
+  saveDB();
+  SB_APPLYING = false;
+  SB_SNAP = sbSnapshot();
+  if (!silent) reRenderAllModules(); else sbRefreshUI();
+  return { p: ph.length, u: un.length, t: tv.length, k: kv.length };
+}
+async function sbPushAll(onProgress) {
+  const items = [];
+  (DB.phieu || []).forEach(p => items.push({ k: 'phieu', id: p.id, f: true }));
+  (DB.unc || []).forEach(u => items.push({ k: 'unc', id: u.id, f: true }));
+  (DB.thamVieng || []).forEach(t => items.push({ k: 'tv', id: t.id, f: false }));
+  sbKvEntries().forEach(e => items.push({ k: 'kv', id: e[0], f: false }));
+  for (let i = 0; i < items.length; i++) {
+    const b = sbBuildRow(items[i].k, items[i].id);
+    if (b) {
+      await sbUpsert(items[i].k, b.row);
+      if (items[i].f && b.files && b.files.length) await sbPushFiles(items[i].id, b.files);
+    }
+    if (onProgress && (i % 10 === 0 || i === items.length - 1)) onProgress(i + 1, items.length);
+  }
+  DB.settings.sb.lastPush = new Date().toLocaleString('vi-VN');
+  saveDB();
+  SB_SNAP = sbSnapshot();
+  return items.length;
+}
+
+/* ---------- Realtime: WebSocket theo giao thức Phoenix của Supabase ---------- */
+function sbConnect() {
+  sbDisconnect();
+  if (!sbOn()) { sbSetState('off'); return; }
+  const c = sbCfg();
+  let ws;
+  try { ws = new WebSocket(c.url.replace(/^http/, 'ws') + '/realtime/v1/websocket?apikey=' + encodeURIComponent(c.key) + '&vsn=1.0.0'); }
+  catch (e) { sbSetState('err', e.message); return; }
+  SB_WS = ws;
+  sbSetState('connecting');
+  ws.onopen = function () {
+    ws.send(JSON.stringify({
+      topic: 'realtime:congdoan', event: 'phx_join', ref: '1',
+      payload: {
+        config: {
+          broadcast: { self: false }, presence: { key: '' },
+          postgres_changes: SB_KINDS.map(k => ({ event: '*', schema: 'public', table: SB_T[k] }))
+        },
+        access_token: c.key
+      }
+    }));
+    SB_HB = setInterval(function () {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(Date.now()) }));
+    }, 25000);
+  };
+  ws.onmessage = function (ev) {
+    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (m.event === 'phx_reply' && m.ref === '1') {
+      if (m.payload && m.payload.status === 'ok') { SB_RETRY = 0; sbSetState('live'); }
+      else sbSetState('err', (m.payload && m.payload.response && (m.payload.response.reason || m.payload.response.message)) || 'không tham gia được kênh realtime');
+    } else if (m.event === 'postgres_changes' && m.payload && m.payload.data) {
+      sbApplyRemote(m.payload.data);
+    } else if (m.event === 'system' && m.payload && m.payload.status === 'error') {
+      sbSetState('err', m.payload.message || 'lỗi kênh realtime');
+    }
+  };
+  ws.onerror = function () { sbSetState('err', 'không kết nối được máy chủ realtime'); };
+  ws.onclose = function () {
+    if (SB_HB) { clearInterval(SB_HB); SB_HB = null; }
+    if (SB_WS === ws) SB_WS = null;
+    if (!sbOn()) { sbSetState('off'); return; }
+    sbSetState('offline');
+    SB_RETRY++;
+    const wait = Math.min(30000, 2000 * SB_RETRY);
+    if (SB_RETRY_TIMER) clearTimeout(SB_RETRY_TIMER);
+    SB_RETRY_TIMER = setTimeout(sbConnect, wait);
+  };
+}
+function sbDisconnect() {
+  if (SB_RETRY_TIMER) { clearTimeout(SB_RETRY_TIMER); SB_RETRY_TIMER = null; }
+  if (SB_HB) { clearInterval(SB_HB); SB_HB = null; }
+  if (SB_WS) { try { SB_WS.onclose = null; SB_WS.close(); } catch (e) { } SB_WS = null; }
+}
+function sbApplyRemote(d) {
+  if (!d || !d.table) return;
+  const type = d.type, rec = d.record, old = d.old_record;
+  if (type !== 'DELETE' && rec && rec.updated_by === SB_DEVICE) return;   // thay đổi của chính máy này
+  let changed = false, what = '';
+  SB_APPLYING = true;
+  try {
+    if (d.table === SB_T.phieu) {
+      if (type === 'DELETE') {
+        const i = DB.phieu.findIndex(p => p.id === (old || {}).id);
+        if (i >= 0) { what = 'Đã xóa phiếu ' + DB.phieu[i].so; DB.phieu.splice(i, 1); changed = true; }
+      } else if (rec) {
+        const i = DB.phieu.findIndex(p => p.id === rec.id);
+        const np = sbPhieuFromRow(rec, i >= 0 ? DB.phieu[i] : null);
+        if (i >= 0) DB.phieu[i] = np; else DB.phieu.push(np);
+        what = (type === 'INSERT' ? 'Phiếu mới ' : 'Sửa phiếu ') + np.so;
+        changed = true;
+        if (rec.has_files) sbLoadFiles('phieu', rec.id);
+      }
+    } else if (d.table === SB_T.unc) {
+      if (type === 'DELETE') {
+        const i = DB.unc.findIndex(u => u.id === (old || {}).id);
+        if (i >= 0) { what = 'Đã xóa ủy nhiệm chi ' + DB.unc[i].so; DB.unc.splice(i, 1); changed = true; }
+      } else if (rec) {
+        const i = DB.unc.findIndex(u => u.id === rec.id);
+        const nu = sbUncFromRow(rec, i >= 0 ? DB.unc[i] : null);
+        if (i >= 0) DB.unc[i] = nu; else DB.unc.push(nu);
+        what = (type === 'INSERT' ? 'Ủy nhiệm chi mới ' : 'Sửa ủy nhiệm chi ') + nu.so;
+        changed = true;
+        if (rec.has_files) sbLoadFiles('unc', rec.id);
+      }
+    } else if (d.table === SB_T.tv) {
+      if (type === 'DELETE') {
+        const i = DB.thamVieng.findIndex(t => t.id === (old || {}).id);
+        if (i >= 0) { what = 'Đã xóa dòng thăm viếng ' + DB.thamVieng[i].hoTen; DB.thamVieng.splice(i, 1); changed = true; }
+      } else if (rec) {
+        const i = DB.thamVieng.findIndex(t => t.id === rec.id);
+        const nt = sbTvFromRow(rec);
+        if (i >= 0) DB.thamVieng[i] = nt; else DB.thamVieng.push(nt);
+        what = 'Cập nhật thăm viếng ' + nt.hoTen;
+        changed = true;
+      }
+    } else if (d.table === SB_T.kv && type !== 'DELETE' && rec) {
+      sbApplyKv(rec.k, rec.v);
+      what = 'Cập nhật ' + sbKvLabel(rec.k);
+      changed = true;
+    }
+    if (changed) saveDB();
+  } catch (e) { console.error('Supabase apply:', e); }
+  SB_APPLYING = false;
+  if (changed) { SB_SNAP = sbSnapshot(); sbRefreshUI(); sbToast('🔄 ' + what); }
+}
+function sbLoadFiles(kind, id) {
+  sbReq(SB_T.file + '?owner_id=eq.' + encodeURIComponent(id) + '&select=id,ten,loai,data&order=id').then(rows => {
+    if (!rows) return;
+    const arr = (DB[kind === 'phieu' ? 'phieu' : 'unc'] || []);
+    const o = arr.find(x => x.id === id);
+    if (!o) return;
+    SB_APPLYING = true;
+    o.files = rows.map(r => ({ name: r.ten, type: r.loai, data: r.data }));
+    saveDB();
+    SB_APPLYING = false;
+    SB_SNAP = sbSnapshot();
+  }).catch(e => console.warn('Tải file đính kèm:', e.message));
+}
+function sbRefreshUI() {
+  if (currentMod === 'caidat') return;      // tránh xóa mất chữ đang gõ trong Cài đặt
+  try { renderAll(); } catch (e) { }
+}
+
+/* ---------- Trạng thái & thông báo ---------- */
+function sbSetState(st, msg) { SB_STATE = st; SB_STATE_MSG = msg || ''; sbPill(); }
+function sbPill() {
+  const el = $('sbPill'); if (!el) return;
+  const pend = SB_OUT.length;
+  const map = {
+    off: ['off', '○ Đồng bộ: TẮT'],
+    connecting: ['wait', '◐ Đang kết nối…'],
+    live: ['live', '● Trực tuyến'],
+    offline: ['wait', '◌ Mất kết nối — sẽ tự nối lại'],
+    err: ['err', '⚠ Lỗi đồng bộ']
+  };
+  const m = map[(SB_STATE === 'off' && sbOn()) ? 'connecting' : SB_STATE] || map.off;
+  el.className = 'sbpill ' + m[0];
+  el.textContent = m[1] + (pend ? ' · ' + pend + ' chờ gửi' : '') + (SB_FLUSHING ? ' · đang gửi…' : '');
+  el.title = (SB_STATE_MSG || '') + (pend ? '\n' + pend + ' thay đổi chờ đẩy lên.' : '');
+}
+function sbToast(txt) {
+  let t = $('sbToast');
+  if (!t) { t = document.createElement('div'); t.id = 'sbToast'; document.body.appendChild(t); }
+  t.textContent = txt;
+  t.className = 'show';
+  clearTimeout(sbToast._t);
+  sbToast._t = setTimeout(function () { t.className = ''; }, 4000);
+}
+
+/* ---------- Nút bấm trong màn hình Cài đặt ---------- */
+function sbMsg(txt, ok) {
+  const el = $('sbMsg'); if (!el) { alert(txt); return; }
   el.className = 'msg ' + (ok ? 'ok' : 'err');
   el.textContent = txt;
 }
-function cloudPush() {
-  if (!DB.settings.cloud.enabled) { cloudMsg('Đồng bộ mây đang TẮT. Hãy bật công tắc trước.', false); return; }
-  const cfg = cloudCfg();
-  if (!cfg) { cloudMsg('Chưa cấu hình hợp lệ. Hãy dán object cấu hình có apiKey và projectId rồi Lưu cài đặt.', false); return; }
-  DB.settings.cloud.cfg = $('s_cloudcfg').value.trim(); saveDB();
-  const json = JSON.stringify(DB);
-  if (json.length > 950000) { cloudMsg('Dữ liệu quá lớn để đồng bộ mây (' + Math.round(json.length / 1024) + ' KB > giới hạn ~950 KB của Firestore). Hãy giảm bớt file đính kèm, hoặc chia sẻ bằng Xuất/Nhập file.', false); return; }
-  cloudMsg('Đang đẩy dữ liệu lên mây…', true);
-  fetch(cloudUrl(cfg), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: { json: { stringValue: json }, updatedAt: { stringValue: new Date().toISOString() }, updatedBy: { stringValue: navigator.userAgent.slice(0, 60) } } })
-  }).then(res => {
-    if (!res.ok) return res.text().then(t => { throw new Error('HTTP ' + res.status + ': ' + t.slice(0, 300)); });
-    DB.settings.cloud.lastPush = new Date().toLocaleString('vi-VN');
-    saveDB();
-    if ($('lastPush')) $('lastPush').textContent = DB.settings.cloud.lastPush;
-    cloudMsg('Đã đẩy dữ liệu lên mây thành công lúc ' + DB.settings.cloud.lastPush + ' ✓', true);
-  }).catch(e => {
-    cloudMsg('Lỗi khi đẩy lên mây: ' + e.message + '\nKiểm tra kết nối mạng, cấu hình project và quyền ghi (Firestore rules).', false);
-  });
+function sbSaveCfg() {
+  DB.settings.sb.url = $('sb_url').value.trim().replace(/\/+$/, '');
+  DB.settings.sb.key = $('sb_key').value.trim();
+  DB.settings.sb.enabled = $('sb_on').checked;
+  saveDB();
+  renderModCaiDat();
+  if (sbOn()) { SB_SNAP = sbSnapshot(); sbConnect(); sbFlush(); sbMsg('Đã lưu cấu hình. Đang kết nối Supabase…', true); }
+  else { sbDisconnect(); sbSetState('off'); sbMsg('Đã tắt đồng bộ — app chạy hoàn toàn offline.', true); }
 }
-function cloudPull() {
-  if (!DB.settings.cloud.enabled) { cloudMsg('Đồng bộ mây đang TẮT. Hãy bật công tắc trước.', false); return; }
-  const cfg = cloudCfg();
-  if (!cfg) { cloudMsg('Chưa cấu hình hợp lệ. Hãy dán object cấu hình có apiKey và projectId rồi Lưu cài đặt.', false); return; }
-  cloudMsg('Đang tải dữ liệu từ mây…', true);
-  fetch(cloudUrl(cfg)).then(res => {
-    if (res.status === 404) throw new Error('Chưa có dữ liệu trên mây (document congdoan/data chưa tồn tại). Máy kia cần bấm "Đẩy lên mây" trước.');
-    if (!res.ok) return res.text().then(t => { throw new Error('HTTP ' + res.status + ': ' + t.slice(0, 300)); });
-    return res.json();
-  }).then(doc => {
-    const json = doc && doc.fields && doc.fields.json && doc.fields.json.stringValue;
-    if (!json) throw new Error('Document trên mây không có dữ liệu hợp lệ.');
-    const inc = JSON.parse(json);
-    DB.settings.cloud.lastPull = new Date().toLocaleString('vi-VN');
-    saveDB();
-    if ($('lastPull')) $('lastPull').textContent = DB.settings.cloud.lastPull;
-    const upd = doc.fields.updatedAt ? doc.fields.updatedAt.stringValue : '';
-    chooseImportMode(inc, 'dữ liệu trên mây' + (upd ? ' (đẩy lúc ' + new Date(upd).toLocaleString('vi-VN') + ')' : ''));
-  }).catch(e => {
-    cloudMsg('Lỗi khi tải từ mây: ' + e.message + '\nKiểm tra kết nối mạng và cấu hình.', false);
-  });
+function sbClearDead() { SB_DEAD = []; sbSaveDead(); renderModCaiDat(); }
+function sbToggle(on) {
+  DB.settings.sb.enabled = on;
+  const box = $('sbBox'); if (box) box.style.display = on ? 'block' : 'none';
+  saveDB();
+  if (!on) { sbDisconnect(); sbSetState('off'); }
+}
+function sbTestConn() {
+  sbMsg('Đang kiểm tra kết nối…', true);
+  sbReq(SB_T.phieu + '?select=id&limit=1')
+    .then(() => { sbMsg('Kết nối Supabase OK — bảng cd_phieu đã sẵn sàng ✓', true); sbConnect(); })
+    .catch(e => sbMsg('Không kết nối được: ' + e.message, false));
+}
+function sbDoPush() {
+  if (!sbOn()) { sbMsg('Chưa bật hoặc chưa lưu cấu hình Supabase.', false); return; }
+  showModal('Đẩy toàn bộ dữ liệu lên Supabase',
+    'Sẽ ghi <b>' + DB.phieu.length + ' phiếu</b>, <b>' + DB.unc.length + ' ủy nhiệm chi</b>, <b>' + DB.thamVieng.length + ' dòng thăm viếng</b> và các bảng kê lên Supabase.<br>Dòng nào đã có (trùng mã) sẽ được ghi đè bằng bản trên máy này.<br><br>Dùng lần đầu để đưa dữ liệu sẵn có lên. Tiếp tục?', [
+    {
+      text: 'Đẩy lên', onClick: function () {
+        sbMsg('Đang đẩy dữ liệu lên Supabase…', true);
+        sbPushAll(function (i, n) { sbMsg('Đang đẩy… ' + i + '/' + n, true); })
+          .then(n => { const t = DB.settings.sb.lastPush; renderModCaiDat(); sbMsg('Đã đẩy xong ' + n + ' mục lên Supabase lúc ' + t + ' ✓', true); })
+          .catch(e => sbMsg('Lỗi khi đẩy: ' + e.message, false));
+      }
+    },
+    { text: 'Hủy', sec: true }
+  ]);
+}
+function sbDoPull(replace) {
+  if (!sbOn()) { sbMsg('Chưa bật hoặc chưa lưu cấu hình Supabase.', false); return; }
+  const run = function () {
+    sbMsg('Đang tải dữ liệu từ Supabase…', true);
+    sbPullAll(replace, false)
+      .then(r => { sbMsg('Đã tải về: ' + r.p + ' phiếu, ' + r.u + ' UNC, ' + r.t + ' dòng thăm viếng, ' + r.k + ' bảng kê ✓', true); })
+      .catch(e => sbMsg('Lỗi khi tải: ' + e.message, false));
+  };
+  if (replace) {
+    showModal('Tải về & thay thế', 'Dữ liệu phiếu / UNC / thăm viếng trên máy này sẽ bị <b>xóa và thay bằng dữ liệu trên Supabase</b>.<br>Nên bấm "Xuất dữ liệu" sao lưu trước. Tiếp tục?', [
+      { text: 'Thay thế', warn: true, onClick: run }, { text: 'Hủy', sec: true }
+    ]);
+  } else run();
+}
+
+/* ---------- Khởi động đồng bộ ---------- */
+function sbInit() {
+  sbLoadOut();
+  if (!sbOn()) { sbSetState('off'); return; }
+  SB_SNAP = sbSnapshot();
+  sbSetState('connecting');
+  sbFlush()                                   // đẩy các thay đổi còn tồn trước
+    .then(() => sbPullAll(false, true))       // rồi lấy dữ liệu mới nhất về (gộp)
+    .catch(e => { SB_STATE_MSG = e.message; sbPill(); })
+    .then(() => sbConnect());
+  window.addEventListener('online', function () { if (sbOn()) { sbFlush(); sbConnect(); } });
 }
 
 /* ================================================================
@@ -1734,6 +2195,7 @@ const RENDERERS = {
 loadDB();
 renderNav();
 goMod('dashboard');
+sbInit();
 window.addEventListener('afterprint', function () { $('printArea').innerHTML = ''; });
 </script>
 </body>
