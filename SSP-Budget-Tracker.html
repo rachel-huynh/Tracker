@@ -144,6 +144,7 @@ tr.total td{background:#16283e0d;font-weight:700;border-top:2px solid var(--navy
     <div class="t2" id="hSub">Sofitel Saigon Plaza Renovation — PIP Cost Control</div>
   </div>
   <div class="hpill" id="hVer">—</div>
+  <div id="sbPill" style="cursor:pointer" onclick="App.go('settings')"></div>
   <div class="seg" id="curSeg">
     <button data-cur="VND">VND</button><button data-cur="USD">USD</button>
   </div>
@@ -257,7 +258,21 @@ en:{
  cheaper:'cheaper', pricier:'pricier',
  sortBy:'Sort', srtNew:'Newest first', srtSave:'Biggest saving first', srtOver:'Biggest increase first', srtTitle:'Title A–Z', srtTotal:'Largest total first',
  stAll:'All statuses', stSaving:'Saving', stOverrun:'Overrun', stIncluded:'Included in forecast', allStudies:'All studies', noStudy:'(no study)', ofN:'of',
- allMonths:'All months', sortHint:'Click a column header to sort'
+ allMonths:'All months', sortHint:'Click a column header to sort',
+ sbT:'Automatic sync (Supabase realtime)', sbOnLbl:'Sync automatically', sbUrl:'Project URL', sbKey:'API key (publishable)',
+ sbHelp:'When on, everything you change is sent to the shared database within a second, and changes made by other members appear here by themselves — no Push/Pull, no import/export. Data still lives in this browser first, so the app keeps working offline and re-sends when the connection returns.',
+ sbSetup:'One-time setup for the whole team: in Supabase open SQL Editor and run the file <b>budget-tracker-supabase.sql</b> (kept in this folder). Each computer then only needs the switch above.',
+ sbLive:'Online', sbConnecting:'Connecting…', sbOffline:'Offline — will retry', sbErr:'Sync error', sbOff:'Sync off', sbSending:'Sending…',
+ sbPullAll:'Download everything', sbPushAll:'Upload everything', sbReconnect:'Reconnect', sbLink:'🔗 Create preset link',
+ sbLinkMsg:'Link copied — send it to a member; opening it once configures their computer.',
+ sbQueued:'waiting to send', sbDeadT:'Items that could not be sent', sbClearDead:'Clear list', sbDevice:'This computer',
+ sbPublicWarn:'DANGER: this file is running on a public address while the key is embedded in its source. Anyone could read and change the budget data. Clear SB_PRESET in the published copy.',
+ sbRemote:'from another computer —',
+ sbFirstUse:'Not configured on this computer yet. The project owner: paste the Project URL and key below once, then press <b>🔗 Create preset link</b> and send that link to each member — opening it once configures their computer, and from then on everything syncs by itself. The key is never stored in this file because the page is publicly reachable.',
+ sbConfirmPushAll:'Upload the whole local dataset, overwriting the shared copy where it differs. Continue?',
+ sbConfirmPullAll:'Download everything from the shared database and merge into this computer. Continue?',
+ sbImportWarn:'Automatic sync is ON — an imported backup will replace the shared data for everyone too. Continue?',
+ sbJsonbinNote:'Alternative manual method — only needed if you do not use the automatic sync above.'
 },
 vi:{
  dash:'Tổng quan', versions:'Phiên bản', compare:'So sánh', estimate:'Dự toán', ve:'VE Studio', materials:'Vật liệu', atts:'Đính kèm', settings:'Cài đặt',
@@ -336,7 +351,21 @@ vi:{
  cheaper:'rẻ hơn', pricier:'đắt hơn',
  sortBy:'Sắp xếp', srtNew:'Mới nhất trước', srtSave:'Tiết kiệm nhiều nhất', srtOver:'Tăng nhiều nhất', srtTitle:'Tên A–Z', srtTotal:'Tổng lớn nhất trước',
  stAll:'Tất cả trạng thái', stSaving:'Tiết kiệm', stOverrun:'Vượt', stIncluded:'Đã đưa vào dự báo', allStudies:'Tất cả nhóm', noStudy:'(chưa có nhóm)', ofN:'trên',
- allMonths:'Tất cả các tháng', sortHint:'Bấm tiêu đề cột để sắp xếp'
+ allMonths:'Tất cả các tháng', sortHint:'Bấm tiêu đề cột để sắp xếp',
+ sbT:'Đồng bộ tự động (Supabase realtime)', sbOnLbl:'Tự động đồng bộ', sbUrl:'Project URL', sbKey:'API key (publishable)',
+ sbHelp:'Khi bật, mọi thay đổi của bạn được gửi lên cơ sở dữ liệu chung trong khoảng một giây, và thay đổi của thành viên khác tự hiện ở đây — không cần bấm Đẩy/Tải, không cần xuất/nhập file. Dữ liệu vẫn nằm trong trình duyệt này trước, nên mất mạng vẫn dùng được và sẽ tự gửi lại khi có mạng.',
+ sbSetup:'Cài đặt một lần cho cả nhóm: vào Supabase → SQL Editor, chạy file <b>budget-tracker-supabase.sql</b> (để sẵn trong thư mục này). Sau đó mỗi máy chỉ cần bật công tắc ở trên.',
+ sbLive:'Trực tuyến', sbConnecting:'Đang kết nối…', sbOffline:'Mất kết nối — sẽ thử lại', sbErr:'Lỗi đồng bộ', sbOff:'Đang tắt', sbSending:'Đang gửi…',
+ sbPullAll:'Tải toàn bộ về', sbPushAll:'Đẩy toàn bộ lên', sbReconnect:'Kết nối lại', sbLink:'🔗 Tạo link cài sẵn',
+ sbLinkMsg:'Đã sao chép link — gửi cho thành viên, họ mở một lần là máy tự cấu hình.',
+ sbQueued:'đang chờ gửi', sbDeadT:'Các mục không gửi được', sbClearDead:'Xóa danh sách', sbDevice:'Máy này',
+ sbPublicWarn:'NGUY HIỂM: file đang chạy trên địa chỉ công khai mà key lại nằm sẵn trong mã nguồn. Bất kỳ ai cũng đọc và sửa được dữ liệu ngân sách. Hãy xóa SB_PRESET ở bản đăng công khai.',
+ sbRemote:'từ máy khác —',
+ sbFirstUse:'Máy này chưa cấu hình. Người quản lý: dán Project URL và key vào bên dưới một lần, rồi bấm <b>🔗 Tạo link cài sẵn</b> và gửi link đó cho từng thành viên — họ mở một lần là máy tự nhớ, từ đó mọi thứ tự đồng bộ. Key cố ý KHÔNG lưu trong file vì trang này ai cũng mở được.',
+ sbConfirmPushAll:'Đẩy toàn bộ dữ liệu của máy này lên, ghi đè bản chung ở những chỗ khác nhau. Tiếp tục?',
+ sbConfirmPullAll:'Tải toàn bộ từ cơ sở dữ liệu chung và gộp vào máy này. Tiếp tục?',
+ sbImportWarn:'Đồng bộ tự động đang BẬT — nhập file sao lưu sẽ thay thế cả dữ liệu chung của mọi người. Tiếp tục?',
+ sbJsonbinNote:'Cách thủ công thay thế — chỉ cần khi không dùng đồng bộ tự động ở trên.'
 }};
 function t(k){ return (I18N[state.lang]||I18N.en)[k] || I18N.en[k] || k; }
 
@@ -383,10 +412,13 @@ let state = { lang:'en', currency:'VND', fx:26450, prelimsPct:7, contPct:0, budg
   versions:[], activeId:null, baseId:null, options:[], manualAreas:[], attDir:'Attachments',
   cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null}, cloudEnabled:true, roomLabel:'code', compRef:'auto',
   payments:null, contracts:[], payKeywords:PAY_KW_DEFAULT, payOverrides:{}, showInternal:false,
-  quotes:[], rateLinks:{}, tab:'dash' };
+  quotes:[], rateLinks:{}, sb:{enabled:false,url:'',key:'',lastPush:null,lastPull:null}, tab:'dash' };
 let attCache=[]; // metadata cache of files store
 let saveT=null;
-function save(){ clearTimeout(saveT); saveT=setTimeout(()=>{ kvSet('state',JSON.parse(JSON.stringify(state))).catch(()=>{ try{localStorage.setItem('ssp_bt',JSON.stringify(state));}catch(e){} }); },350); }
+function save(){ clearTimeout(saveT); saveT=setTimeout(()=>{
+  kvSet('state',JSON.parse(JSON.stringify(state))).catch(()=>{ try{localStorage.setItem('ssp_bt',JSON.stringify(state));}catch(e){} });
+  try{ sbAfterSave(); }catch(e){ console.warn('sync',e); }   // điểm móc DUY NHẤT của đồng bộ tự động
+},350); }
 function ver(id){ return state.versions.find(v=>v.id===(id||state.activeId)); }
 function activeVer(){ return ver(state.activeId) || state.versions[state.versions.length-1] || null; }
 
@@ -761,6 +793,272 @@ function payData(){ // classified rows honouring the internal-visibility toggle
 function catLabel(cat){ if(cat==='vat') return t('vatCat'); if(cat==='internal') return t('internalCat'); if(cat==='other') return t('otherCat');
   const c=(state.contracts||[]).find(x=>x.id===cat); return c?(c.category||c.company):t('otherCat'); }
 
+/* ============================== auto-sync (Supabase realtime) ==============================
+   Mô hình: mỗi mẩu dữ liệu = 1 dòng bt_doc (nhẹ, có realtime) + 1 dòng bt_blob (nội dung, nén).
+   Điểm móc duy nhất là save() → sbAfterSave() tự so sánh ảnh chụp để biết cái gì đã đổi,
+   nên mọi module (dự toán, VE, thanh toán, báo giá…) tự động được đồng bộ. */
+/* ⚠ ĐỂ TRỐNG. Bản này được đăng công khai tại rachel-huynh.github.io/Tracker/ nên
+   ai trên internet cũng đọc được mã nguồn — nhúng key vào đây là mở toàn bộ dữ liệu
+   ngân sách cho người lạ sửa. Cách phát cấu hình an toàn: Cài đặt → "Tạo link cài sẵn",
+   gửi link đó cho từng thành viên (key nằm sau dấu #, không gửi lên máy chủ nào),
+   họ mở một lần là máy tự nhớ và từ đó đồng bộ tự động mãi mãi. */
+const SB_PRESET={url:'',key:''};
+const SB_ATT_MAX=1048576;   // tệp nhúng > 1 MB không đẩy lên (dùng thư mục Attachments thay thế)
+const SB_DEVICE=(function(){ let d=''; try{ d=localStorage.getItem('ssp_bt_device')||''; }catch(e){}
+  if(!d){ d='may-'+Math.random().toString(36).slice(2,8); try{ localStorage.setItem('ssp_bt_device',d); }catch(e){} } return d; })();
+const SB_OUT_KEY='ssp_bt_outbox_v1';
+let SB_SNAP=null, SB_APPLYING=false, SB_OUT=[], SB_DEAD=[], SB_FLUSHING=false, SB_PENDING_RENDER=false;
+let SB_WS=null, SB_HB=null, SB_RETRY=0, SB_RETRY_TIMER=null, SB_STATE='off', SB_MSG='', SB_API_OK=null;
+
+function sbCfg(){ const c=state.sb||{}; return {enabled:!!c.enabled,url:String(c.url||'').trim().replace(/\/+$/,''),key:String(c.key||'').trim()}; }
+function sbOn(){ const c=sbCfg(); return !!(c.enabled&&c.url&&c.key); }
+async function sbReq(path,opts){
+  const c=sbCfg(); if(!c.url||!c.key) throw new Error('Supabase not configured');
+  opts=opts||{};
+  const res=await fetch(c.url+'/rest/v1/'+path,{method:opts.method||'GET',
+    headers:Object.assign({apikey:c.key,Authorization:'Bearer '+c.key,'Content-Type':'application/json'},opts.headers||{}),body:opts.body});
+  if(!res.ok){ let txt=await res.text();
+    try{ const j=JSON.parse(txt); txt=(j.message||txt)+(j.hint?' — '+j.hint:''); }catch(e){}
+    if(/bt_(doc|blob)/.test(txt)&&/schema cache|does not exist|relation/i.test(txt))
+      txt+=' → run budget-tracker-supabase.sql in Supabase → SQL Editor.';
+    SB_API_OK=false; sbPill(); throw new Error('HTTP '+res.status+': '+txt.slice(0,300)); }
+  SB_API_OK=true; const body=await res.text(); return body?JSON.parse(body):null;
+}
+function sbHash(str){ let h=5381; for(let i=0;i<str.length;i++) h=((h*33)^str.charCodeAt(i))>>>0; return h.toString(36)+'-'+str.length; }
+async function sbEncode(obj){ const js=JSON.stringify(obj);
+  if(typeof CompressionStream!=='undefined'&&js.length>2048){ try{ return {enc:'gzip',payload:await gzipB64(js),js}; }catch(e){} }
+  return {enc:'plain',payload:js,js}; }
+async function sbDecode(row){ if(!row) return null;
+  if(row.enc==='gzip') return JSON.parse(await gunzipB64(row.payload));
+  return JSON.parse(row.payload||'null'); }
+
+/* --- danh mục các mẩu dữ liệu được đồng bộ (khóa → nội dung) --- */
+function sbDocs(){
+  const d={};
+  d['settings']={kind:'settings',label:'Settings',obj:{fx:state.fx,prelimsPct:state.prelimsPct,contPct:state.contPct,
+    budgetTarget:state.budgetTarget,attDir:state.attDir,payKeywords:state.payKeywords,activeId:state.activeId,baseId:state.baseId}};
+  (state.versions||[]).forEach(v=>{ d['ver:'+v.id]={kind:'version',label:v.name,obj:v}; });
+  (state.options||[]).forEach(o=>{ d['opt:'+o.id]={kind:'option',label:o.title,obj:o}; });
+  (state.manualAreas||[]).forEach(m=>{ d['area:'+m.id]={kind:'area',label:m.name||m.area,obj:m}; });
+  (state.contracts||[]).forEach(c=>{ d['con:'+c.id]={kind:'contract',label:c.company||c.category,obj:c}; });
+  (state.quotes||[]).forEach(q=>{ d['quote:'+q.id]={kind:'quote',label:q.name,obj:q}; });
+  if(state.payments) d['payments']={kind:'payments',label:'Ledger '+((state.payments||{}).period||''),obj:state.payments};
+  d['ratelinks']={kind:'map',label:'Rate links',obj:state.rateLinks||{}};
+  d['payoverrides']={kind:'map',label:'Payment overrides',obj:state.payOverrides||{}};
+  for(const f of attCache){ if(f.rel||(f.dataUrl&&(f.size||0)<=SB_ATT_MAX)) d['att:'+f.id]={kind:'att',label:f.name,obj:f}; }
+  return d;
+}
+function sbPutById(arr,obj){ const i=arr.findIndex(x=>x.id===obj.id); if(i>=0) arr[i]=obj; else arr.push(obj); }
+function sbApplyDoc(key,obj){
+  if(obj==null) return '';
+  if(key==='settings'){ ['fx','prelimsPct','contPct','budgetTarget','attDir','payKeywords','activeId','baseId']
+      .forEach(f=>{ if(obj[f]!==undefined) state[f]=obj[f]; }); return t('setT'); }
+  if(key==='payments'){ state.payments=obj; return t('pay'); }
+  if(key==='ratelinks'){ state.rateLinks=obj||{}; return ''; }
+  if(key==='payoverrides'){ state.payOverrides=obj||{}; return ''; }
+  const p=key.indexOf(':'); if(p<0) return '';
+  const pre=key.slice(0,p);
+  if(pre==='ver'){ state.versions=state.versions||[]; sbPutById(state.versions,obj); if(!state.activeId) state.activeId=obj.id; return t('versions')+': '+obj.name; }
+  if(pre==='opt'){ state.options=state.options||[]; sbPutById(state.options,obj); return t('ve')+': '+obj.title; }
+  if(pre==='area'){ state.manualAreas=state.manualAreas||[]; sbPutById(state.manualAreas,obj); return t('areasT'); }
+  if(pre==='con'){ state.contracts=state.contracts||[]; sbPutById(state.contracts,obj); return t('contract'); }
+  if(pre==='quote'){ state.quotes=state.quotes||[]; sbPutById(state.quotes,obj); return t('rates')+': '+obj.name; }
+  if(pre==='att'){ sbPutById(attCache,obj); try{ fPut(obj); }catch(e){} return t('atts')+': '+obj.name; }
+  return '';
+}
+function sbRemoveDoc(key){
+  if(key==='payments'){ if(state.payments){ state.payments=null; return t('pay'); } return ''; }
+  const p=key.indexOf(':'); if(p<0) return '';
+  const pre=key.slice(0,p), id=key.slice(p+1);
+  const rm=(arr,lbl)=>{ const i=(arr||[]).findIndex(x=>x.id===id); if(i<0) return ''; arr.splice(i,1); return lbl; };
+  if(pre==='ver'){ const r=rm(state.versions,t('versions'));
+    if(r&&state.activeId===id) state.activeId=(state.versions[state.versions.length-1]||{}).id||null; return r; }
+  if(pre==='opt') return rm(state.options,t('ve'));
+  if(pre==='area') return rm(state.manualAreas,t('areasT'));
+  if(pre==='con') return rm(state.contracts,t('contract'));
+  if(pre==='quote') return rm(state.quotes,t('rates'));
+  if(pre==='att'){ const r=rm(attCache,t('atts')); if(r) try{ fDel(id); }catch(e){} return r; }
+  return '';
+}
+/* --- phát hiện thay đổi cục bộ (1 điểm móc duy nhất: save) --- */
+function sbSnapshot(){ const s2={}, d=sbDocs(); for(const k in d) s2[k]=sbHash(JSON.stringify(d[k].obj)); return s2; }
+function sbAfterSave(){
+  if(!sbOn()) return;
+  if(SB_APPLYING||!SB_SNAP){ SB_SNAP=sbSnapshot(); return; }   // chỉ đặt mốc, không đẩy
+  const cur=sbSnapshot(); let n=0;
+  for(const k in cur) if(SB_SNAP[k]!==cur[k]){ sbQueue(k,'up'); n++; }
+  for(const k in SB_SNAP) if(cur[k]===undefined){ sbQueue(k,'del'); n++; }
+  SB_SNAP=cur; if(n) sbFlush();
+}
+function sbQueue(key,t2){ const i=SB_OUT.findIndex(o=>o.key===key);
+  if(i>=0) SB_OUT[i].t=t2; else SB_OUT.push({key,t:t2}); sbSaveOut(); }
+function sbSaveOut(){ try{ localStorage.setItem(SB_OUT_KEY,JSON.stringify(SB_OUT)); }catch(e){} sbPill(); }
+function sbSaveDead(){ try{ localStorage.setItem(SB_OUT_KEY+'_dead',JSON.stringify(SB_DEAD.slice(-50))); }catch(e){} }
+function sbLoadOut(){ try{ SB_OUT=JSON.parse(localStorage.getItem(SB_OUT_KEY)||'[]')||[]; }catch(e){ SB_OUT=[]; }
+  try{ SB_DEAD=JSON.parse(localStorage.getItem(SB_OUT_KEY+'_dead')||'[]')||[]; }catch(e){ SB_DEAD=[]; } }
+function sbIsNetErr(e){ return (typeof navigator!=='undefined'&&navigator.onLine===false)||
+  /Failed to fetch|NetworkError|Load failed|network/i.test((e&&e.message)||''); }
+async function sbFlush(){
+  if(!sbOn()||SB_FLUSHING||!SB_OUT.length) return;
+  SB_FLUSHING=true; sbPill(); let sent=0;
+  try{
+    while(SB_OUT.length){
+      const op=SB_OUT[0];
+      try{
+        if(op.t==='del'){
+          await sbReq('bt_doc?key=eq.'+encodeURIComponent(op.key),{method:'DELETE'});
+          await sbReq('bt_blob?key=eq.'+encodeURIComponent(op.key),{method:'DELETE'});
+        }else{
+          const d=sbDocs()[op.key];
+          if(d){ const e2=await sbEncode(d.obj); const now=new Date().toISOString();
+            /* ghi nội dung TRƯỚC, chỉ mục SAU — máy khác nhận tín hiệu là dữ liệu đã sẵn sàng */
+            await sbReq('bt_blob',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},
+              body:JSON.stringify({key:op.key,enc:e2.enc,payload:e2.payload,updated_at:now,updated_by:SB_DEVICE})});
+            await sbReq('bt_doc',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},
+              body:JSON.stringify({key:op.key,kind:d.kind,label:String(d.label||'').slice(0,120),
+                sig:sbHash(e2.js),bytes:e2.js.length,updated_at:now,updated_by:SB_DEVICE})});
+          }
+        }
+        SB_OUT.shift(); sbSaveOut(); sent++;
+      }catch(e){
+        SB_MSG=e.message; op.n=(op.n||0)+1;
+        /* lỗi mạng → giữ hàng đợi, thử lại; lỗi dữ liệu → 3 lần rồi để riêng,
+           không để 1 mục hỏng chặn vĩnh viễn mọi thay đổi phía sau */
+        if(sbIsNetErr(e)||op.n<3) throw e;
+        SB_OUT.shift(); SB_DEAD.push({key:op.key,t:op.t,err:e.message,at:new Date().toLocaleString()}); sbSaveDead();
+        console.warn('Sync — skipped failing item:',op.key,e.message);
+      }
+    }
+    if(sent){ state.sb.lastPush=new Date().toLocaleString(); try{ kvSet('state',JSON.parse(JSON.stringify(state))); }catch(e){} }
+  }catch(e){ SB_MSG=e.message; console.warn('Sync:',e.message); setTimeout(sbFlush,15000); }
+  SB_FLUSHING=false; sbPill();
+  if(state.tab==='settings') renderSettings();
+}
+/* --- tải về / đẩy lên toàn bộ --- */
+async function sbPullAll(){
+  const docs=await sbReq('bt_doc?select=key,sig,kind&order=key&limit=3000')||[];
+  const cur=sbDocs(); let applied=0, what='';
+  for(const row of docs){
+    const c=cur[row.key];
+    if(c&&sbHash(JSON.stringify(c.obj))===row.sig) continue;
+    const b=await sbReq('bt_blob?key=eq.'+encodeURIComponent(row.key)+'&select=*');
+    const obj=await sbDecode(b&&b[0]); if(obj==null) continue;
+    SB_APPLYING=true; const w=sbApplyDoc(row.key,obj); SB_APPLYING=false;
+    if(w){ applied++; what=w; }
+  }
+  state.sb.lastPull=new Date().toLocaleString();
+  SB_SNAP=sbSnapshot(); save();
+  const remote={}; docs.forEach(r=>{ remote[r.key]=r.sig; });
+  const mine=sbDocs(); let uploaded=0;
+  for(const k in mine) if(remote[k]===undefined){ sbQueue(k,'up'); uploaded++; }   // mục chỉ có ở máy này
+  if(uploaded) sbFlush();
+  return {applied,uploaded,total:docs.length};
+}
+function sbPushAll(){ const d=sbDocs(); let n=0; for(const k in d){ sbQueue(k,'up'); n++; } sbFlush(); return n; }
+/* --- realtime (WebSocket theo giao thức Phoenix của Supabase) --- */
+function sbConnect(){
+  sbDisconnect();
+  if(!sbOn()){ sbSetState('off'); return; }
+  const c=sbCfg(); let ws;
+  try{ ws=new WebSocket(c.url.replace(/^http/,'ws')+'/realtime/v1/websocket?apikey='+encodeURIComponent(c.key)+'&vsn=1.0.0'); }
+  catch(e){ sbSetState('err',e.message); return; }
+  SB_WS=ws; sbSetState('connecting');
+  ws.onopen=function(){
+    ws.send(JSON.stringify({topic:'realtime:ssp-budget',event:'phx_join',ref:'1',
+      payload:{config:{broadcast:{self:false},presence:{key:''},
+        postgres_changes:[{event:'*',schema:'public',table:'bt_doc'}]},access_token:c.key}}));
+    SB_HB=setInterval(function(){ if(ws.readyState===1) ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:String(Date.now())})); },25000);
+    sbFlush();
+  };
+  ws.onmessage=function(ev){
+    let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+    if(m.event==='phx_reply'&&m.ref==='1'){
+      if(m.payload&&m.payload.status==='ok'){ SB_RETRY=0; sbSetState('live'); }
+      else sbSetState('err',(m.payload&&m.payload.response&&(m.payload.response.reason||m.payload.response.message))||'cannot join realtime channel');
+    } else if(m.event==='postgres_changes'&&m.payload&&m.payload.data){ sbApplyRemote(m.payload.data); }
+    else if(m.event==='system'&&m.payload&&m.payload.status==='error'){ sbSetState('err',m.payload.message||'realtime channel error'); }
+  };
+  ws.onerror=function(){ sbSetState('err','cannot reach realtime server'); };
+  ws.onclose=function(){
+    if(SB_HB){ clearInterval(SB_HB); SB_HB=null; }
+    if(SB_WS===ws) SB_WS=null;
+    if(!sbOn()){ sbSetState('off'); return; }
+    sbSetState('offline'); SB_RETRY++;
+    if(SB_RETRY_TIMER) clearTimeout(SB_RETRY_TIMER);
+    SB_RETRY_TIMER=setTimeout(sbConnect,Math.min(30000,2000*SB_RETRY));
+  };
+}
+function sbDisconnect(){
+  if(SB_RETRY_TIMER){ clearTimeout(SB_RETRY_TIMER); SB_RETRY_TIMER=null; }
+  if(SB_HB){ clearInterval(SB_HB); SB_HB=null; }
+  if(SB_WS){ try{ SB_WS.onclose=null; SB_WS.close(); }catch(e){} SB_WS=null; }
+}
+async function sbApplyRemote(d){
+  if(!d||d.table!=='bt_doc') return;
+  const rec=d.record, old=d.old_record;
+  if(d.type!=='DELETE'&&rec&&rec.updated_by===SB_DEVICE) return;   // thay đổi của chính máy này
+  let what='';
+  try{
+    if(d.type==='DELETE'){ const key=(old||{}).key; if(!key) return;
+      SB_APPLYING=true; what=sbRemoveDoc(key); SB_APPLYING=false;
+    } else {
+      const key=rec.key, cur=sbDocs()[key];
+      if(cur&&sbHash(JSON.stringify(cur.obj))===rec.sig) return;   // đã giống, bỏ qua
+      const b=await sbReq('bt_blob?key=eq.'+encodeURIComponent(key)+'&select=*');
+      const obj=await sbDecode(b&&b[0]); if(obj==null) return;
+      SB_APPLYING=true; what=sbApplyDoc(key,obj); SB_APPLYING=false;
+    }
+  }catch(e){ SB_APPLYING=false; SB_MSG=e.message; sbPill(); return; }
+  if(!what) return;
+  SB_SNAP=sbSnapshot();       // đặt mốc trước khi lưu để không đẩy ngược lên
+  save(); sbRerender(what);
+}
+function sbRerender(msg){
+  if(msg) toast('☁ '+t('sbRemote')+' '+msg);
+  const ae=document.activeElement;
+  if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)){ SB_PENDING_RENDER=true; sbPill(); return; }  // đang gõ → hoãn vẽ lại
+  renderAll();
+}
+function sbSetState(st,msg){ SB_STATE=st; if(msg!==undefined) SB_MSG=msg||''; sbPill(); if(state.tab==='settings') renderSettings(); }
+function sbPillInfo(){
+  if(!sbOn()) return {c:'n',txt:t('sbOff')};
+  if(SB_STATE==='err'||SB_API_OK===false) return {c:'r',txt:'⚠ '+t('sbErr')};
+  if(SB_OUT.length||SB_FLUSHING) return {c:'a',txt:'⏳ '+SB_OUT.length+' '+t('sbQueued')};
+  if(SB_STATE==='live') return {c:'g',txt:'● '+t('sbLive')};
+  if(SB_STATE==='connecting') return {c:'b',txt:'◌ '+t('sbConnecting')};
+  return {c:'a',txt:'○ '+t('sbOffline')};
+}
+function sbPill(){ const i=sbPillInfo(); const html='<span class="chip '+i.c+'">'+esc(i.txt)+'</span>';
+  const el=document.getElementById('sbPill'); if(el){ el.innerHTML=html; el.title=SB_MSG||t('sbT'); }
+  const el2=document.getElementById('sbPanelPill'); if(el2) el2.innerHTML=html; }
+function sbApplyPreset(){
+  state.sb=state.sb||{};
+  let cfg=null;
+  const m=(location.hash||'').match(/sbcfg=([A-Za-z0-9+/=_-]+)/);
+  if(m){ try{ cfg=JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,'+').replace(/_/g,'/'))))); }catch(e){}
+    try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){} }   // xóa key khỏi thanh địa chỉ
+  if(!cfg&&SB_PRESET.url&&SB_PRESET.key&&!state.sb.url) cfg={url:SB_PRESET.url,key:SB_PRESET.key};
+  if(cfg&&cfg.url&&cfg.key){
+    state.sb.url=String(cfg.url).trim().replace(/\/+$/,''); state.sb.key=String(cfg.key).trim();
+    if(!state.sb.userSet) state.sb.enabled=true;   // có cấu hình sẵn → tự bật, người dùng không phải làm gì
+    save();
+  }
+}
+let SB_PULL_TIMER=null, SB_PULLED_OK=false;
+async function sbStart(){
+  sbLoadOut();
+  if(SB_PULL_TIMER){ clearTimeout(SB_PULL_TIMER); SB_PULL_TIMER=null; }
+  if(!sbOn()){ sbSetState('off'); return; }
+  sbSetState('connecting');
+  try{ await sbPullAll(); SB_PULLED_OK=true; renderAll(); }
+  catch(e){ SB_MSG=e.message; sbSetState('err',e.message);
+    /* tải lần đầu hỏng (mất mạng/chưa tạo bảng) → thử lại, vì chỉ sau khi tải xong
+       những mục chỉ có ở máy này mới được xếp hàng đẩy lên */
+    SB_PULL_TIMER=setTimeout(()=>{ if(sbOn()&&!SB_PULLED_OK) sbStart(); },20000); }
+  sbConnect(); sbFlush();
+}
+window.addEventListener('online',()=>{ if(sbOn()){ if(!SB_PULLED_OK) sbStart(); else { sbFlush(); if(!SB_WS) sbConnect(); } } });
+
 /* ============================== cloud sync (JSONBin.io) ============================== */
 async function gzipB64(str){ const cs=new CompressionStream('gzip');
   const ab=await new Response(new Blob([str]).stream().pipeThrough(cs)).arrayBuffer();
@@ -773,7 +1071,7 @@ async function gunzipB64(b64){ const bin=atob(b64); const u=new Uint8Array(bin.l
   const ab=await new Response(new Blob([u]).stream().pipeThrough(ds)).arrayBuffer();
   return new TextDecoder().decode(ab); }
 function cloudPayload(){ const st=JSON.parse(JSON.stringify(state));
-  delete st.cloud; delete st.tab; // never publish credentials
+  delete st.cloud; delete st.sb; delete st.tab; // never publish credentials
   const linkedAtts=attCache.filter(a=>a.rel).map(a=>({id:a.id,name:a.name,mime:a.mime,size:a.size,date:a.date,link:a.link||'',note:a.note||'',rel:a.rel}));
   return {app:'ssp-budget-tracker',v:2,ts:new Date().toISOString(),state:st,linkedAtts}; }
 const JB='https://api.jsonbin.io/v3/b';
@@ -794,6 +1092,7 @@ function renderNav(){
   const v=activeVer(); $('#hVer').textContent=v?('📄 '+v.name):t('noVer');
   document.querySelectorAll('.tab').forEach(el=>el.classList.remove('on'));
   const el=$('#tab-'+state.tab); if(el) el.classList.add('on');
+  try{ sbPill(); }catch(e){}
 }
 function renderAll(){ renderNav();
   ({dash:renderDash,versions:renderVersions,compare:renderCompare,rates:renderRates,estimate:renderEstimate,ve:renderVE,materials:renderMaterials,pay:renderPay,atts:renderAtts,settings:renderSettings})[state.tab]();
@@ -1606,7 +1905,26 @@ function renderSettings(){
     <div class="setrow"><div class="sl">${t('attFolder')}</div><input value="${esc(state.attDir||'Attachments')}" style="width:220px" onchange="App.set('attDir',this.value)">
       <div class="sd">${t('attFolderHint')}</div></div>
   </div>
-  <div class="panel"><h3>☁ ${t('cloudT')}</h3><div class="help">${t('cloudHelp')}</div>
+  <div class="panel" style="border-left:4px solid var(--gold)"><h3>🔄 ${t('sbT')} <span id="sbPanelPill"></span></h3>
+    <div class="help">${t('sbHelp')}</div>
+    ${(SB_PRESET.url&&/github\.io|githubusercontent|vercel|netlify/.test(location.hostname))?`<div class="warnbox">🚨 <b>${t('sbPublicWarn')}</b></div>`:''}
+    ${!sbCfg().url?`<div class="okbox">${t('sbFirstUse')}</div>`:''}
+    <div class="setrow"><div class="sl">${t('sbOnLbl')}</div>
+      <label style="font-size:13px"><input type="checkbox" ${sbCfg().enabled?'checked':''} onchange="App.sbToggle(this.checked)"> ${sbCfg().enabled?'ON':'OFF'}</label>
+      <span class="help">${t('sbDevice')}: <code>${esc(SB_DEVICE)}</code>${(state.sb||{}).lastPull?' · '+t('lastPull')+': '+esc(state.sb.lastPull):''}${(state.sb||{}).lastPush?' · '+t('lastPush')+': '+esc(state.sb.lastPush):''}</span></div>
+    <div class="setrow"><div class="sl">${t('sbUrl')}</div><input value="${esc(sbCfg().url)}" style="width:340px" onchange="App.sbSet('url',this.value)"></div>
+    <div class="setrow"><div class="sl">${t('sbKey')}</div><input type="password" value="${esc(sbCfg().key)}" style="width:340px" onchange="App.sbSet('key',this.value)"></div>
+    <div class="toolbar" style="margin-top:10px">
+      <button class="btn ghost" onclick="App.sbReconnect()">${t('sbReconnect')}</button>
+      <button class="btn ghost" onclick="App.sbPull()">⬇ ${t('sbPullAll')}</button>
+      <button class="btn ghost" onclick="App.sbPush()">⬆ ${t('sbPushAll')}</button>
+      <button class="btn ghost" onclick="App.sbLink()">${t('sbLink')}</button></div>
+    ${SB_MSG&&(SB_STATE==='err'||SB_API_OK===false)?`<div class="warnbox">${esc(SB_MSG)}</div>`:''}
+    ${SB_DEAD.length?`<div class="warnbox"><b>${t('sbDeadT')} (${SB_DEAD.length}):</b><br>${SB_DEAD.slice(-6).map(x=>esc(x.key+' — '+x.err).slice(0,160)).join('<br>')}
+      <br><button class="btn sm ghost" style="margin-top:6px" onclick="App.sbClearDead()">${t('sbClearDead')}</button></div>`:''}
+    <div class="help" style="margin-top:8px">${t('sbSetup')}</div>
+  </div>
+  <div class="panel"><h3>☁ ${t('cloudT')}</h3><div class="help"><b>${t('sbJsonbinNote')}</b><br>${t('cloudHelp')}</div>
     <div class="setrow"><div class="sl">${t('cloudEnable')}</div>
       <label style="font-size:13px"><input type="checkbox" ${state.cloudEnabled?'checked':''} onchange="App.set('cloudEnabled',this.checked)"> ${state.cloudEnabled?'ON':'OFF'}</label>
       <div class="sd">${t('cloudEnableHint')}</div></div>
@@ -1738,8 +2056,8 @@ const App={
      await fPut(rec); attCache.push(rec);
      if(linkId){ const o=state.options.find(x=>x.id===linkId); if(o){ o.files=o.files||[]; o.files.push(rec.id); } } }
    save(); renderAll(); toast('✓ '+t('saved')); },
- attLink(id,v2){ const f=attCache.find(a=>a.id===id); if(f){f.link=v2; fPut(f);} },
- attNote(id,v2){ const f=attCache.find(a=>a.id===id); if(f){f.note=v2; fPut(f);} },
+ attLink(id,v2){ const f=attCache.find(a=>a.id===id); if(f){f.link=v2; fPut(f); save();} },
+ attNote(id,v2){ const f=attCache.find(a=>a.id===id); if(f){f.note=v2; fPut(f); save();} },
  async delAtt(id){ await fDel(id); attCache=attCache.filter(a=>a.id!==id);
    state.options.forEach(o=>{ o.files=(o.files||[]).filter(x=>x!==id); }); save(); renderAll(); },
  viewAtt(id){ const f=attCache.find(a=>a.id===id); if(!f) return;
@@ -1750,6 +2068,25 @@ const App={
    const a=document.createElement('a');
    if(f.dataUrl){ a.href=f.dataUrl; a.download=f.name; } else { a.href=f.rel; a.target='_blank'; }
    a.click(); },
+ // auto-sync (Supabase)
+ sbToggle(on){ state.sb=state.sb||{}; state.sb.enabled=!!on; state.sb.userSet=true; save(); renderSettings();
+   if(on) sbStart(); else { sbDisconnect(); sbSetState('off'); } },
+ sbSet(k,v2){ state.sb=state.sb||{}; state.sb[k]=String(v2||'').trim(); save(); renderSettings();
+   if(sbOn()) sbStart(); },
+ sbReconnect(){ if(!sbOn()){ toast(t('sbOff')); return; } sbStart(); },
+ async sbPull(){ if(!sbOn()){ toast(t('sbOff')); return; } if(!confirm(t('sbConfirmPullAll'))) return;
+   try{ const r=await sbPullAll(); renderAll(); toast('✓ '+t('sbPullAll')+': '+r.applied+'/'+r.total); }
+   catch(e){ toast('✗ '+e.message); } },
+ sbPush(){ if(!sbOn()){ toast(t('sbOff')); return; } if(!confirm(t('sbConfirmPushAll'))) return;
+   const n=sbPushAll(); toast('⬆ '+n); },
+ sbLink(){ const c=sbCfg(); if(!c.url||!c.key){ toast(t('notConfigured')); return; }
+   const b64=btoa(unescape(encodeURIComponent(JSON.stringify({url:c.url,key:c.key})))).replace(/\+/g,'-').replace(/\//g,'_');
+   const link=location.href.split('#')[0]+'#sbcfg='+b64;
+   try{ navigator.clipboard.writeText(link); }catch(e){}
+   modal(`<h3>${t('sbLink')}</h3><div class="help">${t('sbLinkMsg')}</div>
+     <textarea rows="4" style="width:100%;margin-top:8px" onclick="this.select()">${esc(link)}</textarea>
+     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn gold" onclick="closeModal()">OK</button></div>`); },
+ sbClearDead(){ SB_DEAD=[]; sbSaveDead(); renderSettings(); },
  // cloud sync
  cloudSet(k,v2){ state.cloud=state.cloud||{}; state.cloud[k]=s(v2); save(); },
  async cloudCreate(){ const c=state.cloud||{};
@@ -1955,7 +2292,8 @@ const App={
  // export / import / wipe
  async exportJson(){
    const inc=$('#expAtts')?$('#expAtts').checked:true;
-   const payload={app:'ssp-budget-tracker',v:1,exportedAt:new Date().toISOString(),state:JSON.parse(JSON.stringify(state)),attachments:inc?await fAll():[]};
+   const stx=JSON.parse(JSON.stringify(state)); delete stx.sb;   // không đưa khóa đồng bộ vào file sao lưu
+   const payload={app:'ssp-budget-tracker',v:1,exportedAt:new Date().toISOString(),state:stx,attachments:inc?await fAll():[]};
    const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
    a.download='SSP-BudgetTracker-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'.json'; a.click();
@@ -1965,15 +2303,20 @@ const App={
    try{ p=JSON.parse(txt); }catch(e){ toast('Invalid JSON'); return; }
    if(!p||p.app!=='ssp-budget-tracker'||!p.state){ toast('Not a tracker backup'); return; }
    if(!confirm(t('confirmImport'))) return;
-   const keepCloud=state.cloud;
+   if(sbOn()&&!confirm(t('sbImportWarn'))) return;
+   const keepSb=state.sb, keepCloud=state.cloud;
    state=Object.assign({lang:'en',currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},showInternal:false,quotes:[],rateLinks:{},tab:'dash'},p.state);
    if((!state.cloud||!state.cloud.apiKey)&&keepCloud&&keepCloud.apiKey) state.cloud=keepCloud;
+   state.sb=keepSb||state.sb;   // cấu hình đồng bộ là của từng máy, không lấy từ file sao lưu
    await fClear(); attCache=[];
    for(const f of (p.attachments||[])){ await fPut(f); attCache.push(f); }
    save(); renderAll(); toast('✓ '+t('importBtn')); },
  async wipe(){ if(!confirm(t('confirmWipe'))) return;
-   state={lang:state.lang,currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},showInternal:false,quotes:[],rateLinks:{},tab:'dash'};
-   await fClear(); attCache=[]; save(); renderAll(); }
+   const keepSb2=state.sb; SB_SNAP=null;   // xóa cục bộ KHÔNG được xóa dữ liệu chung của mọi người
+   state={lang:state.lang,currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},showInternal:false,quotes:[],rateLinks:{},sb:keepSb2,tab:'dash'};
+   await fClear(); attCache=[]; save(); renderAll();
+   if(sbOn()){ SB_PULLED_OK=false; sbStart(); }   // xóa máy này = tải lại bản chung
+ }
 };
 window.App=App; window.closeModal=closeModal; window.qc=qc; window.$=$; window.__state=()=>state;
 
@@ -2007,8 +2350,15 @@ window.__loadXlsxFromUrl=async function(url,name){
   }catch(e){ try{ const ls=localStorage.getItem('ssp_bt'); if(ls) state=Object.assign(state,JSON.parse(ls)); }catch(e2){} }
   if(typeof XLSX==='undefined'){ setTimeout(()=>toast(t('libFail')),800); }
   state.tab=state.tab||'dash';
+  state.sb=state.sb||{enabled:false,url:'',key:'',lastPush:null,lastPull:null};
+  sbApplyPreset();          // link cài sẵn (#sbcfg=…) hoặc SB_PRESET → không phải nhập gì
   renderAll();
+  sbStart();                // tải về + mở kênh realtime
 })();
+/* đang gõ dở thì hoãn vẽ lại; gõ xong mới cập nhật để không mất chữ */
+document.addEventListener('focusout',()=>{ if(SB_PENDING_RENDER){ SB_PENDING_RENDER=false; setTimeout(()=>{
+  const ae=document.activeElement;
+  if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))) renderAll(); else SB_PENDING_RENDER=true; },250); } });
 </script>
 </body>
 </html>
