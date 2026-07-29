@@ -299,10 +299,14 @@ const SHOW_UPGRADE_ANALYSIS = false;
 /* ---------------------------------------------------------------
  * MAP — every label regex used by the parsers. EDIT HERE ONLY.
  * --------------------------------------------------------------- */
+/* Rolling-forecast sheet name: legacy "SUM FY26 Forecast" + current "Forecast" */
+const RF_SHEET=/^(Forecast|SUM FY\d{2} Forecast)$/i;
+
 const MAP = {
   /* file-type detection: a workbook matches a type when it contains
      ALL sheets in `all` (regex, tested against trimmed sheet names) */
   detect: [
+    { type:'budget2026', all:[/^Consolidated P&L Monthly$/i] },
     { type:'pnl',        all:[/^Summary P&L$/i, /^Rooms$/i, /^F&B Total$/i] },
     { type:'starMonthly',all:[/^Glance$/i, /^Summary$/i, /^Comp$/i] },
     { type:'starWeekly', all:[/^SummaryComb$/i] },
@@ -317,7 +321,9 @@ const MAP = {
     { type:'fnbsum',     all:[/^Meal Periods$/i, /^Monthly Data$/i] },
     { type:'upsell',     all:[/^Upselling$/i] },
     { type:'bookstay',   all:[/^Booked vs Stayed$/i] },
-    { type:'rf',         all:[/^SUM FY\d{2} Forecast$/i] },
+    /* rolling forecast: the sheet was "SUM FY26 Forecast" in older exports and is
+       plain "Forecast" since the 2026-07 rename — accept both */
+    { type:'rf',         all:[RF_SHEET] },
     { type:'cf',         all:[/^FY \d{4}$/i, /^P&L \d{4}$/i] },
     /* provisional mid-month STR extract ("STR - <Month>.xlsx": Compset+Industry
        daily grids only) — placeholder until the official Monthly STAR (~20th) */
@@ -748,6 +754,62 @@ function detectType(wb){
 function sheetByRe(wb,re){
   const n=wb.SheetNames.find(s=>re.test(s.trim()));
   return n?wb.Sheets[n]:null;
+}
+
+/* ---------- Consolidated 2026 Budget workbook: monthly hotel benchmark ----------
+   Sheet "Consolidated P&L Monthly": col 5-16 = Jan-Dec 2026 (VND), rows 4-45 are
+   the hotel's own monthly P&L (Central Plaza & group items start at row 47+).
+   Row 34 "Gross Operating Income" is actually rooms+F&B+minor Dept Profit summed
+   (verified to the last digit) — i.e. it IS dashboard's dp.total, not sum.gop.
+   True post-overhead GOP = row34 - row41 (Total Overheads); row45 "Net Income
+   from Hotel" (after Mgmt+Incentive fees) maps to dashboard's sum.ebitda. */
+function parseBudget2026(wb){
+  const ws=wb.Sheets['Consolidated P&L Monthly'];
+  const gd=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+  const val=(r,c)=>{ const v=(gd[r]||[])[c]; return typeof v==='number'?v:(v==null?null:parseFloat(v)); };
+  const out={};
+  for(let m=1;m<=12;m++){
+    const c=4+m; // Jan=col5
+    const roomsAvail=val(4,c), roomsSold=val(5,c), adr=val(6,c);
+    const occ=(roomsAvail&&roomsSold!=null)?roomsSold/roomsAvail:null;
+    const revpar=(adr!=null&&occ!=null)?adr*occ:null;
+    const roomsRev=val(10,c), roomsDP=val(13,c), fnbDP=val(27,c), minorDP=val(33,c);
+    const deptTotal=val(34,c), overheads=val(41,c), netIncomeHotel=val(45,c);
+    out[m]={
+      stats:{roomsAvail,roomsSold,roomsOcc:roomsSold,adr,occ,revpar},
+      rev:{totalIncl:val(8,c), rooms:roomsRev},
+      dp:{rooms:roomsDP, total:deptTotal??((roomsDP??0)+(fnbDP??0)+(minorDP??0))},
+      sum:{gop:(deptTotal!=null&&overheads!=null)?deptTotal-overheads:null, ebitda:netIncomeHotel}
+    };
+  }
+  return out;
+}
+const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','stats.roomsOcc']);
+function budget2026For(mk){ // mk like '2026-04' -> that month's parsed budget object, or null
+  if(!/^2026-\d\d$/.test(mk||'')) return null;
+  const mm=parseInt(mk.slice(5,7),10);
+  return (state.store.budget2026||{})[mm]||null;
+}
+function b26Path(obj,path){ const v=path.split('.').reduce((a,k)=>a?.[k],obj); return v==null?null:v; }
+function budget2026YTD(mm,path){
+  if(path==='stats.occ'){
+    let sold=0,avail=0,any=false;
+    for(let m=1;m<=mm;m++){ const b=(state.store.budget2026||{})[m]; if(!b)continue; any=true; sold+=b.stats.roomsSold||0; avail+=b.stats.roomsAvail||0; }
+    return any&&avail? sold/avail : null;
+  }
+  if(path==='stats.adr'){
+    let rev=0,sold=0,any=false;
+    for(let m=1;m<=mm;m++){ const b=(state.store.budget2026||{})[m]; if(!b)continue; any=true; rev+=b.rev.rooms||0; sold+=b.stats.roomsSold||0; }
+    return any&&sold? rev/sold : null;
+  }
+  if(path==='stats.revpar'){
+    let rev=0,avail=0,any=false;
+    for(let m=1;m<=mm;m++){ const b=(state.store.budget2026||{})[m]; if(!b)continue; any=true; rev+=b.rev.rooms||0; avail+=b.stats.roomsAvail||0; }
+    return any&&avail? rev/avail : null;
+  }
+  let sum=null;
+  for(let m=1;m<=mm;m++){ const b=(state.store.budget2026||{})[m]; const v=b&&b26Path(b,path); if(v!=null) sum=(sum??0)+v; }
+  return sum;
 }
 
 /* ---------- P&L workbook (VND or USD auto-detected) ---------- */
@@ -1423,24 +1485,72 @@ function parseBookStay(wb){
 /* ---------- FY Rolling Forecast (SUM FYxx Forecast) ---------- */
 function serialYM(n){ const d=new Date(Math.round((n-25569)*86400*1000)); return MKEY(d.getUTCFullYear(),d.getUTCMonth()+1); }
 function parseRF(wb){
-  const ws=sheetByRe(wb,/^SUM FY\d{2} Forecast$/i); if(!ws) throw new Error('RF sheet missing');
+  const ws=sheetByRe(wb,RF_SHEET); if(!ws) throw new Error('RF sheet missing');
   const gd=grid(ws);
   const hdr=findRow(gd,/^Description$/i); if(hdr<0) throw new Error('RF: Description header not found');
-  const flags=gd[hdr-1]||[];
-  const cols=[]; (gd[hdr]||[]).forEach((v,c)=>{ const n=num(v); if(n!=null&&n>40000&&n<60000) cols.push({c,ym:serialYM(n),flag:cellStr(flags[c])||'?'}); });
-  if(!cols.length) throw new Error('RF: month serial columns not found');
+
+  /* title: the real one is the "…ROLLING FORECAST (3A+9F)" line. Older sheets keep a
+     stale "FORECAST 2022" banner in row 1, so scan for the ROLLING FORECAST line
+     rather than trusting a fixed cell. */
+  let title='';
+  for(let r=0;r<hdr&&!title;r++) for(const v of (gd[r]||[])){
+    const s=cellStr(v); if(/ROLLING FORECAST/i.test(s)){ title=s; break; } }
+  if(!title) title=cellStr((gd[1]||[])[0])||cellStr((gd[1]||[])[1]);
+
+  /* month columns — two header dialects:
+     (a) Excel date serials (current exports)
+     (b) "Jan".."Dec" text, with the year only in the title (FY24-era exports) */
+  const cols=[];
+  (gd[hdr]||[]).forEach((v,c)=>{ const n=num(v); if(n!=null&&n>40000&&n<60000) cols.push({c,ym:serialYM(n)}); });
+  if(!cols.length){
+    const fyM=title.match(/FY\s?(\d{2,4})/i);
+    let yr=fyM?parseInt(fyM[1],10):null; if(yr!=null&&yr<100) yr+=2000;
+    const ABBR=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    if(yr) (gd[hdr]||[]).forEach((v,c)=>{
+      const i=ABBR.indexOf(cellStr(v).slice(0,3).toLowerCase());
+      if(i>=0&&!cols.some(x=>x.ym===MKEY(yr,i+1))) cols.push({c,ym:MKEY(yr,i+1)}); });
+  }
+  if(!cols.length) throw new Error('RF: month columns not found (no date serials and no Jan–Dec header)');
+
+  /* Actual-vs-Forecast flags sit one row above the header — but only in sheets that
+     carry them. FY24-era sheets leave that row blank or, worse, full of stray numbers,
+     so require a real Actual/Forecast word before trusting it and otherwise fall back
+     to the "3A+9F" split encoded in the title. */
+  const flagRow=gd[hdr-1]||[];
+  const RF_FLAG=/actual|forecast|budget/i;
+  if(cols.some(x=>RF_FLAG.test(cellStr(flagRow[x.c])))){
+    cols.forEach(x=>{ const s=cellStr(flagRow[x.c]); x.flag=RF_FLAG.test(s)?s:'?'; });
+  } else {
+    const m=title.match(/(\d+)\s*A\s*\+\s*(\d+)\s*F/i);
+    cols.forEach((x,i)=>x.flag = m ? (i<parseInt(m[1],10)?'Actual':'Forecast') : '?');
+  }
+
   const read=re=>{ const r=findRow(gd,re,cols[0].c,hdr); return r<0?null:cols.map(x=>num(gd[r][x.c])); };
+  /* sum every total row matching `re` (elementwise) — used for payroll, which the
+     current sheet splits into a departmental and an overheads "Payroll & Related"
+     total instead of the single "Total Payroll & Related Expenses" row it used to carry */
+  const readSum=re=>{
+    const rs=findRows(gd,re).filter(r=>r>hdr&&num((gd[r]||[])[cols[0].c])!==null);
+    if(!rs.length) return null;
+    return cols.map(x=>{ let s=null; for(const r of rs){ const v=num(gd[r][x.c]); if(v!=null) s=(s??0)+v; } return s; });
+  };
   const rows={
     occ:read(/^Occupancy %/i), adr:read(/^Average Room Rate/i), revpar:read(/^RevPAR$/i),
-    roomsSold:read(/^No\. of Rooms Sold/i), roomsRev:read(/^Rooms$/i), fbRev:read(/^Total F&B Revenue$/i),
+    roomsSold:read(/^No\.? of Rooms Sold/i), roomsRev:read(/^Rooms$/i), fbRev:read(/^Total F&B Revenue$/i),
     totalRev:read(/^Total Revenue$/i), deptProfit:read(/^Department Profit$/i),
     gop:read(/^Gross Operating Profit$/i), gopPct:read(/^GOP %$/i),
-    payroll:read(/Total Payroll & Related Expenses \(including SVC\)/i),
-    netReturn:read(/^NET RETURN$/i),
+    /* Prefer the structural sum of the departmental + overheads "Payroll & Related"
+       totals: it is present in every vintage of this workbook, whereas the single
+       "Total Payroll & Related Expenses (including SVC)" row only exists in some FY26
+       files and is mislabelled in at least one (FY26 01A+11F carries just the SVC
+       slice there, 2.35bn, below its own "not including SVC" row at 7.26bn). */
+    payroll:readSum(/^Payroll & Related$/i)||read(/Total Payroll & Related Expenses \(including SVC\)/i),
+    netReturn:read(/^NET RETURN$/i),   // dropped from the current template — optional
   };
-  for(const[k,v] of Object.entries(rows)) if(!v) throw Object.assign(new Error('RF row missing: '+k),{soft:true});
-  return { months:cols.map(x=>x.ym), flags:cols.map(x=>x.flag), rows,
-           title:cellStr((gd[1]||[])[0])||cellStr((gd[1]||[])[1]) };
+  /* netReturn is not rendered anywhere; everything else is, so only those are required */
+  for(const[k,v] of Object.entries(rows)) if(!v&&k!=='netReturn')
+    throw Object.assign(new Error('RF row missing: '+k),{soft:true});
+  return { months:cols.map(x=>x.ym), flags:cols.map(x=>x.flag), rows, title };
 }
 /* ---------- Cashflow forecast (FY yyyy sheet) ---------- */
 function parseCF(wb){
@@ -1711,6 +1821,8 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
       label=`PROVISIONAL STR → ${fmtMonthKey(key)} (replaced automatically by the official Monthly STAR)`;
       state.month=key;
     }
+    else if(type==='budget2026'){ parsed=parseBudget2026(wb); state.store.budget2026=parsed;
+      label='2026 Consolidated Budget ingested — used as the 2026 monthly benchmark (Jan-Dec); other years unaffected'; }
     else if(type==='rf'){ parsed=parseRF(wb); state.store.rf=parsed; label='Rolling forecast: '+(parsed.title||'FY'); }
     else if(type==='cf'){ parsed=parseCF(wb); state.store.cf=parsed; label='Cashflow forecast ingested'; }
     else if(REV_PARSERS[type]){
@@ -1729,6 +1841,17 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
 /* g(pnl,'rev.rooms','MTD','act') safe getter */
 function g(pnl,path,per,fld){
   if(!pnl) return null;
+  if(fld==='bud'){
+    const b26=budget2026For(pnl.monthKey);
+    if(b26){
+      const v = per==='MTD' ? b26Path(b26,path)
+              : per==='YTD' ? budget2026YTD(parseInt(pnl.monthKey.slice(5,7),10),path)
+              : undefined;
+      /* the budget workbook is VND-only; ratios (occ) and unit counts must never
+         be FX-scaled when the selected P&L is the USD edition */
+      if(v!=null) return (pnl.currency==='USD'&&!B26_NON_MONEY.has(path))? v/fxOf(pnl.monthKey) : v;
+    }
+  }
   const o=path.split('.').reduce((a,k)=>a?.[k],pnl);
   return o?.[per]?.[fld]??null;
 }
@@ -3385,7 +3508,7 @@ function renderForecast(d){
       <div class="chartbox tall"><canvas id="chRf"></canvas></div>
       <div class="small" style="margin-top:6px">
         ${dev!=null?`Cross-check: this dashboard's statistical forecast runs <b>${pct(dev)}</b> vs the management RF on ${cmp.length} overlapping month(s) (${cmp.map(x=>fmtMonthKey(x.ym)+' '+pct(x.stat/x.rf-1)).join(' · ')}). Near-term months should agree; large gaps in later months usually mean the RF embeds events the statistical model cannot see (e.g. renovation closure) — trust the RF there, but challenge it where the near-term gap is wide.`:''}
-        ${negs.length?`<br><b style="color:var(--red)">RF plans NEGATIVE GOP in ${negs.map(x=>fmtMonthKey(x.m)).join(', ')}</b> — renovation-period cash burn; watch payroll ratio (RF has payroll reaching ${pct(Math.max(...rf.months.map((m,i)=>rf.rows.payroll[i]/rf.rows.totalRev[i])))} of revenue in the trough months).`:''}
+        ${negs.length?`<br><b style="color:var(--red)">RF plans NEGATIVE GOP in ${negs.map(x=>fmtMonthKey(x.m)).join(', ')}</b> — renovation-period cash burn.${rf.rows.payroll?` Watch payroll ratio (RF has payroll reaching ${pct(Math.max(...rf.months.map((m,i)=>div(rf.rows.payroll[i],rf.rows.totalRev[i])).filter(v=>v!=null)))} of revenue in the trough months).`:''}`:''}
       </div></div>`;
   } else rfHtml=`<div class="panel"><h3>Management rolling forecast</h3><div class="small">${na('Drop "FY26 Rolling Forecast 04A+08F.xlsx" into the drop zone')}</div></div>`;
   let cfHtml='';
