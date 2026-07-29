@@ -126,6 +126,9 @@ td{padding:4px 7px;text-align:right;border-bottom:1px solid #eef1f6;font-variant
 tr:hover td{background:#f8f9fc}
 td.pos{color:var(--green)}td.neg{color:var(--red)}td.warn{color:var(--amber)}
 tr.tot td{border-top:2px solid var(--navy);font-weight:700;color:var(--navy)}
+tr.gap td{height:8px;padding:0;border:0}
+table.uol th{text-align:center}
+table.uol td:not(:first-child){text-align:right;white-space:nowrap}
 tr.bad td{background:#fdeeec}
 .tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700}
 .tag.g{background:#e3f3ea;color:var(--green)}.tag.r{background:#fbe4e1;color:var(--red)}.tag.a{background:#faf0dc;color:var(--amber)}
@@ -761,13 +764,37 @@ function sheetByRe(wb,re){
    the hotel's own monthly P&L (Central Plaza & group items start at row 47+).
    Row 34 "Gross Operating Income" is actually rooms+F&B+minor Dept Profit summed
    (verified to the last digit) — i.e. it IS dashboard's dp.total, not sum.gop.
-   True post-overhead GOP = row34 - row41 (Total Overheads); row45 "Net Income
-   from Hotel" (after Mgmt+Incentive fees) maps to dashboard's sum.ebitda. */
+   Row 45 "Net Income from Hotel" (after Mgmt+Incentive fees) maps to sum.ebitda.
+
+   GOP = row34 - row41 (Total Overheads) - Marketing Fees.
+   Marketing Fees are NOT in this sheet: they live in "3.Sofitel Saigon 2026 Budget"
+   as the "Marketing Fees" row. Verified against the UOL report (YTD June 2026):
+   with the deduction every month ties to UOL's GOP to the digit (Jun-26 =
+   12,319,165,177); without it every month runs 0.13-0.54bn high. UOL's "Overheads"
+   likewise equals this sheet's Total Overheads + Marketing Fees.
+   CAUTION: in that sheet the month header serials read 2025-01..2025-12 but the data
+   is 2026 (col 20 ADR = 3,486,000.27 = UOL's Jun-26 ADR). The serials are stale, so
+   we take the 12 columns in order and ignore their year. */
+function budget2026MktgFees(wb){
+  const ws=wb.Sheets['3.Sofitel Saigon 2026 Budget']; if(!ws) return null;
+  const gd=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+  /* month block = first row carrying >=12 date serials */
+  let cols=null;
+  for(const row of gd){
+    const cs=[]; (row||[]).forEach((v,c)=>{ if(typeof v==='number'&&v>40000&&v<60000) cs.push(c); });
+    if(cs.length>=12){ cols=cs.slice(0,12); break; }
+  }
+  if(!cols) return null;
+  const r=findRow(gd,/^Marketing Fees\s*$/i); if(r<0) return null;
+  const out=cols.map(c=>num((gd[r]||[])[c]));
+  return out.every(v=>v!=null)?out:null;
+}
 function parseBudget2026(wb){
   const ws=wb.Sheets['Consolidated P&L Monthly'];
   const gd=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
   const val=(r,c)=>{ const v=(gd[r]||[])[c]; return typeof v==='number'?v:(v==null?null:parseFloat(v)); };
-  const out={};
+  const mktg=budget2026MktgFees(wb);
+  const out={ __warn: mktg?null:'Marketing Fees row not found — GOP budget will be overstated vs the UOL report' };
   for(let m=1;m<=12;m++){
     const c=4+m; // Jan=col5
     const roomsAvail=val(4,c), roomsSold=val(5,c), adr=val(6,c);
@@ -775,11 +802,18 @@ function parseBudget2026(wb){
     const revpar=(adr!=null&&occ!=null)?adr*occ:null;
     const roomsRev=val(10,c), roomsDP=val(13,c), fnbDP=val(27,c), minorDP=val(33,c);
     const deptTotal=val(34,c), overheads=val(41,c), netIncomeHotel=val(45,c);
+    const mf=mktg?mktg[m-1]:0;
     out[m]={
       stats:{roomsAvail,roomsSold,roomsOcc:roomsSold,adr,occ,revpar},
       rev:{totalIncl:val(8,c), rooms:roomsRev},
       dp:{rooms:roomsDP, total:deptTotal??((roomsDP??0)+(fnbDP??0)+(minorDP??0))},
-      sum:{gop:(deptTotal!=null&&overheads!=null)?deptTotal-overheads:null, ebitda:netIncomeHotel}
+      /* row45 "Net Income from Hotel" = row34 - row41 - mgmt fee - incentive fee, so it
+         excludes Marketing Fees for the same reason GOP did — deduct them here too,
+         otherwise EBITDA budget stays overstated while GOP is correct. */
+      sum:{gop:(deptTotal!=null&&overheads!=null)?deptTotal-overheads-(mf||0):null,
+           ebitda:netIncomeHotel==null?null:netIncomeHotel-(mf||0)},
+      mktgFee:mktg?mktg[m-1]:null,
+      overheadsInclMktg:(overheads!=null)?overheads+(mf||0):null
     };
   }
   return out;
@@ -1301,21 +1335,34 @@ function parseFS(wb){
     const key=`20${m[1]}-${m[2]}`;
     const gd=grid(wb.Sheets[name]);
     const o={};
-    /* column block: header row "Actual (VND)" */
-    let hdr=-1; for(let r=0;r<14;r++){ if(rowCols(gd[r]||[],/^Actual \(VND\)/i).length){ hdr=r; break; } }
+    /* column block: header row "Actual (VND)" — anchored to the CONSOLIDATED cascade.
+       Older files open with that cascade, but the 2026-era pack leads with the Central
+       Plaza P&L and pushes the cascade far down (FS26.05: CP header row 9, CP USD row 94,
+       cascade header row 181, HOTEL GOP row 223). Scanning only rows 0-13 therefore locked
+       onto the Central Plaza header, and usdLimit took the CP block's USD marker at row 94,
+       so every cascade row below it was rejected and the whole month parsed as null.
+       Anchor on "HOTEL GOP" and walk UP to its own header instead; fall back to the old
+       top-of-sheet scan when that label is absent. */
+    const casA=findRow(gd,/^HOTEL GOP/i);
+    let hdr=-1;
+    if(casA>=0) for(let r=casA;r>=0;r--){ if(rowCols(gd[r]||[],/^Actual \(VND\)/i).length){ hdr=r; break; } }
+    if(hdr<0) for(let r=0;r<14;r++){ if(rowCols(gd[r]||[],/^Actual \(VND\)/i).length){ hdr=r; break; } }
     if(hdr<0){ W(warns,name+': VND header not found'); continue; }
     const cAct=rowCols(gd[hdr],/^Actual \(VND\)/i)[0];
     const cBud=rowCols(gd[hdr],/^Budget \(VND\)/i)[0];
     const lyCols=rowCols(gd[hdr],/^Actual/i); // 2nd Actual = LY, 3rd = YTD actual
     const cLy=lyCols[1], cYact=lyCols[2];
     const cYbud=rowCols(gd[hdr],/^Budget \(VND\)/i)[1];
-    const usdLimit=findRows(gd,/^Actual \(USD\)/i,20)[0]??gd.length; // stop before USD block
-    const read=(re,from=0)=>{ const r=findRow(gd,re,cAct,from); if(r<0||r>=usdLimit) return null;
+    /* stop at the USD repeat that follows THIS header, not the first one in the sheet */
+    const usdLimit=findRows(gd,/^Actual \(USD\)/i,20).find(r=>r>hdr)??gd.length;
+    const read=(re,from=hdr)=>{ const r=findRow(gd,re,cAct,from); if(r<0||r>=usdLimit) return null;
       return { act:num(gd[r][cAct]), bud:cBud!=null?num(gd[r][cBud]):null, ly:cLy!=null?num(gd[r][cLy]):null,
                yact:cYact!=null?num(gd[r][cYact]):null, ybud:cYbud!=null?num(gd[r][cYbud]):null, _row:r }; };
     for(const[k,re] of Object.entries(MAP.fs.rows)){
-      if(k==='roomRev'){ const a=findRow(gd,MAP.fs.roomDeptAnchor); o[k]=read(re,Math.max(a,0)); }
-      else if(k==='minorRev'){ const a=findRow(gd,MAP.fs.minorAnchor); o[k]=read(re,Math.max(a,0)); }
+      /* anchors must be looked up INSIDE the cascade block too, else they can latch onto
+         the Central Plaza P&L that now sits above it */
+      if(k==='roomRev'){ const a=findRow(gd,MAP.fs.roomDeptAnchor,null,hdr); o[k]=read(re,Math.max(a,hdr)); }
+      else if(k==='minorRev'){ const a=findRow(gd,MAP.fs.minorAnchor,null,hdr); o[k]=read(re,Math.max(a,hdr)); }
       else if(k==='fx'){ const r=findRow(gd,re); o.fxRate=r>=0?num((gd[r]||[]).find((v,i)=>i>1&&num(v)>1000)):null; }
       else o[k]=read(re);
       if(!o[k]&&k!=='fx'&&k!=='rent') W(warns,name+': FS row not found: '+k);
@@ -2142,10 +2189,104 @@ function kpiCard(title,valHtml,vsBud,vsLY,invert){
   if(vsBud!=null){ const good=invert? vsBud<=0: vsBud>=0; const badLevel=Math.abs(vsBud)>0.05;
     cl2 = good?'g':(badLevel?'r':'a'); }
   const arrow=v=>v==null?'':`<b class="${v>=0?'up':'dn'}">${v>=0?'▲':'▼'}${pct(Math.abs(v))}</b>`;
+  /* only render the comparisons that actually exist — a card with no budget and no LY
+     used to show a bare "vs Bud · vs LY" strip with nothing after the labels */
+  const parts=[];
+  if(vsBud!=null) parts.push(`${t('vsBud')} ${arrow(vsBud)}`);
+  if(vsLY!=null)  parts.push(`${t('vsLY')} ${arrow(vsLY)}`);
   return `<div class="kpi ${cl2}"><div class="t">${title}</div><div class="v">${valHtml}</div>
-    <div class="s">${t('vsBud')} ${arrow(vsBud)} · ${t('vsLY')} ${arrow(vsLY)}</div></div>`;
+    ${parts.length?`<div class="s">${parts.join(' · ')}</div>`:''}</div>`;
 }
 function noData(){ return `<div class="panel"><span class="small">${t('noData')}</span></div>`; }
+
+/* ---------------- UOL-format P&L detail table ----------------
+   Mirrors the "Dashboard" sheet of the UOL report. Row hierarchy, metric
+   definitions and the 10-column block follow the owner's Python builder:
+     Actual | % of TR | Budget | % of TR | Var $ | Var % | LY | % of TR | Var $ | Var %
+   Definitions taken from that script (DERIVED_METRIC_DEFS):
+     F&B Revenue    = Total Food & Beverage
+     OOD            = Spa + Golf + Guest Laundry + Guest Comms + Minibar + Other Op Depts
+     Rental & Other = Miscellaneous
+     Overheads      = A&G + S&M + IT + POMEC + Energy  (payroll + other expense, already
+                      combined by parsePnl's undist block)
+     GOP            = Total Dept Profit - Overheads
+   MPI/ARI/RGI show a competitive Rank in place of "% of TR" and have no budget,
+   exactly as in the source sheet. */
+const UOL_OOD_REV=['rev.spa','rev.golf','rev.laundry','rev.comms','rev.minibar','rev.otherOp'];
+const UOL_OOD_DP =['dp.spa','dp.golf','dp.laundry','dp.comms','dp.minibar','dp.otherOp'];
+/* parsePnl stores each overhead category split into .pay (payroll block) and .oth
+   (other-expenses block) — the same pairing the Python builder sums as OVERHEAD_PAIRS.
+   Energy exists only in the other-expenses block. */
+const UOL_AG=['undist.ag.pay','undist.ag.oth'], UOL_SM=['undist.sm.pay','undist.sm.oth'],
+      UOL_IT=['undist.it.pay','undist.it.oth'], UOL_PM=['undist.pomec.pay','undist.pomec.oth'],
+      UOL_EN=['undist.energy.oth'];
+const UOL_OH=[...UOL_AG,...UOL_SM,...UOL_IT,...UOL_PM,...UOL_EN];
+function uolTable(d){
+  const p=d.p, per=state.period; if(!p) return '';
+  const one=(path,f)=>g(p,path,per,f);
+  const many=(paths,f)=>{ let s=null; for(const pa of paths){ const v=g(p,pa,per,f); if(v!=null) s=(s??0)+v; } return s; };
+  const R=(label,paths,o={})=>({label,paths:Array.isArray(paths)?paths:[paths],...o});
+  const rows=[
+    R('Occupancy','stats.occ',{pctVal:true,noTR:true}),
+    R('ADR, excl svc chrg','stats.adr',{noTR:true}),
+    R('RevPAR','stats.revpar',{noTR:true}),
+    {gap:true},
+    R('Total Revenue','rev.totalIncl',{bold:true}),
+    R('Rooms Revenue','rev.rooms',{ind:1}),
+    R('F&B Revenue','rev.totalFb',{ind:1}),
+    R('OOD Revenue',UOL_OOD_REV,{ind:1}),
+    R('Rental &amp; Other Income','rev.misc',{ind:1}),
+    {gap:true},
+    R('Total Dept Profit','dp.total',{bold:true}),
+    R('Rooms Dept Profit','dp.rooms',{ind:1}),
+    R('F&amp;B Dept Profit','dp.fnb',{ind:1}),
+    R('OOD Profit',UOL_OOD_DP,{ind:1}),
+    R('Rental &amp; Other Income','dp.misc',{ind:1}),
+    {gap:true},
+    R('Overheads',UOL_OH,{bold:true}),
+    R('Admin &amp; General',UOL_AG,{ind:1}),
+    R('Sales &amp; Marketing',UOL_SM,{ind:1}),
+    R('IT',UOL_IT,{ind:1}),
+    R('POMEC',UOL_PM,{ind:1}),
+    R('Energy, Water, and Waste',UOL_EN,{ind:1}),
+    {gap:true},
+    R('GOP','sum.gop',{bold:true}),
+  ];
+  const TR=f=>one('rev.totalIncl',f);
+  const fmtV=(v,r)=>v==null?'':(r.pctVal?pct(v):money(v));
+  const cellPct=(v,tot)=>(v==null||!tot)?'':pct(v/tot);
+  let html='';
+  /* STR index rows first — value + rank, no budget (matches the source sheet) */
+  const idxRows=[['MPI',d.mpi],['ARI',d.ari],['RGI',d.rgi]];
+  for(const [nm,v] of idxRows)
+    html+=`<tr><td>${nm}</td><td>${v==null?'':idx(v)}</td><td colspan="9" class="small" style="color:var(--grey)">${v==null?'STR not loaded':'index vs comp set — no budget basis'}</td></tr>`;
+  html+=`<tr class="gap"><td colspan="11"></td></tr>`;
+  for(const r of rows){
+    if(r.gap){ html+=`<tr class="gap"><td colspan="11"></td></tr>`; continue; }
+    const a=r.paths.length>1?many(r.paths,'act'):one(r.paths[0],'act');
+    const b=r.paths.length>1?many(r.paths,'bud'):one(r.paths[0],'bud');
+    const l=r.paths.length>1?many(r.paths,'ly') :one(r.paths[0],'ly');
+    const vb=(a!=null&&b!=null)?a-b:null, vl=(a!=null&&l!=null)?a-l:null;
+    const pad=r.ind?`padding-left:${12+r.ind*14}px`:'';
+    html+=`<tr class="${r.bold?'tot':''}">
+      <td style="${pad}">${r.label}</td>
+      <td>${fmtV(a,r)}</td><td>${r.noTR?'':cellPct(a,TR('act'))}</td>
+      <td>${fmtV(b,r)}</td><td>${r.noTR?'':cellPct(b,TR('bud'))}</td>
+      <td class="${cls(r.invert?-vb:vb)}">${vb==null?'':fmtV(vb,r)}</td>
+      <td class="${cls(varPct(a,b))}">${b==null?'':pct(varPct(a,b))}</td>
+      <td>${fmtV(l,r)}</td><td>${r.noTR?'':cellPct(l,TR('ly'))}</td>
+      <td class="${cls(vl)}">${vl==null?'':fmtV(vl,r)}</td>
+      <td class="${cls(varPct(a,l))}">${l==null?'':pct(varPct(a,l))}</td></tr>`;
+  }
+  return `<div class="panel"><h3>P&amp;L detail — UOL report format (${per})</h3>
+    <div style="overflow-x:auto"><table class="uol"><thead>
+      <tr><th rowspan="2">Line</th><th colspan="2">Actual</th><th colspan="2">Budget</th>
+          <th colspan="2">Var. vs Budget</th><th colspan="2">Last Year</th><th colspan="2">Var. vs LY</th></tr>
+      <tr><th>Value</th><th>% of TR</th><th>Value</th><th>% of TR</th><th>$</th><th>%</th>
+          <th>Value</th><th>% of TR</th><th>$</th><th>%</th></tr></thead>
+      <tbody>${html}</tbody></table></div>
+    <div class="small" style="margin-top:6px">Same rows and definitions as the UOL report's Dashboard sheet. % of TR divides each scenario by <b>its own</b> Total Revenue. Occupancy / ADR / RevPAR and the STR indices carry no % of TR — they aren't revenue amounts. Budget for 2026 months comes from the consolidated 2026 budget (GOP net of Marketing Fees, matching UOL).</div></div>`;
+}
 
 /* ---------------- COCKPIT ---------------- */
 function renderCockpit(d){
@@ -2172,8 +2313,9 @@ function renderCockpit(d){
       const arrow=v=>v==null?'':`<b class="${(inv?v<=0:v>=0)?'up':'dn'}">${v>=0?'▲':'▼'}${pts(Math.abs(v*100)).replace('+','')}</b>`;
       const good=vb==null?null:(inv?vb<=0:vb>=0);
       const cl2=vb==null?'':(good?'g':(Math.abs(vb)>0.03?'r':'a'));
+      const ps=[]; if(vb!=null) ps.push(`${t('vsBud')} ${arrow(vb)}`); if(vl!=null) ps.push(`${t('vsLY')} ${arrow(vl)}`);
       return `<div class="kpi ${cl2}"><div class="t">${title}</div><div class="v">${val}</div>
-        <div class="s">${t('vsBud')} ${arrow(vb)} · ${t('vsLY')} ${arrow(vl)}</div></div>`;
+        ${ps.length?`<div class="s">${ps.join(' · ')}</div>`:''}</div>`;
     }
     return kpiCard(title,val,vb,vl,inv);
   }).join('');
@@ -2188,8 +2330,9 @@ function renderCockpit(d){
       <div class="panel"><h3>${t('top5')}</h3>${top5}</div>
     </div>
     <div class="panel"><h3>${t('trend')} ${granCtl()}</h3><div class="chartbox" style="margin-top:14px"><canvas id="chTrend"></canvas></div>
-      <div class="small" style="margin-top:6px">Bars = revenue (actual / budget / last year), lines = GOP (solid actual, dashed budget, dotted last year). Hover any month for the four variances. Click a legend entry to hide that series. Budget and last-year figures come from each month's own report; 2026 months use the consolidated 2026 budget.</div>
-      ${granNote('revenue and GOP are summed within each quarter')}</div>`;
+      <div class="small" style="margin-top:6px">Bars = revenue (actual / budget / last year), lines = GOP (solid actual, dashed budget, dotted last year). <b style="color:#d64545">Months shown in red missed their GOP budget.</b> Hover any month for the four variances. Click a legend entry to hide that series. Budget and last-year figures come from each month's own report; 2026 months use the consolidated 2026 budget.</div>
+      ${granNote('revenue and GOP are summed within each quarter')}</div>
+    ${uolTable(d)}`;
 
   /* waterfall */
   const br=gopBridge(d);
@@ -2223,7 +2366,13 @@ function renderCockpit(d){
        borderWidth:1.6,borderDash:[6,4],pointRadius:0,tension:.3,order:2},
       {type:'line',label:'GOP LY',data:S[5],borderColor:'#7c8592',backgroundColor:'#7c8592',
        borderWidth:1.6,borderDash:[2,3],pointRadius:0,tension:.3,order:3}]},
-    options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,0)}}},maintainAspectRatio:false,
+    options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,0)}},
+      /* red + bold the period label wherever GOP actual came in under budget —
+         works for quarters too, since S[] is already grouped to the current labels */
+      x:{ticks:{
+        color:c=>{ const a=S[3][c.index], b=S[4][c.index]; return (a!=null&&b!=null&&a<b)?'#d64545':'#64748b'; },
+        font:c=>{ const a=S[3][c.index], b=S[4][c.index]; return (a!=null&&b!=null&&a<b)?{weight:'bold'}:{}; }}}},
+      maintainAspectRatio:false,
       plugins:{tooltip:{callbacks:{
         /* variances in the tooltip so each point can be read without eyeballing gaps */
         afterBody:items=>{
@@ -3078,9 +3227,9 @@ function renderConso(d){
   const P=state.period, f= P==='YTD'?'yact':'act', fb=P==='YTD'?'ybud':'bud';
   const hotel=V('hotelGop',f), central=V('centralGop',f), group=hotel+central;
   const rows=[
-    ['Total revenue (hotel)',V('totalRev',f),V('totalRev',fb),P==='MTD'?V('totalRev','ly'):null],
-    ['Hotel GOP',hotel,V('hotelGop',fb),P==='MTD'?V('hotelGop','ly'):null],
-    ['Central Plaza GOP (office)',central,V('centralGop',fb),P==='MTD'?V('centralGop','ly'):null],
+    ['Total revenue (Sofitel)',V('totalRev',f),V('totalRev',fb),P==='MTD'?V('totalRev','ly'):null],
+    ['Sofitel GOP',hotel,V('hotelGop',fb),P==='MTD'?V('hotelGop','ly'):null],
+    ['Central Plaza GOP',central,V('centralGop',fb),P==='MTD'?V('centralGop','ly'):null],
     ['Profit before fixed charges (Consolidated)',V('pbfc',f),V('pbfc',fb),P==='MTD'?V('pbfc','ly'):null],
     ['Fixed charges',V('fixed',f),V('fixed',fb),P==='MTD'?V('fixed','ly'):null],
     ['Financial income/(exp) net',-(V('finNet',f)??0),null,P==='MTD'?-(V('finNet','ly')??0):null],
@@ -3088,7 +3237,11 @@ function renderConso(d){
     ['Profit before tax',V('pbt',f),V('pbt',fb),P==='MTD'?V('pbt','ly'):null],
     ['CIT',V('tax',f),V('tax',fb),P==='MTD'?V('tax','ly'):null],
     ['Net profit after tax',V('npat',f),V('npat',fb),P==='MTD'?V('npat','ly'):null],
-  ].map(r=>`<tr class="${/Net profit/.test(r[0])?'tot':''}"><td>${r[0]}</td><td>${money(r[1])}</td><td>${money(r[2])}</td><td>${r[3]==null?'—':money(r[3])}</td><td class="${cls(varPct(r[1],r[2]))}">${pct(varPct(r[1],r[2]))}</td></tr>`).join('');
+    /* blank (not N/A, not 0%) wherever the FS carries no budget or no LY for that line —
+       e.g. financial income/(expense) has no budget at all */
+  ].map(r=>`<tr class="${/Net profit/.test(r[0])?'tot':''}"><td>${r[0]}</td><td>${money(r[1])}</td>
+      <td>${r[2]==null?'':money(r[2])}</td><td>${r[3]==null?'':money(r[3])}</td>
+      <td class="${cls(varPct(r[1],r[2]))}">${r[2]==null?'':pct(varPct(r[1],r[2]))}</td></tr>`).join('');
 
   /* MoM bridge: previous FS month */
   const keys=Object.keys(fsAll).sort(); const iCur=keys.indexOf(state.month);
@@ -3101,18 +3254,18 @@ function renderConso(d){
     bridgeHtml=`<div class="panel"><h3>MoM bridge ${fmtMonthKey(prevKey)} → ${fmtMonthKey(state.month)} (net profit after tax)</h3>
       <table><thead><tr><th>Driver</th><th>Δ</th></tr></thead><tbody>
       <tr><td>NPAT ${fmtMonthKey(prevKey)}</td><td>${money(prev.npat?.act)}</td></tr>
-      <tr><td>Δ Hotel GOP</td><td class="${cls(dHotel)}">${money(dHotel)}</td></tr>
+      <tr><td>Δ Sofitel GOP</td><td class="${cls(dHotel)}">${money(dHotel)}</td></tr>
       <tr><td>Δ Central Plaza GOP</td><td class="${cls(dCentral)}">${money(dCentral)}</td></tr>
       <tr><td>Δ Fixed / financial / tax / other</td><td class="${cls(dOther)}">${money(dOther)}</td></tr>
       <tr class="tot"><td>NPAT ${fmtMonthKey(state.month)}</td><td>${money(fs.npat?.act)}</td></tr></tbody></table></div>`;
   }
-  const contrib= group? `${pct(hotel/group)} hotel / ${pct(central/group)} office` : '—';
+  const contrib= group? `${pct(hotel/group)} Sofitel / ${pct(central/group)} Central Plaza` : '—';
   /* top 5 things to look at — consolidated */
   const alC=[];
   const npV=varPct(V('npat',f),V('npat',fb));
   if(npV!=null) alC.push([npV<-.05?'crit':npV<0?'warn':'good','NPAT vs budget '+pct(npV),`${money(V('npat',f))} vs budget ${money(V('npat',fb))}${P==='MTD'&&V('npat','ly')!=null?' · vs LY '+pct(varPct(V('npat',f),V('npat','ly'))):''}.`]);
   const hgV=varPct(hotel,V('hotelGop',fb));
-  if(hgV!=null) alC.push([hgV<-.05?'crit':hgV<0?'warn':'good','Hotel GOP vs budget '+pct(hgV),`${money(hotel)} vs ${money(V('hotelGop',fb))} — see the Sofitel Saigon Plaza tab for the driver bridge.`]);
+  if(hgV!=null) alC.push([hgV<-.05?'crit':hgV<0?'warn':'good','Sofitel GOP vs budget '+pct(hgV),`${money(hotel)} vs ${money(V('hotelGop',fb))} — see the Sofitel Saigon Plaza tab for the driver bridge.`]);
   const cgV=varPct(central,V('centralGop',fb));
   if(cgV!=null) alC.push([cgV<-.03?'crit':cgV<0?'warn':'good','Central Plaza NOI vs budget '+pct(cgV),`${money(central)} vs ${money(V('centralGop',fb))} — cost detail on the Central Plaza tab.`]);
   const fxV=varPct(V('fixed',f),V('fixed',fb));
@@ -3120,7 +3273,7 @@ function renderConso(d){
   if(V('finNet',f)!=null) alC.push([V('finNet',f)<0?'info':'good','Net financial result '+money(-(V('finNet',f)??0)),'Interest & financial income/(expense), net.']);
   if(group&&V('hotelGop','ly')!=null&&V('centralGop','ly')!=null){
     const shTY=central/group, grpLY=(V('hotelGop','ly')??0)+(V('centralGop','ly')??0), shLY=grpLY?V('centralGop','ly')/grpLY:null;
-    if(shLY!=null) alC.push([Math.abs(shTY-shLY)>.05?'warn':'info','Office share of consolidated GOP '+pct(shTY),`vs ${pct(shLY)} LY — ${shTY>shLY?'the office is carrying more of the result (hotel softness or renovation effect)':'hotel share recovered vs LY'}.`]);
+    if(shLY!=null) alC.push([Math.abs(shTY-shLY)>.05?'warn':'info','Central Plaza share of consolidated GOP '+pct(shTY),`vs ${pct(shLY)} LY — ${shTY>shLY?'Central Plaza is carrying more of the result (Sofitel softness or renovation effect)':'Sofitel share recovered vs LY'}.`]);
   }
   const rankC={crit:0,warn:1,info:2,good:3};
   const topC=alC.sort((a,b)=>rankC[a[0]]-rankC[b[0]]).slice(0,5);
@@ -3128,7 +3281,7 @@ function renderConso(d){
     ${topC.map((a,i)=>`<div class="alert ${a[0]}"><div class="h">${i+1}. ${a[1]}</div><div class="d">${a[2]}</div></div>`).join('')}</div>`:'';
   el.innerHTML=`
     <div class="kgrid">
-      ${kpiCard('Hotel GOP',money(hotel),varPct(hotel,V('hotelGop',fb)),P==='MTD'?varPct(hotel,V('hotelGop','ly')):null)}
+      ${kpiCard('Sofitel GOP',money(hotel),varPct(hotel,V('hotelGop',fb)),P==='MTD'?varPct(hotel,V('hotelGop','ly')):null)}
       ${kpiCard('Central Plaza GOP',money(central),varPct(central,V('centralGop',fb)),P==='MTD'?varPct(central,V('centralGop','ly')):null)}
       ${kpiCard('Consolidated GOP contribution',contrib,null,null)}
       ${kpiCard('NPAT',money(V('npat',f)),varPct(V('npat',f),V('npat',fb)),P==='MTD'?varPct(V('npat',f),V('npat','ly')):null)}
@@ -3141,18 +3294,48 @@ function renderConso(d){
     <div class="cols c2">
       <div class="panel"><h3>Consolidated cascade — ${P}</h3>
         <table><thead><tr><th>Line</th><th>Actual</th><th>Budget</th><th>LY</th><th>Var %</th></tr></thead><tbody>${rows}</tbody></table>
-        <div class="small" style="margin-top:6px">Office-building occupancy/yield is not disclosed in the FS workbook — only Central GOP. Reconciliation: Hotel GOP per FS ${money(hotel)} vs P&L GOP ${d.ok?money(state.period==='YTD'?g(d.p,'sum.gop','YTD','act'):d.gop.act):'—'} (FS is after mgmt/incentive fees — see cascade).</div></div>
-      <div class="panel"><h3>Hotel vs Central GOP — stored months ${granCtl()}</h3>
-        <div class="chartbox" style="margin-top:14px"><canvas id="chConso"></canvas></div>
-        ${granNote('GOP is summed within each quarter')}</div>
-    </div>`;
+        <div class="small" style="margin-top:6px">Central Plaza occupancy/yield is not disclosed in the FS workbook — only its GOP. Reconciliation: Sofitel GOP per FS ${money(hotel)} vs P&L GOP ${d.ok?money(state.period==='YTD'?g(d.p,'sum.gop','YTD','act'):d.gop.act):'—'} (FS is after mgmt/incentive fees — see cascade).</div></div>
+      <div class="panel"><h3>Net profit after tax — trend ${granCtl()}</h3>
+        <div class="chartbox" style="margin-top:14px"><canvas id="chNpat"></canvas></div>
+        <div class="small" style="margin-top:6px">Consolidated NPAT from the stored FS months — actual vs budget vs last year.</div>
+        ${granNote('NPAT is summed within each quarter')}</div>
+    </div>
+    <div class="panel"><h3>Sofitel vs Central Plaza GOP — vs budget &amp; last year ${granCtl()}</h3>
+      <div class="chartbox" style="margin-top:14px"><canvas id="chGopCmp"></canvas></div>
+      <div class="small" style="margin-top:6px">Bars = actual GOP for each property. Lines = that property's budget (dashed) and last year (dotted). Click a legend entry to hide a series.</div>
+      ${granNote('GOP is summed within each quarter')}</div>`;
+
   const ks=keys;
-  const gC=granGroup(ks,[{data:ks.map(k=>cvM(fsAll[k].hotelGop?.act,k)),agg:'sum'},
-                         {data:ks.map(k=>cvM(fsAll[k].centralGop?.act,k)),agg:'sum'}]);
-  mkChart('chConso',{type:'bar',data:{labels:gC.labels,datasets:[
-    {label:'Hotel GOP',data:gC.out[0],backgroundColor:'#C9A227',stack:'s'},
-    {label:'Central GOP',data:gC.out[1],backgroundColor:'#4a7dbd',stack:'s'}]},
-    options:{scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>moneyFmt(v,0)}}},maintainAspectRatio:false}});
+  /* NPAT trend — actual / budget / LY */
+  const gN=granGroup(ks,[['act'],['bud'],['ly']].map(([fld])=>(
+    {data:ks.map(k=>cvM(fsAll[k].npat?.[fld],k)),agg:'sum'})));
+  mkChart('chNpat',{type:'line',data:{labels:gN.labels,datasets:[
+    {label:'NPAT actual',data:gN.out[0],borderColor:'#0B1F3A',backgroundColor:'#0B1F3A',borderWidth:2.5,pointRadius:2,tension:.3},
+    {label:'NPAT budget',data:gN.out[1],borderColor:'#C9A227',borderWidth:1.6,borderDash:[6,4],pointRadius:0,tension:.3},
+    {label:'NPAT last year',data:gN.out[2],borderColor:'#7c8592',borderWidth:1.6,borderDash:[2,3],pointRadius:0,tension:.3}]},
+    options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,0)}}},maintainAspectRatio:false,
+      plugins:{tooltip:{callbacks:{afterBody:it=>{ const i=it[0].dataIndex,a=gN.out[0][i];
+        return [[1,'vs Bud'],[2,'vs LY']].map(([j,lb])=>{ const b=gN.out[j][i];
+          return (a==null||b==null||!b)?null:lb+': '+pct(a/b-1); }).filter(Boolean); }}}}}});
+
+  /* Sofitel vs Central Plaza GOP, each against budget and LY */
+  const SER=[['hotelGop','act'],['centralGop','act'],['hotelGop','bud'],['centralGop','bud'],
+             ['hotelGop','ly'],['centralGop','ly']];
+  const gG=granGroup(ks,SER.map(([key,fld])=>(
+    {data:ks.map(k=>cvM(fsAll[k][key]?.[fld],k)),agg:'sum'})));
+  const O=gG.out;
+  mkChart('chGopCmp',{type:'bar',data:{labels:gG.labels,datasets:[
+    {type:'bar',label:'Sofitel actual',data:O[0],backgroundColor:'rgba(201,162,39,.85)',order:5},
+    {type:'bar',label:'Central Plaza actual',data:O[1],backgroundColor:'rgba(74,125,189,.85)',order:6},
+    {type:'line',label:'Sofitel budget',data:O[2],borderColor:'#C9A227',borderWidth:1.6,borderDash:[6,4],pointRadius:0,tension:.3,order:1},
+    {type:'line',label:'Central Plaza budget',data:O[3],borderColor:'#2e5f9e',borderWidth:1.6,borderDash:[6,4],pointRadius:0,tension:.3,order:2},
+    {type:'line',label:'Sofitel LY',data:O[4],borderColor:'#b9a35e',borderWidth:1.4,borderDash:[2,3],pointRadius:0,tension:.3,order:3},
+    {type:'line',label:'Central Plaza LY',data:O[5],borderColor:'#7c8592',borderWidth:1.4,borderDash:[2,3],pointRadius:0,tension:.3,order:4}]},
+    options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,0)}}},maintainAspectRatio:false,
+      plugins:{tooltip:{callbacks:{afterBody:it=>{ const i=it[0].dataIndex;
+        return [[0,2,'Sofitel vs Bud'],[0,4,'Sofitel vs LY'],[1,3,'Central vs Bud'],[1,5,'Central vs LY']]
+          .map(([a,b,lb])=>{ const A=O[a][i],B=O[b][i];
+            return (A==null||B==null||!B)?null:lb+': '+pct(A/B-1); }).filter(Boolean); }}}}}});
 }
 
 /* ---------------- PATTERNS & HEATMAPS (Month × DOW, SSP vs Comp vs Industry) ---------------- */
@@ -4067,12 +4250,12 @@ function renderOffice(d){
       <div class="panel"><h3>Monthly detail</h3>
         <table><thead><tr><th>Month</th><th>GOP</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>% of consolidated</th></tr></thead>
         <tbody>${rows}</tbody></table>
-        <div class="small" style="margin-top:6px">Central GOP = NET OPERATING INCOME of the office building. Occupancy, rent/m² and cost detail are on the scorecard above and in the cost analysis at right. (Leasing notes are edited on the Exec Summary tab.)</div></div>
+        <div class="small" style="margin-top:6px">Central Plaza GOP = NET OPERATING INCOME of the building. Occupancy, rent/m² and cost detail are on the scorecard above and in the cost analysis at right. (Leasing notes are edited on the Exec Summary tab.)</div></div>
       ${costHtml}
     </div>
 `;
   mkChart('chOffice',{type:'bar',data:{labels:fkeys.map(fmtMonthKey),datasets:[
-      {type:'bar',label:'Central GOP',data:fkeys.map(k=>cvM(fsAll[k].centralGop?.act,k)),backgroundColor:'#2e5f9e'},
+      {type:'bar',label:'Central Plaza GOP',data:fkeys.map(k=>cvM(fsAll[k].centralGop?.act,k)),backgroundColor:'#2e5f9e'},
       {type:'bar',label:'Budget',data:fkeys.map(k=>cvM(fsAll[k].centralGop?.bud,k)),backgroundColor:'rgba(201,162,39,.55)'},
       {type:'line',label:'% of consolidated GOP (right)',yAxisID:'y1',tension:.3,borderColor:'#1e7e4f',
         data:fkeys.map(k=>{const cc=fsAll[k].centralGop?.act,hh=fsAll[k].hotelGop?.act; return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;})}]},
