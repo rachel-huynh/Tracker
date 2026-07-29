@@ -348,6 +348,10 @@ const MAP = {
     ['IT / TV / CCTV',           /\btv\b|camera|cctv|wifi|network/i],
   ],
   engCritical: /leak|broken|fail|not reach|not work|damage|clog|crack|burst|overheat|shutdown|flood/i,
+  /* location tokens in the Engineering PDF. Kept as a SOURCE string so the parser and
+     the critical-watchlist renderer build their own regex objects from it — a shared
+     /g regex carries lastIndex between calls and would silently skip matches. */
+  engLocSrc: '\\b(B[12]|\\d{1,2}\\s?F|Roof|Lobby|Club|Bistro|Mezz|Banquet|Pool|Spa|Kitchen)\\b',
 
   /* room hierarchy for upgrade-level math (rank 1 = lowest room).
      Booked/stayed names like "Luxury Club King" are matched to the LONGEST
@@ -1608,9 +1612,42 @@ function parseRF(wb){
     payroll:readSum(/^Payroll & Related$/i)||read(/Total Payroll & Related Expenses \(including SVC\)/i),
     netReturn:read(/^NET RETURN$/i),   // dropped from the current template — optional
   };
-  /* netReturn is not rendered anywhere; everything else is, so only those are required */
-  for(const[k,v] of Object.entries(rows)) if(!v&&k!=='netReturn')
+  /* Only the original set is required; everything added below is optional so an older
+     template that lacks a line degrades to a blank cell instead of failing the file. */
+  const REQUIRED=['occ','adr','revpar','roomsSold','roomsRev','fbRev','totalRev','deptProfit','gop','gopPct','payroll'];
+  for(const k of REQUIRED) if(!rows[k])
     throw Object.assign(new Error('RF row missing: '+k),{soft:true});
+
+  /* ---- section-anchored reads, so the UOL row set can be built from this file ----
+     Labels repeat across blocks ("Rooms" sits in Revenue, Payroll, Other Expenses AND
+     Department Profit; "Payroll & Related" / "Other Expenses" each appear twice, once
+     departmental and once as overheads). A plain findRow would grab whichever comes
+     first, so each read is scoped to the header row of its own section. Section headers
+     are the occurrences that carry NO number in the first month column. */
+  const secHdrs=re=>findRows(gd,re).filter(r=>r>hdr&&num((gd[r]||[])[cols[0].c])===null);
+  const readAfter=(re,from)=>{ if(from==null||from<0) return null;
+    const r=findRow(gd,re,cols[0].c,from); return r<0?null:cols.map(x=>num(gd[r][x.c])); };
+  const addArr=(a,b)=>{ if(!a) return b; if(!b) return a;
+    return a.map((v,i)=>(v==null&&b[i]==null)?null:(v??0)+(b[i]??0)); };
+  const revH=secHdrs(/^Revenue$/i)[0], dpH=secHdrs(/^Department Profit$/i)[0];
+  const payHs=secHdrs(/^Payroll & Related$/i), othHs=secHdrs(/^Other Expenses$/i);
+  const ohPay=payHs[payHs.length-1], ohOth=othHs[othHs.length-1];   // overheads = the LAST of each
+  const bothOH=re=>addArr(readAfter(re,ohPay),readAfter(re,ohOth));
+  Object.assign(rows,{
+    oodRev:      readAfter(/^OODs$/i,revH),
+    otherIncRev: readAfter(/^Other Income$/i,revH),
+    dpRooms:     readAfter(/^Rooms$/i,dpH),
+    dpFnb:       readAfter(/^Food & Beverage$/i,dpH),
+    dpOod:       readAfter(/^OODs$/i,dpH),
+    dpOtherInc:  readAfter(/^Other Income$/i,dpH),
+    ohAG:        bothOH(/^Admin & General$/i),
+    ohIT:        bothOH(/^Information & Telecom/i),
+    ohSM:        bothOH(/^Sales & Marketing$/i),
+    ohPOMEC:     bothOH(/^Property Opn & Maintenance$/i),
+    ohEnergy:    readAfter(/^Energy$/i,ohOth),
+    mktgFee:     read(/^Marketing Fees\s*$/i),
+  });
+  rows.overheads=[rows.ohAG,rows.ohSM,rows.ohIT,rows.ohPOMEC,rows.ohEnergy].reduce((a,b)=>addArr(a,b),null);
   return { months:cols.map(x=>x.ym), flags:cols.map(x=>x.flag), rows, title };
 }
 /* ---------- Cashflow forecast (FY yyyy sheet) ---------- */
@@ -1683,7 +1720,7 @@ async function parseEngPdf(buf){
     }
   }
   /* hot-spots: mentions by floor/location and by system keyword */
-  const locRe=/\b(B[12]|\d{1,2}\s?F|Roof|Lobby|Club|Bistro|Mezz|Banquet|Pool|Spa|Kitchen)\b/gi;
+  const locRe=new RegExp(MAP.engLocSrc,'gi');
   const locs={},sys={},critical=[];
   const skip=/^(APRIL|MAY|JUNE|JULY|MARCH|JANUARY|FEBRUARY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)|ENGINEERING DEPARTMENT|MONTHLY REPORT|BÁO CÁO/i;
   /* rows that are table furniture, never part of an item's own description —
@@ -2781,46 +2818,69 @@ function renderOther(d){
       <td>${money(rev)}</td><td class="${cls(varPct(rev,revL))}">${pct(varPct(rev,revL))}</td>
       <td class="${neg?'neg':''}">${money(dp)}</td><td class="${dpp!=null&&dpp<0?'neg':''}">${pct(dpp)}</td><td>${money(por)}</td></tr>`;
   }
-  el.innerHTML=`<div class="panel"><h3>Other operating & miscellaneous departments — ${P}</h3>
-    <table><thead><tr><th>Department</th><th>Revenue</th><th>% LY</th><th>Dept profit</th><th>Profit %</th><th>Rev POR</th></tr></thead>
-    <tbody>${rows||'<tr><td colspan=6>'+na('Department sheets not found in P&L workbook')+'</td></tr>'}</tbody></table>
-    <div class="small" style="margin-top:6px">POR = per occupied (sold) room. Departments flagged LOSS run negative profit and need a make-or-buy / outsourcing decision.</div></div>`
-    + undistHtml(d);
+  /* --- materiality: how much do these small departments actually move? --- */
+  const depts=(d.p.otherDepts||[]).filter(o=>o.totalRev!=null||o.deptProfit!=null);
+  const V=(o,k,f)=>o[k]?.[per]?.[f]??null;
+  const totCost=(d.totalRev.act!=null&&d.gop.act!=null)?d.totalRev.act-d.gop.act:null;
+  const shareRows=depts.map(o=>{
+    const rev=V(o,'totalRev','act'), dp=V(o,'deptProfit','act');
+    const pay=V(o,'payrollIncl','act'), oth=V(o,'otherExp','act');
+    const cost=(pay!=null||oth!=null)?(pay??0)+(oth??0):((rev!=null&&dp!=null)?rev-dp:null);
+    return {name:o.name,rev,dp,pay,oth,cost,
+      pRev:div(rev,d.totalRev.act), pCost:div(cost,totCost), pGop:div(dp,d.gop.act)};
+  });
+  const agg=shareRows.reduce((a,r)=>({rev:a.rev+(r.rev??0),cost:a.cost+(r.cost??0),dp:a.dp+(r.dp??0)}),{rev:0,cost:0,dp:0});
+
+  /* --- detailed cost lines per department --- */
+  const costBody=shareRows.map(r=>{
+    const o=depts.find(x=>x.name===r.name);
+    const cell=(k)=>`<td>${money(V(o,k,'act'))}</td><td>${money(V(o,k,'bud'))}</td>
+      <td class="${cls(V(o,k,'bud')==null?null:-(varPct(V(o,k,'act'),V(o,k,'bud'))))}">${V(o,k,'bud')==null?'':pct(varPct(V(o,k,'act'),V(o,k,'bud')))}</td>
+      <td>${money(V(o,k,'ly'))}</td>`;
+    return `<tr><td>${r.name}</td>${cell('payrollIncl')}${cell('otherExp')}
+      <td>${money(r.cost)}</td><td>${money(div(r.cost,d.roomsSold))}</td></tr>`;
+  }).join('');
+
+  el.innerHTML=`
+    <div class="panel"><h3>How material are these departments? — ${P}</h3>
+      <div class="chartbox" style="margin-top:14px"><canvas id="chOtherShare"></canvas></div>
+      <div class="small" style="margin-top:6px">Each department as a share of the hotel's <b>total revenue</b>, <b>total operating cost</b> and <b>GOP</b>. Combined, they are
+        <b>${pct(div(agg.rev,d.totalRev.act))}</b> of revenue, <b>${pct(div(agg.cost,totCost))}</b> of cost and <b>${pct(div(agg.dp,d.gop.act))}</b> of GOP — read the tables below in that light before spending management time here.</div></div>
+    <div class="panel"><h3>Other operating &amp; miscellaneous departments — ${P}</h3>
+      <table><thead><tr><th>Department</th><th>Revenue</th><th>% LY</th><th>Dept profit</th><th>Profit %</th><th>Rev POR</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan=6>'+na('Department sheets not found in P&L workbook')+'</td></tr>'}</tbody></table>
+      <div class="small" style="margin-top:6px">POR = per occupied (sold) room. Departments flagged LOSS run negative profit and need a make-or-buy / outsourcing decision.</div></div>
+    <div class="panel"><h3>Cost lines by department — ${P} <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+      <div style="overflow-x:auto"><table><thead>
+        <tr><th rowspan="2">Department</th><th colspan="4">Payroll (incl. SVC)</th><th colspan="4">Other expenses</th><th rowspan="2">Total cost</th><th rowspan="2">Cost POR</th></tr>
+        <tr><th>Actual</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>Actual</th><th>Budget</th><th>vs Bud</th><th>LY</th></tr></thead>
+      <tbody>${costBody||'<tr><td colspan=11>'+na('Department sheets not found in P&L workbook')+'</td></tr>'}</tbody></table></div>
+      <div class="small" style="margin-top:6px">From each department's own sheet in the P&amp;L workbook. Variances are signed so green = favourable (cost below budget). Where a sheet has no payroll/expense split, Total cost falls back to revenue − departmental profit.</div></div>`;
+
+  mkChart('chOtherShare',{type:'bar',data:{labels:shareRows.map(r=>r.name),datasets:[
+      {label:'% of total revenue',data:shareRows.map(r=>r.pRev==null?null:r.pRev*100),backgroundColor:'#4a7dbd'},
+      {label:'% of total cost',data:shareRows.map(r=>r.pCost==null?null:r.pCost*100),backgroundColor:'#d64545'},
+      {label:'% of GOP',data:shareRows.map(r=>r.pGop==null?null:r.pGop*100),backgroundColor:'#C9A227'}]},
+    options:{scales:{y:{ticks:{callback:v=>n1(v,1)+'%'}},x:{ticks:{maxRotation:35}}},maintainAspectRatio:false,
+      plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+': '+n1(c.raw,2)+'%'}}}}});
 }
 
-/* ---------------- UNDISTRIBUTED (rendered inside the merged Other Ops tab) ---------------- */
-function undistHtml(d){
+/* The old "Undistributed & overheads" table + scorecard used to live on the Other Ops
+   tab; every overhead line now has a fuller home on the Expenses tab, so only the
+   marketing-effectiveness read is kept — rendered at the bottom of Expenses, next to
+   the S&M cost line it comments on. */
+function marketingShareHtml(d){
   if(!d.ok) return '';
   const P=state.period, p=d.p;
-  const tot=(k,f)=> (g(p,'undist.'+k+'.pay',P,f)??0)+(g(p,'undist.'+k+'.oth',P,f)??0) || null;
-  const items=[['ag','Administration & General'],['it','IT & Telecom'],['sm','Sales & Marketing'],['pomec','POMEC (repairs & maint.)'],['energy','Energy / Utilities']];
-  let rows='';
-  for(const[k,label] of items){
-    const a=k==='energy'? g(p,'undist.energy.oth',P,'act') : tot(k,'act');
-    const b=k==='energy'? g(p,'undist.energy.oth',P,'bud') : tot(k,'bud');
-    const l=k==='energy'? g(p,'undist.energy.oth',P,'ly')  : tot(k,'ly');
-    const pctRev=div(a,d.totalRev.act), pctRevL=div(l,d.totalRev.ly);
-    const par=div(a,d.roomsAvail), por=div(a,d.roomsSold);
-    const over=a!=null&&b!=null&&a>b&&d.totalRev.act<d.totalRev.bud;
-    rows+=`<tr class="${over?'bad':''}"><td>${label}${over?' <span class="tag a">over-bud</span>':''}</td>
-      <td>${money(a)}</td><td>${money(b)}</td><td>${money(l)}</td>
-      <td>${pct(pctRev)}</td><td class="${pctRev!=null&&pctRevL!=null&&pctRev>pctRevL?'warn':''}">${pct(pctRevL)}</td>
-      <td>${money(par)}</td><td>${money(por)}</td></tr>`;
-  }
-  const smTot=tot('sm','act');
+  const smTot=(g(p,'undist.sm.pay',P,'act')??0)+(g(p,'undist.sm.oth',P,'act')??0) || null;
   const smPct=div(smTot,d.totalRev.act);
-  const marketing = d.rgi!=null? `S&M is ${pct(smPct)} of revenue while RGI is ${idx(d.rgi)} — ${d.rgi<100?'spend is NOT buying share (RGI<100): challenge channel mix & co-op programs':'spend is holding share (RGI≥100)'}.`
+  const marketing = d.rgi!=null? `S&M is ${pct(smPct)} of revenue while RGI is ${idx(d.rgi)} — ${d.rgi<100?'spend is NOT buying share (RGI&lt;100): challenge channel mix &amp; co-op programs':'spend is holding share (RGI≥100)'}.`
     : `S&M is ${pct(smPct)} of revenue; load Monthly STAR to judge if marketing is buying share.`;
   const hpar=div(g(p,'stats.staff',P,'act'),284);
-  return `
-    <div class="panel"><h3>Undistributed & overheads — ${P}</h3>
-    <table><thead><tr><th>Line</th><th>Actual</th><th>Budget</th><th>LY</th><th>% Rev</th><th>% Rev LY</th><th>PAR</th><th>POR</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="kgrid">
-      ${kpiCard('Energy / occupied room',money(d.energyPOR.act),null,d.energyPOR.ly?d.energyPOR.act/d.energyPOR.ly-1:null,true)}
-      ${kpiCard('Total payroll % rev',pct(d.payrollPct.act),null,d.payrollPct.ly?(d.payrollPct.act-d.payrollPct.ly):null,true)}
-      ${kpiCard('Headcount / available room',n1(hpar,3),null,null)}
-    </div>
-    <div class="panel"><h3>Is marketing buying share?</h3><div class="small">${marketing}</div></div>`;
+  return `<div class="cols c2">
+    <div class="panel"><h3>Is marketing buying share?</h3><div class="small">${marketing}</div></div>
+    <div class="panel"><h3>Labour intensity</h3><div class="small">Headcount per available room: <b>${n1(hpar,3)}</b> · Energy per occupied room: <b>${money(d.energyPOR.act)}</b> · Total payroll: <b>${pct(d.payrollPct.act)}</b> of revenue.</div></div>
+  </div>`;
 }
 
 /* ---------------- MARKET (STR) ---------------- */
@@ -4009,7 +4069,24 @@ function renderEng(d){
   const topLocs=Object.entries(locsScoped).sort((a,b)=>b[1]-a[1]).slice(0,12);
   const topSys=Object.entries(sysScoped).sort((a,b)=>b[1]-a[1]);
   const locRows=topLocs.map(([k,v],i)=>`<tr class="${i===0?'bad':''}"><td>${k}${i===0?' <span class="tag r">hotspot</span>':''}</td><td data-v="${v}">${v}</td></tr>`).join('');
-  const crit=(eng.critical||[]).map(c=>`<div class="alert warn"><div class="d">${c}</div></div>`).join('')||'<div class="small">No critical-keyword lines detected.</div>';
+  /* Each flagged line is classified by SYSTEM (same dictionary that drives the
+     mentions chart) and LOCATION (the PDF's floor/area tokens), so the watchlist is
+     actionable — you can see which plant and where, not just read the sentence. */
+  const critItems=(eng.critical||[]).map(c=>{
+    const sys2=MAP.engSys.filter(([,re])=>re.test(c)).map(([l])=>l);
+    const loc2=[...new Set((c.match(new RegExp(MAP.engLocSrc,'gi'))||[])
+      .map(x=>x.toUpperCase().replace(/\s+/g,'')))];
+    return {c,sys:sys2,loc:loc2};
+  });
+  const crit=critItems.length? `<div style="overflow-x:auto"><table><thead>
+      <tr><th style="width:22%">System / category</th><th style="width:12%">Location</th><th>Reported issue</th></tr></thead><tbody>
+      ${critItems.map(it=>`<tr>
+        <td>${it.sys.length?it.sys.map(s=>`<span class="tag a" style="margin:1px 2px">${s}</span>`).join(''):'<span class="small" style="color:var(--grey)">unclassified</span>'}</td>
+        <td>${it.loc.length?it.loc.map(l=>`<span class="tag" style="margin:1px 2px">${l}</span>`).join(''):'<span class="small" style="color:var(--grey)">—</span>'}</td>
+        <td class="small">${it.c}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="small" style="margin-top:6px">System comes from the keyword dictionary behind the mentions chart; location from the report's own floor/area tokens (B1/B2, nF, Roof, Lobby, Club, Bistro, Mezz, Banquet, Pool, Spa, Kitchen). A line can hit more than one of either. "unclassified" means the sentence named no known system — worth reading in full.</div>`
+    : '<div class="small">No critical-keyword lines detected.</div>';
   const insight= topSys.length? `<div class="alert ${topSys[0][1]>15?'crit':'info'}"><div class="h">Most stressed system: ${topSys[0][0]} (${topSys[0][1]} mentions)</div>
     <div class="d">Top location: <b>${topLocs[0]?.[0]??'—'}</b> (${topLocs[0]?.[1]??0} mentions). Recurring mentions of the same floor/system month after month = ageing asset — cross-check against the renovation scope and FF&E reserve before approving one-off repairs.</div></div>`:'';
   /* Work-order trend: focus period (shared with Market/Patterns/Forecast/Central
@@ -4609,7 +4686,8 @@ function renderExpenses(d){
     <div class="panel"><h3>Cost line items — ${P} <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Category</th><th>Actual</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>Per occ. room</th><th>Per avail. room</th><th>% of cost</th></tr></thead>
       <tbody>${body}${totRow}</tbody></table></div>
-      <div class="small" style="margin-top:6px">The six categories are built to add up to <b>Total revenue − GOP</b>, so they reconcile to the P&amp;L cascade exactly. Payroll is shown whole (departments + overheads), which is why the overhead categories carry only their non-payroll portion — otherwise the same wages would appear twice.</div></div>`;
+      <div class="small" style="margin-top:6px">The six categories are built to add up to <b>Total revenue − GOP</b>, so they reconcile to the P&amp;L cascade exactly. Payroll is shown whole (departments + overheads), which is why the overhead categories carry only their non-payroll portion — otherwise the same wages would appear twice.</div></div>
+    ${marketingShareHtml(d)}`;
 
   mkChart('chExp',{type:'bar',data:{labels:rows.map(r=>r.label),datasets:[
       {label:'Actual',data:rows.map(r=>cv(r.act)),
