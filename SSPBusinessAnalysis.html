@@ -794,7 +794,8 @@ function parseBudget2026(wb){
   const gd=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
   const val=(r,c)=>{ const v=(gd[r]||[])[c]; return typeof v==='number'?v:(v==null?null:parseFloat(v)); };
   const mktg=budget2026MktgFees(wb);
-  const out={ __warn: mktg?null:'Marketing Fees row not found — GOP budget will be overstated vs the UOL report' };
+  const out={ __v:B26_SCHEMA,
+    __warn: mktg?null:'Marketing Fees row not found — GOP budget will be overstated vs the UOL report' };
   for(let m=1;m<=12;m++){
     const c=4+m; // Jan=col5
     const roomsAvail=val(4,c), roomsSold=val(5,c), adr=val(6,c);
@@ -819,6 +820,17 @@ function parseBudget2026(wb){
   return out;
 }
 const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','stats.roomsOcc']);
+/* Bump whenever parseBudget2026's OUTPUT changes meaning. Stored parses are not
+   re-run on upgrade, so an old parse would keep serving superseded numbers with no
+   visible sign — v2 added the Marketing-Fees deduction to GOP and EBITDA. */
+const B26_SCHEMA=2;
+function budget2026Stale(){ const b=state.store.budget2026; return !!b && b.__v!==B26_SCHEMA; }
+function b26StaleBanner(){ return budget2026Stale()
+  ? `<div class="panel" style="padding:8px 12px;border-left:4px solid var(--red)"><div class="small">
+      ⚠ <b>2026 budget figures are out of date.</b> The stored budget was parsed before the Marketing-Fees
+      correction, so <b>GOP and EBITDA budget are overstated</b> (e.g. Jun-26 GOP shows 12.65bn instead of
+      12.32bn). Re-drop <b>“C. PHCL - Consolidated 2026 Budget”</b> in Settings &amp; Data to refresh it.
+      Every other budget line is unaffected.</div></div>` : ''; }
 function budget2026For(mk){ // mk like '2026-04' -> that month's parsed budget object, or null
   if(!/^2026-\d\d$/.test(mk||'')) return null;
   const mm=parseInt(mk.slice(5,7),10);
@@ -2292,6 +2304,7 @@ function uolTable(d){
 function renderCockpit(d){
   const el=$('#tab-cockpit');
   if(!d.ok){ el.innerHTML=noData(); return; }
+  const b26Warn=b26StaleBanner();
   const vs=(o,inv)=>[varPct(o.act,o.bud),varPct(o.act,o.ly),inv];
   const cards=[
     [t('kTotalRev'),money(d.totalRev.act),...vs(d.totalRev)],
@@ -2324,6 +2337,7 @@ function renderCockpit(d){
   const top5=alerts.slice(0,5).map((a,i)=>`<div class="alert ${a.sev}"><div class="h"><span class="sev">${a.sev.toUpperCase()}</span>${i+1}. ${a.title}</div><div class="d">${a.detail}</div></div>`).join('')||`<div class="small">${t('naTip')}</div>`;
 
   el.innerHTML=`
+    ${b26Warn}
     <div class="kgrid">${kpis}</div>
     <div class="cols c2">
       <div class="panel"><h3>${t('bridge')} — ${state.period}</h3><div class="chartbox tall"><canvas id="chWaterfall"></canvas></div></div>
@@ -2717,7 +2731,13 @@ function renderFnb(d){
     }
   }
 
+  /* charts first, detail tables below */
   el.innerHTML=`
+    <div class="cols c3">
+      <div class="panel"><h3>Outlet revenue vs budget — ${P}</h3><div class="chartbox"><canvas id="chFnb"></canvas></div></div>
+      <div class="panel"><h3>Covers by meal period — ${P}</h3><div class="chartbox"><canvas id="chMeals"></canvas></div></div>
+      <div class="panel"><h3>In-house vs walk-in covers — ${P}</h3><div class="chartbox"><canvas id="chGuestMix"></canvas></div></div>
+    </div>
     <div class="panel"><h3>Outlet league table — ${P} <span class="small">(red rows are destroying margin)</span>
         <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Outlet</th><th>Revenue</th><th>% Bud</th><th>% LY</th><th>Food cost %</th><th>Bev cost %</th><th>Payroll %</th><th>Dept profit %</th><th>Covers</th><th>Avg check</th><th>Rev / hotel guest</th></tr></thead>
@@ -2726,12 +2746,7 @@ function renderFnb(d){
         <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Outlet</th><th>Meal</th><th>In-house</th><th>Walk-in</th><th>Covers</th><th>Walk-in %</th><th>Capture %</th><th>Food rev</th><th>Bev rev</th><th>Avg check</th><th>Check %LY</th><th>Covers %LY</th></tr></thead>
       <tbody>${mealRows||'<tr><td colspan=12>'+na('Meal blocks not found in outlet sheets')+'</td></tr>'}</tbody></table></div>
-      <div class="small" style="margin-top:6px">Capture % = in-house covers ÷ hotel guests (as reported per outlet sheet). Click headers to sort.</div></div>
-    <div class="cols c3">
-      <div class="panel"><h3>Outlet revenue vs budget — ${P}</h3><div class="chartbox"><canvas id="chFnb"></canvas></div></div>
-      <div class="panel"><h3>Covers by meal period — ${P}</h3><div class="chartbox"><canvas id="chMeals"></canvas></div></div>
-      <div class="panel"><h3>In-house vs walk-in covers — ${P}</h3><div class="chartbox"><canvas id="chGuestMix"></canvas></div></div>
-    </div>`;
+      <div class="small" style="margin-top:6px">Capture % = in-house covers ÷ hotel guests (as reported per outlet sheet). Click headers to sort.</div></div>`;
   mkChart('chFnb',{type:'bar',data:{labels:chartLbl,datasets:[
     {label:'Actual',data:chartAct,backgroundColor:'#C9A227'},
     {label:'Budget',data:chartBud,backgroundColor:'rgba(74,125,189,.6)'}]},
@@ -2816,6 +2831,18 @@ function chgTd(v,dec=1){ return `<td class="${cls(v)}" data-v="${v==null?'':v}">
 window.__setSnapPer=v=>{ state.snapPer=v; renderMarket(derive()); };
 window.__setDailyBench=v=>{ state.dailyBench=v; renderMarket(derive()); };
 const IDX_NAMES={occ:'MPI',adr:'ARI',revpar:'RGI'};
+/* Day-of-week pattern table — lives on the Patterns & Heatmaps tab (moved off
+   Market · STR, where it sat beside the index trend). Built from the selected
+   month's parsed STAR `dow` rows. */
+function dowTableHtml(){
+  const st=curMonth().star;
+  let rows='';
+  for(const r of st?.dow||[]) rows+=`<tr><td>${r.day}</td><td>${n1(r.occMy)}%</td><td>${n1(r.occComp)}%</td>
+    <td class="${r.mpi<100?'neg':'pos'}">${idx(r.mpi)}</td><td>${starMoney(r.adrMy)}</td><td>${starMoney(r.adrComp)}</td></tr>`;
+  return `<div class="panel"><h3>Day-of-week pattern — ${st?.monthKey?fmtMonthKey(st.monthKey):'current month'}</h3>
+    <table><thead><tr><th>Day</th><th>My Occ</th><th>Comp Occ</th><th>MPI</th><th>My ADR</th><th>Comp ADR</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan=6>'+na('Day of Week sheet missing')+'</td></tr>'}</tbody></table></div>`;
+}
 function renderMarket(d){
   const el=$('#tab-market');
   const st=curMonth().star;
@@ -2830,7 +2857,15 @@ function renderMarket(d){
     .map(([k,l])=>`<button class="heatbtn ${sp===k?'on':''}" onclick="__setSnapPer('${k}')">${l}</button>`).join(' ');
   const SNAP_MET=[['occ','Occupancy',v=>v==null?na():n1(v,1)+'%'],['adr','ADR',v=>starMoney(v)],['revpar','RevPAR',v=>starMoney(v)]];
   /* current rank in the comp set (latest non-empty value of the STAR Comp "Rank" row) */
-  const compN=(st.census?.props!=null?st.census.props:4)+1;   // subject + comps
+  /* STR's own "N of X" rank text counts the WHOLE competitive set including us, so the
+     census "Competitive Set: Competitors" figure is already the right denominator —
+     adding 1 for the subject produced "#3 of 6" where the STAR file says "#3 of 5". */
+  const compN=st.census?.props!=null?st.census.props:5;
+  /* comp-set members: use the names the STAR export carries if it has them, else the
+     known Saigon comp set. */
+  const compSet=(st.compMembers&&st.compMembers.length)?st.compMembers
+    :['Sofitel Saigon Plaza','Caravelle','Renaissance','Hilton','JW Marriott'];
+  const compChips=compSet.map(n=>`<span class="tag ${/sofitel/i.test(n)?'g':''}" style="margin-right:6px">${n}</span>`).join('');
   const rankOf=met=>{ const r=st.comp?.[met]?.rank; if(!r) return null;
     for(let i=r.length-1;i>=0;i--){ const v=String(r[i]??'').trim(); if(v){ const n=parseInt(v,10); return isNaN(n)?v:n; } } return null; };
   const rankCell=met=>{ const rk=rankOf(met); if(rk==null) return '<td>—</td>';
@@ -2953,7 +2988,7 @@ function renderMarket(d){
     const dHead=`<tr><th style="text-align:left">${fmtMonthKey(st.monthKey)}</th>${
       days.map(d2=>`<th style="text-align:center;${isWE(st.monthKey,d2)?'background:rgba(107,114,128,.12)':''}">${dowL[dowOf(st.monthKey,d2)]}<br>${d2}</th>`).join('')
       }<th>MTD</th><th>MTD WD</th><th>MTD WE</th></tr>`;
-    dailyPanel=`<div class="panel"><h3>Daily data — My Property vs ${bName} ${st.provisional?'<span class="tag a">provisional</span>':''}
+    dailyPanel=`<div class="panel"><h3>Daily data — My Property vs ${bName} <span class="tag">Operator STR Benchmark</span> ${st.provisional?'<span class="tag a">provisional</span>':''}
         <span class="noprint" style="float:right">
           <button class="heatbtn ${bKey==='comp'?'on':''}" onclick="__setDailyBench('comp')">Comp Set</button>
           <button class="heatbtn ${bKey==='ind'?'on':''}" onclick="__setDailyBench('ind')" ${hasInd?'':'disabled title="Industry daily rows not in this STAR file"'}>Industry</button>
@@ -3016,44 +3051,40 @@ function renderMarket(d){
       <span class="small" style="margin-left:8px">applies to the two charts below; the focus period is shared with the Patterns & Forecast tabs</span></div>`;
 
   el.innerHTML=`
+    <div class="panel" style="padding:8px 12px;border-left:4px solid var(--navy)">
+      <h3 style="margin:0">Owner STR Benchmark</h3>
+      <div class="small">Owner-side read of the STAR data — competitive position, index trend and daily envelopes. The operator's own STR extract is reproduced at the bottom of this tab.</div></div>
     <div class="cols c2">
       <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
           <span class="noprint" style="float:right">${spBtns}</span></h3>
         <table><thead><tr><th></th><th>Property</th><th>% Chg</th><th>Comp Set</th><th>% Chg</th><th>Index</th><th>% Chg</th><th>Market</th><th>% Chg</th><th>Rank</th></tr></thead>
         <tbody>${snapRows}</tbody></table>
-        <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). Market = HCMC market row of the STAR Summary sheet${sum.occ?.market?'':' — not in this file; Industry MTD shown when a weekly/daily STR extract is loaded'}. Rank = current standing among the ${compN}-property comp set (#1 = best; green = top, red = bottom).</div></div>
+        <div class="small" style="margin-top:8px"><b>Competitive set (${compN}):</b><br>${compChips}</div>
+        <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). Market = HCMC market row of the STAR Summary sheet${sum.occ?.market?'':' — not in this file; Industry MTD shown when a weekly/daily STR extract is loaded'}. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
+        <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div></div>
       <div class="panel"><h3>Property scorecard — Occ / ADR / RevPAR by period</h3>
         <table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
         <tbody>${scRows}</tbody></table>
         <div class="small" style="margin-top:6px">Top rows = property levels (STR Glance); bottom rows = indexes vs comp set — an index % change &lt; 0 means the market grew faster than we did.</div></div>
     </div>
     <div class="cols c2">
-      <div class="panel"><h3>MPI / ARI / RGI — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL — mid-month STR extract; official Monthly STAR due ~20th replaces it on drop</span>':''}</h3>
-        <table><thead><tr><th>Period</th><th>MPI</th><th>ARI</th><th>RGI</th><th>My Occ</th><th>My ADR</th><th>My RevPAR</th><th>Comp Occ</th><th>Comp ADR</th><th>Comp RevPAR</th></tr></thead>
-        <tbody>${idxRows}</tbody></table>
-        <div class="small" style="margin-top:6px">Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> &nbsp;|&nbsp; Fair share: ${fair}</div>
-        <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div>
-      </div>
-      <div class="panel"><h3>RevPAR positioning matrix — ARI vs MPI (trail = last 12 months · gold = ${fmtMonthKey(st.monthKey)} · red ring = ${fmtMonthKey(lyKey)})</h3><div class="chartbox tall"><canvas id="chQuad"></canvas></div></div>
-    </div>
-    <div class="cols c2">
       <div class="panel"><h3>Index trend ${granCtl()}</h3>
         <div class="chartbox" style="margin-top:14px"><canvas id="chIdxTrend"></canvas></div>
         ${granNote('MPI / ARI / RGI are averaged across the months of each quarter')}</div>
-      <div class="panel"><h3>Day-of-week pattern (current month)</h3>
-        <table><thead><tr><th>Day</th><th>My Occ</th><th>Comp Occ</th><th>MPI</th><th>My ADR</th><th>Comp ADR</th></tr></thead><tbody>${dow||'<tr><td colspan=6>'+na('Day of Week sheet missing')+'</td></tr>'}</tbody></table></div>
+      <div class="panel"><h3>RevPAR positioning matrix — ARI vs MPI (trail = last 12 months · gold = ${fmtMonthKey(st.monthKey)} · red ring = ${fmtMonthKey(lyKey)})</h3><div class="chartbox tall"><canvas id="chQuad"></canvas></div></div>
     </div>
-    ${dailyPanel}
     ${(hasBw||hasRp)?mktCtl:''}
+    ${hasRp?`<div class="panel"><h3>RevPAR — ${mg}, ${winLabel}${dayF2!=='all'?' · '+(dayF2==='wd'?'weekdays only':'weekends only'):''} · My Property vs Comp Set vs Industry</h3>
+      <div class="chartbox"><canvas id="chDailyCmp"></canvas></div>
+      <div class="small" style="margin-top:6px">From the STAR daily grids — spot exactly which days/periods the comp set or submarket monetised while we did not. Values are STR-denominated; aggregated points are simple day averages.</div></div>`:''}
     ${hasBw?`<div class="panel"><h3>Occupancy bandwidth — ${mg}, ${winLabel}${dayF2!=='all'?' · '+(dayF2==='wd'?'weekdays only':'weekends only'):''}</h3>
       <div class="chartbox"><canvas id="chBand"></canvas></div>
       <div class="small" style="margin-top:6px">Green = Sofitel SSP occupancy; shaded band = comp-set ↔ industry envelope${hasBwInd?'':' (industry rows missing — comp set shown as dashed line only)'};
         grey columns = STR weekends (Fri–Sat, daily view). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
-    ${hasRp?`<div class="panel"><h3>RevPAR — ${mg}, ${winLabel}${dayF2!=='all'?' · '+(dayF2==='wd'?'weekdays only':'weekends only'):''} · My Property vs Comp Set vs Industry</h3>
-      <div class="chartbox"><canvas id="chDailyCmp"></canvas></div>
-      <div class="small" style="margin-top:6px">From the STAR daily grids — spot exactly which days/periods the comp set or submarket monetised while we did not. Values are STR-denominated; aggregated points are simple day averages.</div></div>`:''}
-    <div class="panel"><h3>Short-term pace (Weekly / Daily STAR)</h3>
-      <table><thead><tr><th>Window</th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead><tbody>${paceHtml||'<tr><td colspan=6>'+na('Weekly/Daily STAR not loaded')+'</td></tr>'}</tbody></table></div>`;
+    <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold);margin-top:4px">
+      <h3 style="margin:0">Operator STR Benchmark</h3>
+      <div class="small">The operator's STR extract as delivered — reproduced below for reference and reconciliation against the owner-side analysis above.</div></div>
+    ${dailyPanel}`;
 
   /* weekend-column shading plugin factory (only meaningful on the daily view) */
   const weBandOf=flags=>({id:'weBand',beforeDatasetsDraw(ch){ const {ctx,chartArea,scales:{x}}=ch; if(!chartArea) return;
@@ -3110,7 +3141,7 @@ function renderMarket(d){
         ctx.fillStyle='#6B7280'; ctx.font='10px sans-serif';
         ctx.fillText('Premium & full',x.getPixelForValue(101),y.getPixelForValue(109));
         ctx.fillText('Rate premium, low occ',x.getPixelForValue(81),y.getPixelForValue(109));
-        ctx.fillText('Buying occupancy',x.getPixelForValue(101),y.getPixelForValue(72));
+        ctx.fillText('Volume strategy',x.getPixelForValue(101),y.getPixelForValue(72));
         ctx.fillText('Losing on both',x.getPixelForValue(81),y.getPixelForValue(72)); ctx.restore(); }}]});
   }
   const cr=st.comp?.revpar;
@@ -3118,7 +3149,7 @@ function renderMarket(d){
   if(cr) mkChart('chIdxTrend',{type:'line',data:{labels:gI.labels,datasets:[
       {label:'MPI',data:gI.out[0],borderColor:'#4a7dbd',tension:.3},
       {label:'ARI',data:gI.out[1],borderColor:'#d69e2e',tension:.3},
-      {label:'RGI',data:gI.out[2],borderColor:'#C9A227',borderWidth:2.5,tension:.3}]},
+      {label:'RGI',data:gI.out[2],borderColor:'#1e7e4f',backgroundColor:'#1e7e4f',borderWidth:2.5,tension:.3}]},
     options:{plugins:{},scales:{y:{suggestedMin:70,suggestedMax:120}},maintainAspectRatio:false},
     plugins:[{id:'l100',afterDraw(ch){const{ctx,scales:{y}}=ch;ctx.save();ctx.strokeStyle='rgba(214,69,69,.6)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(ch.chartArea.left,y.getPixelForValue(100));ctx.lineTo(ch.chartArea.right,y.getPixelForValue(100));ctx.stroke();ctx.restore();}}]});
 }
@@ -3184,19 +3215,28 @@ function renderBench(d){
     verdict=`Index ${idx(idxVals[0])} → ${idx(idxVals[idxVals.length-1])} over ${monthsH.length} months — efficiency vs comp set is <b class="${dIdx>=0?'pos':'neg'}" style="color:var(--${dIdx>=0?'green':'red'})">${dIdx>=0?'improving':'deteriorating'} (${pts(dIdx,1).replace(' pts',' idx pts')})</b>. Index &gt;100 = better than comp on this line (HotStats inverts cost-line indexes so higher is always better).`;
   } else verdict=`Only ${monthsH.length} HotStats month stored — drop each month's HotStats file and this trend fills up like the STR history.`;
 
-  el.innerHTML=`<div class="panel"><h3>HotStats full P&L cascade — You vs Comp vs Index (${per.toUpperCase()}, period: ${fmtMonthKey(hsMonth)})
-      ${hsMonth!==state.month?'<span class="tag a">different period than selected month</span>':''}</h3>
-    <div style="overflow-x:auto"><table><thead><tr><th>Line</th><th>You</th><th>Comp</th><th>Index</th><th>You LY</th><th>Comp LY</th><th>Verdict</th><th>Basis</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="small" style="margin-top:8px">${leak}</div></div>
+  /* Charts sit ABOVE the cascade table, Index trend on the left, and BOTH charts are
+     driven by ONE control bar (line selector + monthly/quarterly + focus period)
+     instead of a duplicate set per panel — they read the same state.gran / focus
+     period anyway, so two copies only invited them to look independent. */
+  el.innerHTML=`
+    <div class="panel" style="padding:8px 12px"><div class="small" style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+      <span><b>Trend controls</b> — applies to both charts below:</span>
+      <span>Line: ${selHtml}</span>
+      <span style="margin-left:auto">${granCtl()}</span></div></div>
     <div class="cols c2">
-      <div class="panel"><h3>Efficiency trend vs comp set — ${selLine[2]} ${selHtml} ${granCtl()}</h3>
+      <div class="panel"><h3>Index trend — key efficiency lines (${per.toUpperCase()})</h3>
+        <div class="chartbox tall" style="margin-top:14px"><canvas id="chBenchIdx"></canvas></div>
+        <div class="small" style="margin-top:6px">GOP %, total payroll % and F&B cost % indexes vs comp set. All lines: &gt;100 = better than comp; a line sliding below 100 is where the leakage grows.</div></div>
+      <div class="panel"><h3>Efficiency trend vs comp set — ${selLine[2]}</h3>
         <div class="chartbox tall" style="margin-top:14px"><canvas id="chBenchTrend"></canvas></div>
         <div class="small" style="margin-top:6px">${verdict}</div>
         ${granNote('You / Comp / Index are averaged across the months of each quarter')}</div>
-      <div class="panel"><h3>Index trend — key efficiency lines (${per.toUpperCase()}) ${granCtl()}</h3>
-        <div class="chartbox tall" style="margin-top:14px"><canvas id="chBenchIdx"></canvas></div>
-        <div class="small" style="margin-top:6px">GOP %, total payroll % and F&B cost % indexes vs comp set. All lines: &gt;100 = better than comp; a line sliding below 100 is where the leakage grows.</div></div>
-    </div>`;
+    </div>
+    <div class="panel"><h3>HotStats full P&L cascade — You vs Comp vs Index (${per.toUpperCase()}, period: ${fmtMonthKey(hsMonth)})
+      ${hsMonth!==state.month?'<span class="tag a">different period than selected month</span>':''}</h3>
+    <div style="overflow-x:auto"><table><thead><tr><th>Line</th><th>You</th><th>Comp</th><th>Index</th><th>You LY</th><th>Comp LY</th><th>Verdict</th><th>Basis</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="small" style="margin-top:8px">${leak}</div></div>`;
 
   const fmtTick=v=>/%/.test(tBasis)?n1(v)+'%':(/PAR|POR/.test(tBasis)?money(v,1):n1(v));
   const gB=granGroup(monthsH,[{data:tSeries.map(x=>x.you??null),agg:'avg'},
@@ -3577,6 +3617,7 @@ function renderHeat(d){
     <div class="panel noprint"><h3>Metric ${granCtl()}</h3>
       <div style="margin-top:14px">${[['occ','Occupancy'],['adr','ADR'],['revpar','RevPAR']].map(([k,l])=>`<button class="heatbtn ${met===k?'on':''}" onclick="__setHeat('${k}')">${l}</button>`).join(' ')}
       <span class="small" style="margin-left:10px">${(state.gran||'monthly')==='quarterly'?'Quarter':'Month'} × day-of-week averages from STAR daily data. Grids fill up as you drop each Monthly STAR file (${months.length} month(s) in focus).${(state.gran||'monthly')==='quarterly'?' Quarterly rows average the day-of-week cells of the months in each quarter.':''}</span></div></div>
+    ${dowTableHtml()}
     <div class="panel"><h3>Trend — ${metLabel}, ${gran}
         <span class="noprint" style="float:right">
           ${tsRangeSel()} &nbsp;
