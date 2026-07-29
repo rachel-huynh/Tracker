@@ -2188,6 +2188,7 @@ function renderCockpit(d){
       <div class="panel"><h3>${t('top5')}</h3>${top5}</div>
     </div>
     <div class="panel"><h3>${t('trend')} ${granCtl()}</h3><div class="chartbox" style="margin-top:14px"><canvas id="chTrend"></canvas></div>
+      <div class="small" style="margin-top:6px">Bars = revenue (actual / budget / last year), lines = GOP (solid actual, dashed budget, dotted last year). Hover any month for the four variances. Click a legend entry to hide that series. Budget and last-year figures come from each month's own report; 2026 months use the consolidated 2026 budget.</div>
       ${granNote('revenue and GOP are summed within each quarter')}</div>`;
 
   /* waterfall */
@@ -2201,16 +2202,36 @@ function renderCockpit(d){
       options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.raw[1]-c.raw[0])}}},
         scales:{y:{ticks:{callback:v=>money(v,0)}},x:{ticks:{maxRotation:45,minRotation:30}}},maintainAspectRatio:false}});
   }
-  /* trend from stored months (MTD actuals) */
+  /* trend from stored months — Revenue & GOP each vs budget and vs last year.
+     Budget/LY read each month's own report columns, so 2026 months automatically
+     pick up the consolidated-budget override through g(). */
   const keys=Object.keys(state.store.months).sort();
-  const rev=keys.map(k=>g(state.store.months[k].pnlVND,'rev.totalIncl','MTD','act'));
-  const gop=keys.map(k=>g(state.store.months[k].pnlVND,'sum.gop','MTD','act'));
-  const gT=granGroup(keys,[{data:rev,agg:'sum'},{data:gop,agg:'sum'}]);
+  const SER=[['rev.totalIncl','act'],['rev.totalIncl','bud'],['rev.totalIncl','ly'],
+             ['sum.gop','act'],['sum.gop','bud'],['sum.gop','ly']];
+  const gT=granGroup(keys,SER.map(([path,f])=>(
+    {data:keys.map(k=>g(state.store.months[k].pnlVND,path,'MTD',f)),agg:'sum'})));
+  const S=gT.out.map(a=>a.map(cv));
   mkChart('chTrend',{type:'bar',
     data:{labels:gT.labels,datasets:[
-      {type:'bar',label:'Revenue',data:gT.out[0].map(cv),backgroundColor:'rgba(74,125,189,.7)'},
-      {type:'line',label:'GOP',data:gT.out[1].map(cv),borderColor:'#C9A227',backgroundColor:'#C9A227',tension:.3,yAxisID:'y'}]},
-    options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,0)}}},maintainAspectRatio:false}});
+      /* revenue = grouped bars; GOP = lines drawn on top (lower `order` = nearer front) */
+      {type:'bar',label:'Revenue actual',data:S[0],backgroundColor:'rgba(74,125,189,.85)',order:4},
+      {type:'bar',label:'Revenue budget',data:S[1],backgroundColor:'rgba(74,125,189,.35)',order:5},
+      {type:'bar',label:'Revenue LY',data:S[2],backgroundColor:'rgba(120,130,145,.35)',order:6},
+      {type:'line',label:'GOP actual',data:S[3],borderColor:'#C9A227',backgroundColor:'#C9A227',
+       borderWidth:2.5,pointRadius:2,tension:.3,order:1},
+      {type:'line',label:'GOP budget',data:S[4],borderColor:'#C9A227',backgroundColor:'#C9A227',
+       borderWidth:1.6,borderDash:[6,4],pointRadius:0,tension:.3,order:2},
+      {type:'line',label:'GOP LY',data:S[5],borderColor:'#7c8592',backgroundColor:'#7c8592',
+       borderWidth:1.6,borderDash:[2,3],pointRadius:0,tension:.3,order:3}]},
+    options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,0)}}},maintainAspectRatio:false,
+      plugins:{tooltip:{callbacks:{
+        /* variances in the tooltip so each point can be read without eyeballing gaps */
+        afterBody:items=>{
+          const i=items[0].dataIndex;
+          return [[0,1,'Revenue vs Bud'],[0,2,'Revenue vs LY'],[3,4,'GOP vs Bud'],[3,5,'GOP vs LY']]
+            .map(([a,b,lb])=>{ const A=S[a][i], B=S[b][i];
+              return (A==null||B==null||!B)?null:lb+': '+pct(A/B-1); }).filter(Boolean);
+        }}}}}});
 }
 
 /* ---------------- EXECUTIVE SUMMARY (BOD email draft) ---------------- */
