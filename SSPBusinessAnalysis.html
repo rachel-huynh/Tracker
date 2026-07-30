@@ -4121,7 +4121,8 @@ function renderForecast(d){
     const negs=rf.months.map((m,i)=>({m,g:rf.rows.gop[i],f:rf.flags[i]})).filter(x=>/forecast/i.test(x.f)&&x.g!=null&&x.g<0);
     rfHtml=`<div class="panel"><h3>Management rolling forecast — ${rf.title||'FY2026 (04A+08F)'} ${granCtl()}</h3>
       <div class="chartbox tall"><canvas id="chRf"></canvas></div>
-      <div class="small" style="margin-top:6px">Solid bar = RF (navy actual / gold forecast), pale bar = budget for the same month. Solid green = RF GOP, dashed green = budget GOP. Hover any period for the two vs-budget variances.</div>
+      <div class="small" style="margin-top:6px">Solid bar = RF (navy actual / gold forecast), pale bar = budget for the same month. Solid green = RF GOP, dashed green = budget GOP. Hover any period for the two vs-budget variances.
+        Window defaults to <b>the month selected top-right onward</b>; set a Focus range above to pin an exact start/end instead.</div>
       <div class="small" style="margin-top:6px">
         ${dev!=null?`Cross-check: this dashboard's statistical forecast runs <b>${pct(dev)}</b> vs the management RF on ${cmp.length} overlapping month(s) (${cmp.map(x=>fmtMonthKey(x.ym)+' '+pct(x.stat/x.rf-1)).join(' · ')}). Near-term months should agree; large gaps in later months usually mean the RF embeds events the statistical model cannot see (e.g. renovation closure) — trust the RF there, but challenge it where the near-term gap is wide.`:''}
         ${negs.length?`<br><b style="color:var(--red)">RF plans NEGATIVE GOP in ${negs.map(x=>fmtMonthKey(x.m)).join(', ')}</b> — renovation-period cash burn.${rf.rows.payroll?` Watch payroll ratio (RF has payroll reaching ${pct(Math.max(...rf.months.map((m,i)=>div(rf.rows.payroll[i],rf.rows.totalRev[i])).filter(v=>v!=null)))} of revenue in the trough months).`:''}`:''}
@@ -4465,12 +4466,18 @@ function renderForecast(d){
       const pv=state.store.months[ym]?.pnlVND; return pv?g(pv,path,'MTD','bud'):null; };
     const budRev=rf.months.map(m=>rfBud(m,'rev.totalIncl'));
     const budGop=rf.months.map(m=>rfBud(m,'sum.gop'));
-    /* Honour the shared focus period + Monthly/Quarterly toggle like every other trend
-       chart. If the focus period excludes this RF file's whole year, fall back to the
-       full range rather than drawing an empty chart. */
-    const anyInFocus=rf.months.some(m=>!(state.tsFrom||state.tsTo)||tsInRange(m));
+    /* Honour the shared Focus range when the user has actually set one (it wins,
+       precise ad-hoc control). Otherwise default the window to the TOP MONTH SELECTOR
+       onward — picking Oct-25 up top shows the RF trend starting at Oct-25, picking
+       Jun-26 starts there instead — so the chart responds to the single-month picker
+       the way the owner asked, without losing the more precise Focus range control. */
+    const hasFocus=!!(state.tsFrom||state.tsTo);
+    const effFrom=hasFocus?state.tsFrom:state.month, effTo=hasFocus?state.tsTo:'';
     const savedFrom=state.tsFrom, savedTo=state.tsTo;
-    if(!anyInFocus){ state.tsFrom=''; state.tsTo=''; }
+    state.tsFrom=effFrom; state.tsTo=effTo;
+    /* if that window excludes every RF month (e.g. selected month is after the whole RF
+       file), fall back to the full range rather than drawing an empty chart */
+    if(!rf.months.some(tsInRange)){ state.tsFrom=''; state.tsTo=''; }
     const gR=granGroup(rf.months,[{data:rf.rows.totalRev,agg:'sum'},{data:budRev,agg:'sum'},
       {data:rf.rows.gop,agg:'sum'},{data:budGop,agg:'sum'},{data:rf.rows.gopPct,agg:'avg'}]);
     state.tsFrom=savedFrom; state.tsTo=savedTo;
