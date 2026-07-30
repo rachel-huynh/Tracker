@@ -60,8 +60,9 @@ section.tab.printshow{display:block}
 /* ---------- cards / grids ---------- */
 /* CSS grid = every card identical width. balanceKgrids() (JS) then picks a column
    count that spreads the cards evenly across rows (e.g. 12 → 6×2, not 10+2). The
-   auto-fill default below is just the pre-balance fallback. */
-.kgrid{display:grid;gap:8px;margin-bottom:14px;grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
+   auto-fit default below is the pre-balance fallback — auto-fit (not auto-fill)
+   collapses empty tracks so the cards always stretch to fill the row width. */
+.kgrid{display:grid;gap:8px;margin-bottom:14px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
 .kpi{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--navy);border-radius:8px;padding:9px 11px;box-shadow:0 1px 2px rgba(15,30,58,.06)}
 .kpi.g{border-left-color:var(--green)}.kpi.r{border-left-color:var(--red)}.kpi.a{border-left-color:var(--gold2)}
 .kpi .t{font-size:10px;color:var(--grey);text-transform:uppercase;letter-spacing:.5px}
@@ -4058,31 +4059,61 @@ function renderForecast(d){
   if(rf&&rf.months){
     const fwd=rf.months.map((m,i)=>({m,i})).filter(x=>x.m>st.monthKey&&/forecast/i.test(rf.flags[x.i]||'')).slice(0,3);
     if(fwd.length){
-      const MET=[['Occupancy','occ','stats.occ',true],['ADR','adr','stats.adr'],['RevPAR','revpar','stats.revpar'],
-        ['Total revenue','totalRev','rev.totalIncl'],['Rooms revenue','roomsRev','rev.rooms'],
-        ['F&B revenue','fbRev',null],['Total dept profit','deptProfit','dp.total'],
-        ['Overheads','overheads',null],['GOP','gop','sum.gop']];
-      const lyOf=(ym,path)=>{ const k=`${+ym.slice(0,4)-1}-${ym.slice(5,7)}`;
-        return state.store.months[k]?.pnlVND?g(state.store.months[k].pnlVND,path,'MTD','act'):null; };
-      const body=MET.map(([lbl,rk,bPath,isPct])=>{
+      /* full P&L cascade — same row hierarchy as the Sofitel "P&L detail" table.
+         [label, RF-row key, P&L path(s) for Budget/LY, opts]. Multi-path entries
+         (OOD, overheads) reuse the UOL_* constants and are summed. */
+      const MET=[
+        ['Occupancy','occ','stats.occ',{pct:1}],
+        ['ADR, excl svc chrg','adr','stats.adr',{}],
+        ['RevPAR','revpar','stats.revpar',{}],
+        {gap:1},
+        ['Total Revenue','totalRev','rev.totalIncl',{bold:1}],
+        ['Rooms Revenue','roomsRev','rev.rooms',{ind:1}],
+        ['F&amp;B Revenue','fbRev','rev.totalFb',{ind:1}],
+        ['OOD Revenue','oodRev',UOL_OOD_REV,{ind:1}],
+        ['Rental &amp; Other Income','otherIncRev','rev.misc',{ind:1}],
+        {gap:1},
+        ['Total Dept Profit','deptProfit','dp.total',{bold:1}],
+        ['Rooms Dept Profit','dpRooms','dp.rooms',{ind:1}],
+        ['F&amp;B Dept Profit','dpFnb','dp.fnb',{ind:1}],
+        ['OOD Profit','dpOod',UOL_OOD_DP,{ind:1}],
+        ['Rental &amp; Other Income','dpOtherInc','dp.misc',{ind:1}],
+        {gap:1},
+        ['Overheads','overheads',UOL_OH,{bold:1}],
+        ['Admin &amp; General','ohAG',UOL_AG,{ind:1}],
+        ['Sales &amp; Marketing','ohSM',UOL_SM,{ind:1}],
+        ['IT','ohIT',UOL_IT,{ind:1}],
+        ['POMEC','ohPOMEC',UOL_PM,{ind:1}],
+        ['Energy, Water, and Waste','ohEnergy',UOL_EN,{ind:1}],
+        {gap:1},
+        ['GOP','gop','sum.gop',{bold:1}],
+      ];
+      const pathSum=(fn,paths)=>{ if(!paths) return null; const arr=Array.isArray(paths)?paths:[paths];
+        let s=null; for(const pa of arr){ const v=fn(pa); if(v!=null) s=(s??0)+v; } return s; };
+      const lyOf=(ym,paths)=>{ const k=`${+ym.slice(0,4)-1}-${ym.slice(5,7)}`; const pv=state.store.months[k]?.pnlVND;
+        return pv?pathSum(pa=>g(pv,pa,'MTD','act'),paths):null; };
+      const budOf=(ym,paths)=>{ const bo=budget2026For(ym); return bo?pathSum(pa=>b26Path(bo,pa),paths):null; };
+      const totCols=1+5*fwd.length;
+      const body=MET.map(row=>{
+        if(row.gap) return `<tr class="gap"><td colspan="${totCols}"></td></tr>`;
+        const [lbl,rk,paths,o={}]=row;
         let tds='';
         for(const {m,i} of fwd){
-          const f=rf.rows[rk]?rf.rows[rk][i]:null;
-          const b=bPath?(budget2026For(m)?b26Path(budget2026For(m),bPath):null):null;
-          const l=bPath?lyOf(m,bPath):null;
-          const fmt=v=>v==null?'':(isPct?pct(v):moneyM(v,m));
+          const f=rf.rows[rk]?rf.rows[rk][i]:null, b=budOf(m,paths), l=lyOf(m,paths);
+          const fmt=v=>v==null?'':(o.pct?pct(v):moneyM(v,m));
           tds+=`<td style="border-left:2px solid var(--navy)">${fmt(f)}</td><td>${fmt(b)}</td>
             <td class="${cls(varPct(f,b))}">${b==null?'':pct(varPct(f,b))}</td>
             <td>${fmt(l)}</td><td class="${cls(varPct(f,l))}">${l==null?'':pct(varPct(f,l))}</td>`;
         }
-        return `<tr class="${/GOP|Total revenue/.test(lbl)?'tot':''}"><td>${lbl}</td>${tds}</tr>`;
+        const pad=o.ind?`padding-left:${12+o.ind*14}px`:'';
+        return `<tr class="${o.bold?'tot':''}"><td style="${pad}">${lbl}</td>${tds}</tr>`;
       }).join('');
-      next3Html=`<div class="panel"><h3>Next 3 months — management rolling forecast vs budget &amp; last year</h3>
+      next3Html=`<div class="panel"><h3>Next 3 months — P&amp;L cascade (management rolling forecast vs budget &amp; last year)</h3>
         <div style="overflow-x:auto"><table class="uol"><thead>
           <tr><th rowspan="2">Line</th>${fwd.map(x=>`<th colspan="5" style="border-left:2px solid var(--navy)">${fmtMonthKey(x.m)}</th>`).join('')}</tr>
           <tr>${fwd.map(()=>`<th style="border-left:2px solid var(--navy)">Forecast</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th>`).join('')}</tr></thead>
           <tbody>${body}</tbody></table></div>
-        <div class="small" style="margin-top:6px">Same shape as the UOL report's 3-month forecast blocks. Forecast = <b>${rf.title||'rolling forecast'}</b>; Budget = consolidated 2026 budget; LY = the same calendar month one year earlier from that month's own P&amp;L. F&amp;B revenue and Overheads have no line in the consolidated budget, so their Budget cells stay blank.</div></div>`;
+        <div class="small" style="margin-top:6px">Same row hierarchy as the Sofitel <b>P&amp;L detail</b> table, for the next ${fwd.length} forecast month(s). Forecast = <b>${rf.title||'rolling forecast'}</b>; Budget = consolidated 2026 budget; LY = the same calendar month one year earlier from that month's own P&amp;L. Lines with no consolidated-budget equivalent (F&amp;B, OOD, overheads) show a blank Budget but still carry Forecast &amp; LY.</div></div>`;
     }
   }
 
@@ -4423,7 +4454,31 @@ function renderRevA(d){
 }
 
 /* ---------------- OFFICE BUILDING (Central Plaza) ---------------- */
-window.__setCpDetail=v=>{ state.cpFull=v; renderOffice(derive()); };
+/* Cost-line rows for the Central Plaza P&L. Kept as its own function so the
+   Summary/Full-detail toggle can rebuild JUST this table body — it must not
+   re-render the tab or its charts (the GOP chart above stays put). */
+function cpCostRowsHtml(cp){
+  const rev=cp.totalRev?.act, full=!!state.cpFull;
+  const isSummary=l=>l.header||/^\d\.\s|^TOTAL|^NET OPERATING/i.test(l.label);
+  const shown=full?cp.lines:cp.lines.filter(isSummary);
+  return shown.map(l=>{
+    if(l.header) return `<tr><td colspan="8" style="color:var(--gold);font-weight:700;border-top:1px solid var(--line)">${l.label}</td></tr>`;
+    const big=/^TOTAL|^NET OPERATING/i.test(l.label), sub=/^\d\.\s/.test(l.label);
+    return `<tr class="${big?'tot':''}"><td style="${sub?'':'padding-left:18px'}">${l.label}</td>
+      <td data-v="${l.act??''}">${money(l.act)}</td>
+      <td>${rev?pct((l.act??0)/rev):na()}</td>
+      <td data-v="${l.bud??''}">${money(l.bud)}</td>
+      <td class="${cls(varPct(l.act,l.bud))}">${pct(varPct(l.act,l.bud))}</td>
+      <td data-v="${l.ly??''}">${money(l.ly)}</td>
+      <td class="${cls(varPct(l.act,l.ly))}">${pct(varPct(l.act,l.ly))}</td>
+      <td data-v="${l.ytd??''}">${money(l.ytd)}</td></tr>`; }).join('');
+}
+/* toggle updates only the cost table body + the two buttons — no chart rebuild */
+window.__setCpDetail=v=>{ state.cpFull=v;
+  const cp=curMonth().fs?.centralPL, body=document.getElementById('cpCostBody');
+  if(cp&&body) body.innerHTML=cpCostRowsHtml(cp);
+  document.querySelectorAll('#cpCostToggle button').forEach(b=>b.classList.toggle('on', b.dataset.full===(v?'1':'0')));
+};
 function renderOffice(d){
   const el=$('#tab-office');
   const fsAll={}; for(const[k,m] of Object.entries(state.store.months)) if(m.fs) fsAll[k]=m.fs;
@@ -4485,27 +4540,14 @@ function renderOffice(d){
   const costHtml=(()=>{ /* cost analysis — from the "CENTRAL PLAZA - PROFIT AND LOSS STATEMENT" block of the FS */
       if(!cp) return '';   // the banner above already explains how to populate it
       const rev=cp.totalRev?.act, full=!!state.cpFull;
-      const isSummary=l=>l.header||/^\d\.\s|^TOTAL|^NET OPERATING/i.test(l.label);
-      const shown=full?cp.lines:cp.lines.filter(isSummary);
-      const lrows=shown.map(l=>{
-        if(l.header) return `<tr><td colspan="8" style="color:var(--gold);font-weight:700;border-top:1px solid var(--line)">${l.label}</td></tr>`;
-        const big=/^TOTAL|^NET OPERATING/i.test(l.label), sub=/^\d\.\s/.test(l.label);
-        return `<tr class="${big?'tot':''}"><td style="${sub?'':'padding-left:18px'}">${l.label}</td>
-          <td data-v="${l.act??''}">${money(l.act)}</td>
-          <td>${rev?pct((l.act??0)/rev):na()}</td>
-          <td data-v="${l.bud??''}">${money(l.bud)}</td>
-          <td class="${cls(varPct(l.act,l.bud))}">${pct(varPct(l.act,l.bud))}</td>
-          <td data-v="${l.ly??''}">${money(l.ly)}</td>
-          <td class="${cls(varPct(l.act,l.ly))}">${pct(varPct(l.act,l.ly))}</td>
-          <td data-v="${l.ytd??''}">${money(l.ytd)}</td></tr>`; }).join('');
       const st2=cst;
       return `<div class="panel"><h3>Cost analysis — Central Plaza P&L <span class="small">(from the PHCL consolidated FS)</span>
-        <span class="noprint" style="float:right">
-          <button class="heatbtn ${full?'':'on'}" onclick="__setCpDetail(false)">Summary</button>
-          <button class="heatbtn ${full?'on':''}" onclick="__setCpDetail(true)">Full detail</button></span></h3>
+        <span class="noprint" id="cpCostToggle" style="float:right">
+          <button class="heatbtn ${full?'':'on'}" data-full="0" onclick="__setCpDetail(false)">Summary</button>
+          <button class="heatbtn ${full?'on':''}" data-full="1" onclick="__setCpDetail(true)">Full detail</button></span></h3>
         <div class="small" style="margin-bottom:6px">Area: <b>${n1(st2.totalArea?.act,0)} m²</b> total · <b>${n1(st2.leased?.act,0)} m²</b> leased · <b>${n1(st2.vacant?.act,0)} m²</b> vacant · occupancy <b>${pct(st2.occ?.act)}</b> · avg rent <b>${money(st2.avgRent?.act)}/m²</b> (bud ${money(st2.avgRent?.bud)}, LY ${money(st2.avgRent?.ly)})</div>
         <div style="overflow-x:auto"><table><thead><tr><th>Line</th><th>Actual</th><th>% of rev</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>YTD</th></tr></thead>
-        <tbody>${lrows}</tbody></table></div>
+        <tbody id="cpCostBody">${cpCostRowsHtml(cp)}</tbody></table></div>
         <div class="small" style="margin-top:6px">${full?'Full line-by-line P&L. ':'Summary — top-level revenue categories & totals. Switch to Full detail for every line. '}${cp.totalRev&&cp.totalExp&&cp.noi?`Operating cost ratio <b>${pct(cp.totalExp.act/rev)}</b> (budget ${pct((cp.totalExp.bud??0)/(cp.totalRev.bud||1))}, LY ${pct((cp.totalExp.ly??0)/(cp.totalRev.ly||1))}) — NOI margin <b>${pct(cp.noi.act/rev)}</b>. NOI ties to the CENTRAL GOP line of the consolidated cascade.`:''}</div>
         ${keys.filter(k=>fsAll[k].centralPL).length>1?'<div class="chartbox" style="margin-top:8px"><canvas id="chCpCost"></canvas></div>':''}</div>`;
     })();
