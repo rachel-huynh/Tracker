@@ -4284,9 +4284,12 @@ function renderForecast(d){
   if(rf&&rf.months){
     /* Honour the shared focus period: when a Focus range is set, show the RF forecast
        months inside it (capped at 6 for width); otherwise the default "next 3 forecast
-       months" after the selected reporting month. Anchor on the SELECTED reporting month,
-       not the STAR month — the STAR file often lags the P&L by a month. */
-    const anchor=state.month>st.monthKey?state.month:st.monthKey;
+       months" after the selected reporting month. Anchor STRICTLY on the top month
+       selector (state.month) — NOT max(state.month, st.monthKey). A max() here silently
+       overrides the user's own month choice whenever a later-dated STAR file happens to
+       be loaded (STAR upload commonly runs ahead of the P&L), so picking an earlier
+       month back in the selector had no visible effect on this table. */
+    const anchor=state.month;
     const focused=!!(state.tsFrom||state.tsTo);
     const fwd=focused
       ? rf.months.map((m,i)=>({m,i})).filter(x=>/forecast/i.test(rf.flags[x.i]||'')&&tsInRange(x.m)).slice(0,6)
