@@ -3128,7 +3128,7 @@ function renderMarket(d){
     const dHead=`<tr><th style="text-align:left">${fmtMonthKey(st.monthKey)}</th>${
       days.map(d2=>`<th style="text-align:center;${isWE(st.monthKey,d2)?'background:rgba(107,114,128,.12)':''}">${dowL[dowOf(st.monthKey,d2)]}<br>${d2}</th>`).join('')
       }<th>MTD</th><th>MTD WD</th><th>MTD WE</th></tr>`;
-    dailyPanel=`<div class="panel"><h3>Daily data — My Property vs ${bName} <span class="tag">Operator STR Benchmark</span> ${st.provisional?'<span class="tag a">provisional</span>':''}
+    dailyPanel=`<div class="panel"><h3>Daily data — My Property vs ${bName} ${st.provisional?'<span class="tag a">provisional</span>':''}
         <span class="noprint" style="float:right">
           <button class="heatbtn ${bKey==='comp'?'on':''}" onclick="__setDailyBench('comp')">Comp Set</button>
           <button class="heatbtn ${bKey==='ind'?'on':''}" onclick="__setDailyBench('ind')" ${hasInd?'':'disabled title="Industry daily rows not in this STAR file"'}>Industry</button>
@@ -3221,9 +3221,6 @@ function renderMarket(d){
       <div class="chartbox"><canvas id="chBand"></canvas></div>
       <div class="small" style="margin-top:6px">Green = Sofitel SSP occupancy; shaded band = comp-set ↔ industry envelope${hasBwInd?'':' (industry rows missing — comp set shown as dashed line only)'};
         grey columns = STR weekends (Fri–Sat, daily view). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
-    <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold);margin-top:4px">
-      <h3 style="margin:0">Operator STR Benchmark</h3>
-      <div class="small">The operator's STR extract as delivered — reproduced below for reference and reconciliation against the owner-side analysis above.</div></div>
     ${dailyPanel}`;
 
   /* weekend-column shading plugin factory (only meaningful on the daily view) */
@@ -3826,7 +3823,13 @@ function renderForecast(d){
     const g=[]; for(let i=Math.max(12,n-6);i<n;i++){ const a=series[k][i],b=series[k][i-12]; if(a!=null&&b) g.push(a/b-1); }
     growth[k]=g.length?median(g):null; vol[k]=stdev(g);
   }
-  const H=[...Array(6)].map((_,i)=>addMonths(M[n-1],i+1));
+  /* Horizon runs to the END OF THE CALENDAR YEAR of the last actual month, not a fixed
+     6 months — so the outlook table below is always a full 12-month year: e.g. last
+     actual Nov -> 11 actual rows + 1 forecast row; last actual Jun -> 6 + 6. Guard with
+     at least 1 month so December still projects the following January rather than
+     rendering an empty table. */
+  const hN=Math.max(1,12-(+M[n-1].slice(5,7)));
+  const H=[...Array(hN)].map((_,i)=>addMonths(M[n-1],i+1));
   const fc=H.map((ym,h)=>{
     const li=n-12+(h+1);                     // index of same month LY in the series
     const o={ym};
@@ -3840,7 +3843,7 @@ function renderForecast(d){
     return o;
   });
   /* RGI projection: linear trend of last 12 index values */
-  const rgiProj=olsNext(ch.revpar.idx.slice(-12),[1,2,3,4,5,6]);
+  const rgiProj=olsNext(ch.revpar.idx.slice(-12),[...Array(H.length)].map((_,i)=>i+1));
   /* convert RevPAR forecast into money using latest P&L structure */
   const p=pnlVND();
   const share=p?div(g(p,'rev.rooms','MTD','act'),g(p,'rev.totalIncl','MTD','act')):null;
@@ -3902,8 +3905,9 @@ function renderForecast(d){
       const i=rf.months.indexOf(s.ym); return {ym:s.ym,stat:s.totRev,rf:rf.rows.totalRev[i]}; });
     const dev=cmp.length?avgA(cmp.map(x=>x.stat/x.rf-1)):null;
     const negs=rf.months.map((m,i)=>({m,g:rf.rows.gop[i],f:rf.flags[i]})).filter(x=>/forecast/i.test(x.f)&&x.g!=null&&x.g<0);
-    rfHtml=`<div class="panel"><h3>Management rolling forecast — ${rf.title||'FY2026 (04A+08F)'}</h3>
+    rfHtml=`<div class="panel"><h3>Management rolling forecast — ${rf.title||'FY2026 (04A+08F)'} ${granCtl()}</h3>
       <div class="chartbox tall"><canvas id="chRf"></canvas></div>
+      <div class="small" style="margin-top:6px">Solid bar = RF (navy actual / gold forecast), pale bar = budget for the same month. Solid green = RF GOP, dashed green = budget GOP. Hover any period for the two vs-budget variances.</div>
       <div class="small" style="margin-top:6px">
         ${dev!=null?`Cross-check: this dashboard's statistical forecast runs <b>${pct(dev)}</b> vs the management RF on ${cmp.length} overlapping month(s) (${cmp.map(x=>fmtMonthKey(x.ym)+' '+pct(x.stat/x.rf-1)).join(' · ')}). Near-term months should agree; large gaps in later months usually mean the RF embeds events the statistical model cannot see (e.g. renovation closure) — trust the RF there, but challenge it where the near-term gap is wide.`:''}
         ${negs.length?`<br><b style="color:var(--red)">RF plans NEGATIVE GOP in ${negs.map(x=>fmtMonthKey(x.m)).join(', ')}</b> — renovation-period cash burn.${rf.rows.payroll?` Watch payroll ratio (RF has payroll reaching ${pct(Math.max(...rf.months.map((m,i)=>div(rf.rows.payroll[i],rf.rows.totalRev[i])).filter(v=>v!=null)))} of revenue in the trough months).`:''}`:''}
@@ -4131,14 +4135,14 @@ function renderForecast(d){
     <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold)">
       <h3 style="margin:0">Independent outlook — not derived from the rolling forecast</h3>
       <div class="small">Everything below is this dashboard's <b>own</b> statistical projection, built from STAR trend data (same-month-last-year × trailing run-rate). It is deliberately independent of the management rolling forecast above, so the two can be compared as a cross-check rather than one confirming the other.</div></div>
+    ${adrPanelHtml}
+    <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
+      <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>
     <div class="panel"><h3>Full-year ${fcYear} outlook — ${actKeys.length} actual month(s) + ${H.length}-month projection</h3>
       <table><thead><tr><th>Month</th><th>Occ</th><th>ADR</th><th>RevPAR</th><th>RevPAR range</th><th>RGI proj</th><th>Rooms revenue</th><th>Total revenue</th><th>GOP est.</th></tr></thead>
       <tbody>${actRows}${rows}${subRow}</tbody></table>
       <div class="small" style="margin-top:6px">Grey rows are <b>actual</b> months from each month's own P&amp;L; the rest are projected. Method: same-month-LY × (1 + median YoY of trailing 6 months); band = ±1σ of that growth. Rooms revenue = RevPAR × ${ROOMS} × days; total revenue via rooms share ${pct(share)}; GOP at trailing ${gopPcts.length}-month margin ${pct(gopPct)}. RGI projected by linear trend of last 12 months. This is a control-tool projection, not a commitment.</div>
       <div class="small">Subtotal note: Occupancy, ADR and RevPAR on the total line are <b>re-derived from the year's totals</b> (rooms sold ÷ rooms available, rooms revenue ÷ rooms sold, rooms revenue ÷ rooms available) — averaging monthly ratios would misweight short and low-occupancy months.</div></div>
-    ${adrPanelHtml}
-    <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
-      <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>
     ${modelHtml}
     ${otaHtml}`;
   /* forecast chart — history window can be trimmed with the shared focus period (From) */
@@ -4214,12 +4218,40 @@ function renderForecast(d){
       options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}}},maintainAspectRatio:false}});
   }
   if(rf){
-    mkChart('chRf',{type:'bar',data:{labels:rf.months.map(fmtMonthKey),datasets:[
-        {type:'bar',label:'Total revenue',data:rf.rows.totalRev.map((v,i)=>cvM(v,rf.months[i])),
-         backgroundColor:rf.flags.map(f=>/actual/i.test(f)?'#0B1F3A':'rgba(201,162,39,.75)')},
-        {type:'line',label:'GOP',data:rf.rows.gop.map((v,i)=>cvM(v,rf.months[i])),borderColor:'#1e7e4f',tension:.3},
-        {type:'line',label:'GOP % (right)',yAxisID:'y1',data:rf.rows.gopPct.map(v=>v==null?null:v*100),borderColor:'#c0392b',borderDash:[5,4],tension:.3}]},
-      options:{plugins:{tooltip:{callbacks:{afterTitle:c=>rf.flags[c[0].dataIndex]}}},
+    /* Budget benchmark per RF month: the consolidated 2026 budget where it covers the
+       month, otherwise that month's own P&L budget column, so pre-2026 RF files still
+       get a benchmark instead of an empty series. */
+    const rfBud=(ym,path)=>{ const b=budget2026For(ym);
+      if(b){ const v=b26Path(b,path); if(v!=null) return v; }
+      const pv=state.store.months[ym]?.pnlVND; return pv?g(pv,path,'MTD','bud'):null; };
+    const budRev=rf.months.map(m=>rfBud(m,'rev.totalIncl'));
+    const budGop=rf.months.map(m=>rfBud(m,'sum.gop'));
+    /* Honour the shared focus period + Monthly/Quarterly toggle like every other trend
+       chart. If the focus period excludes this RF file's whole year, fall back to the
+       full range rather than drawing an empty chart. */
+    const anyInFocus=rf.months.some(m=>!(state.tsFrom||state.tsTo)||tsInRange(m));
+    const savedFrom=state.tsFrom, savedTo=state.tsTo;
+    if(!anyInFocus){ state.tsFrom=''; state.tsTo=''; }
+    const gR=granGroup(rf.months,[{data:rf.rows.totalRev,agg:'sum'},{data:budRev,agg:'sum'},
+      {data:rf.rows.gop,agg:'sum'},{data:budGop,agg:'sum'},{data:rf.rows.gopPct,agg:'avg'}]);
+    state.tsFrom=savedFrom; state.tsTo=savedTo;
+    /* a grouped bucket counts as Forecast if ANY of its months is a forecast month */
+    const flagOf=k=>rf.months.some((m,i)=>granKeyOf(m)===k&&/forecast/i.test(rf.flags[i]||''))?'Forecast':'Actual';
+    const flags=gR.keys.map(flagOf);
+    mkChart('chRf',{type:'bar',data:{labels:gR.labels,datasets:[
+        {type:'bar',label:'Total revenue',data:gR.out[0].map(cv),
+         backgroundColor:flags.map(f=>/actual/i.test(f)?'#0B1F3A':'rgba(201,162,39,.75)'),order:4},
+        {type:'bar',label:'Total revenue — budget',data:gR.out[1].map(cv),
+         backgroundColor:'rgba(74,125,189,.45)',order:5},
+        {type:'line',label:'GOP',data:gR.out[2].map(cv),borderColor:'#1e7e4f',borderWidth:2.5,tension:.3,order:1},
+        {type:'line',label:'GOP — budget',data:gR.out[3].map(cv),borderColor:'#1e7e4f',
+         borderWidth:1.6,borderDash:[6,4],pointRadius:0,tension:.3,order:2},
+        {type:'line',label:'GOP % (right)',yAxisID:'y1',data:gR.out[4].map(v=>v==null?null:v*100),
+         borderColor:'#c0392b',borderDash:[5,4],tension:.3,order:3}]},
+      options:{plugins:{tooltip:{callbacks:{afterTitle:c=>flags[c[0].dataIndex],
+        afterBody:it=>{ const i=it[0].dataIndex, r=gR.out[0][i], b=gR.out[1][i], gp=gR.out[2][i], gb=gR.out[3][i];
+          const L=[]; if(r!=null&&b) L.push('Revenue vs Bud: '+pct(r/b-1));
+          if(gp!=null&&gb) L.push('GOP vs Bud: '+pct(gp/gb-1)); return L; }}}},
         scales:{y:{ticks:{callback:v=>moneyFmt(v,0)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   }
   if(cf){
@@ -4834,7 +4866,10 @@ function refreshMonths(){
 /* jump to another tab from an in-panel link — reuses the sidebar button so the
    active-tab styling, kgrid re-balance and any tab-switch side effects all still run */
 window.__goTab=t2=>{ const b=document.querySelector('[data-tab="'+t2+'"]'); if(b) b.click(); };
-window.__setExpFull=v=>{ state.expFull=!!v; renderExpenses(derive()); };
+/* re-render this tab only, then re-balance: replacing the tab's innerHTML throws away the
+   inline grid-template-columns balanceKgrids() had set, so the scorecard would otherwise
+   fall back to the CSS auto-fill default (fixed 160px cards + a trailing gap). */
+window.__setExpFull=v=>{ state.expFull=!!v; renderExpenses(derive()); balanceKgrids(); };
 function renderExpenses(d){
   const el=$('#tab-expenses'); if(!el) return;
   if(!d.ok){ el.innerHTML=noData(); return; }
@@ -4905,6 +4940,16 @@ function renderExpenses(d){
   rows.push(other);
   const counted=rows.filter(r=>!r.sub);
 
+  /* The CHART is deliberately independent of the Summary/Full-detail toggle: it always
+     plots the fixed 6-category summary. Driving it off the table's rows made its bars
+     change shape (and count) with the toggle, which is unreadable and made the toggle
+     look like it was altering the underlying numbers rather than the level of detail. */
+  const chartRows=CATS.map(([label,paths,note])=>mkRow(label,paths,note));
+  const chartOther={label:'Other expenses'};
+  for(const f of F){ const named=chartRows.reduce((a,r)=>a+(r[f]??0),0);
+    chartOther[f]=totCost[f]==null?null:totCost[f]-named; }
+  chartRows.push(chartOther);
+
   const por=v=>div(v,d.roomsSold), par=v=>div(v,d.roomsAvail);
   const overBud=r=>!r.sub&&r.act!=null&&r.bud!=null&&r.act>r.bud;
   const body=rows.map(r=>`<tr class="${overBud(r)?'bad':''}">
@@ -4921,7 +4966,8 @@ function renderExpenses(d){
       <td>${money(totCost.ly)}</td>
       <td class="${cls(totCost.ly==null?null:-(varPct(totCost.act,totCost.ly)))}">${pct(varPct(totCost.act,totCost.ly))}</td>
       <td>${money(por(totCost.act))}</td><td>${money(par(totCost.act))}</td><td>100%</td></tr>`;
-  const nOver=counted.filter(overBud).length;
+  /* count against the fixed 6 categories so the KPI reads the same in both views */
+  const nOver=chartRows.filter(overBud).length;
 
   el.innerHTML=`
     <div class="kgrid">
@@ -4952,11 +4998,11 @@ function renderExpenses(d){
 
   /* chart always plots the COUNTED categories, so it stays readable and stays consistent
      with the total whichever view the table is in */
-  mkChart('chExp',{type:'bar',data:{labels:counted.map(r=>r.label),datasets:[
-      {label:'Actual',data:counted.map(r=>cv(r.act)),
-       backgroundColor:counted.map(r=>overBud(r)?'#d64545':'#4a7dbd')},
-      {label:'Budget',data:counted.map(r=>cv(r.bud)),backgroundColor:'rgba(201,162,39,.65)'},
-      {label:'Last year',data:counted.map(r=>cv(r.ly)),backgroundColor:'rgba(120,130,145,.45)'}]},
+  mkChart('chExp',{type:'bar',data:{labels:chartRows.map(r=>r.label),datasets:[
+      {label:'Actual',data:chartRows.map(r=>cv(r.act)),
+       backgroundColor:chartRows.map(r=>overBud(r)?'#d64545':'#4a7dbd')},
+      {label:'Budget',data:chartRows.map(r=>cv(r.bud)),backgroundColor:'rgba(201,162,39,.65)'},
+      {label:'Last year',data:chartRows.map(r=>cv(r.ly)),backgroundColor:'rgba(120,130,145,.45)'}]},
     options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,0)}},x:{ticks:{maxRotation:35,minRotation:0}}},
       maintainAspectRatio:false}});
 }
