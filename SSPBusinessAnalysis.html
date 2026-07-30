@@ -2320,13 +2320,27 @@ function uolTable(d){
   const idxNow=(blk,met)=>gl?.[blk]?.[met]?.idx??null;
   const idxLy=met=>{ const a=cs?.[met]; if(!a?.months||!a.idx) return null;
     const i=a.months.indexOf(lyKey); return i>=0?(a.idx[i]??null):null; };
+  /* LY YTD index: rebuilt from the comp history's raw levels (my vs comp), weighted by
+     days per month, rather than averaging the monthly index values — an index is a ratio,
+     so averaging ratios would misweight short and low-occupancy months. ARI then uses the
+     standard STR identity ARI = RGI / MPI x 100 (averaging daily/monthly ADR directly
+     needs rooms-sold weighting, which the comp sheet does not carry). */
+  const ytdW=met=>{ const a=cs?.[met]; if(!a?.months||!lyKey) return null;
+    const yr=+lyKey.slice(0,4), upto=+lyKey.slice(5,7);
+    let sm=0, sc=0, any=false;
+    a.months.forEach((m,i)=>{ if(!m||+m.slice(0,4)!==yr||+m.slice(5,7)>upto) return;
+      const my=a.my?.[i], cp=a.comp?.[i]; if(my==null||cp==null) return;
+      const w=daysIn(m); sm+=my*w; sc+=cp*w; any=true; });
+    return (any&&sc)?sm/sc*100:null; };
+  const idxLyYtd=met=>{ if(met==='adr'){ const m=ytdW('occ'), r=ytdW('revpar');
+      return (m&&r!=null)?r/m*100:null; } return ytdW(met); };
   const IDX=[['MPI','occ'],['ARI','adr'],['RGI','revpar']];
 
   let html='';
   for(const [nm,met] of IDX){
     let cells='';
     for(const per of PERS){
-      const a=idxNow(per==='MTD'?'cm':'ytd',met), l=per==='MTD'?idxLy(met):null;
+      const a=idxNow(per==='MTD'?'cm':'ytd',met), l=per==='MTD'?idxLy(met):idxLyYtd(met);
       const first=per==='YTD'?SEP:'';
       cells+=`<td style="${first}">${a==null?'':idx(a)}</td><td></td>`   // no budget basis for an index
             +`<td></td><td></td><td></td><td></td>`
@@ -2364,15 +2378,16 @@ function uolTable(d){
   const sub=first=>`<th style="${first?SEP:''}">Value</th><th>% of TR</th><th>Value</th><th>% of TR</th>
       <th>$</th><th>%</th><th>Value</th><th>% of TR</th><th>$</th><th>%</th>`;
   const mLbl=stMk?fmtMonthKey(stMk):fmtMonthKey(state.month);
-  return `<div class="panel"><h3>P&amp;L detail — UOL report format</h3>
+  return `<div class="panel"><h3>P&amp;L detail</h3>
     <div style="overflow-x:auto"><table class="uol"><thead>
       <tr><th rowspan="3">Line</th><th colspan="10">MTD — ${mLbl}</th>
           <th colspan="10" style="${SEP}">YTD — ${mLbl}</th></tr>
       <tr>${grp(false)}${grp(true)}</tr>
       <tr>${sub(false)}${sub(true)}</tr></thead>
       <tbody>${html}</tbody></table></div>
-    <div class="small" style="margin-top:6px">MTD on the left, YTD on the right — same rows and definitions as the UOL report's Dashboard sheet. % of TR divides each scenario by <b>its own</b> Total Revenue. Occupancy / ADR / RevPAR and the STR indices carry no % of TR — they aren't revenue amounts. Budget for 2026 months comes from the consolidated 2026 budget (GOP net of Marketing Fees, matching UOL).</div>
-    <div class="small" style="margin-top:4px">MPI / ARI / RGI have no budget basis — they are indexes versus the comp set. The Last-Year index is the same calendar month one year earlier, taken from the STAR file's own comp history; a YTD index cannot be averaged from monthly indexes without revenue weighting, so it is left blank here. <b>Full index history, ranks, comp-set members and daily detail are on the Market · STR tab.</b></div></div>`;
+    <div class="small" style="margin-top:6px">MTD on the left, YTD on the right. % of TR divides each scenario by <b>its own</b> Total Revenue. Occupancy / ADR / RevPAR and the STR indices carry no % of TR — they aren't revenue amounts. Budget for 2026 months comes from the consolidated 2026 budget (GOP net of Marketing Fees).</div>
+    <div class="small" style="margin-top:4px">MPI / ARI / RGI have no budget basis — they are indexes versus the comp set. The Last-Year index comes from the STAR file's own comp history: for MTD, the same calendar month one year earlier; for YTD, rebuilt from that year's raw property-vs-comp levels weighted by days per month (an index is a ratio, so averaging monthly index values would misweight short and low-occupancy months). ARI uses the STR identity ARI = RGI ÷ MPI × 100.
+      <a href="#" onclick="__goTab('market');return false" style="color:var(--red);font-weight:700;text-decoration:underline">Full index history, ranks, comp-set members and daily detail are on the Market — STR tab →</a></div></div>`;
 }
 
 /* ---------------- COCKPIT ---------------- */
@@ -3967,16 +3982,93 @@ function renderForecast(d){
         <br>Stats above are computed on <b>My Property</b> with the current day filter and focus period; the entity buttons switch whose point cloud and compression curve is drawn (Side by side overlays all three).</div></div>`:'';
   }
 
+  /* ---- ACTUAL months of the forecast year, so the outlook table reads as a full year ----
+     Rendered in muted grey to keep the eye on the forecast rows. Figures come from each
+     month's own P&L (real actuals), not from the model. */
+  const fcYear=H.length?H[0].slice(0,4):String(new Date().getFullYear());
+  const actKeys=Object.keys(state.store.months).filter(k=>k.slice(0,4)===fcYear&&k<H[0]&&state.store.months[k].pnlVND).sort();
+  const AV=(k,path)=>g(state.store.months[k].pnlVND,path,'MTD','act');
+  const ROOMS=284;
+  const actAgg={sold:0,avail:0,roomsRev:0,totRev:0,gop:0};
+  let actRows='';
+  for(const k of actKeys){
+    const occA=AV(k,'stats.occ'), adrA=AV(k,'stats.adr'), rpA=AV(k,'stats.revpar');
+    const rrA=AV(k,'rev.rooms'), trA=AV(k,'rev.totalIncl'), gpA=AV(k,'sum.gop');
+    const availA=AV(k,'stats.roomsAvail')??ROOMS*daysIn(k), soldA=AV(k,'stats.roomsSold');
+    actAgg.sold+=soldA??0; actAgg.avail+=availA??0;
+    actAgg.roomsRev+=rrA??0; actAgg.totRev+=trA??0; actAgg.gop+=gpA??0;
+    actRows+=`<tr style="color:var(--grey)"><td>${fmtMonthKey(k)} <span class="tag">actual</span></td>
+      <td>${occA!=null?pct(occA):na()}</td><td>${moneyM(adrA,k)}</td><td>${moneyM(rpA,k)}</td>
+      <td class="small">—</td><td>—</td>
+      <td>${moneyM(rrA,k)}</td><td>${moneyM(trA,k)}</td><td>${moneyM(gpA,k)}</td></tr>`;
+  }
+  /* ---- subtotal: ratios are RE-DERIVED from the totals, never averaged ---- */
+  const fcAgg=fc.reduce((a,f)=>{ const av=ROOMS*daysIn(f.ym);
+    const sold=f.occ!=null?f.occ/100*av:0;
+    const rr=f.revpar!=null?f.revpar*av:0;
+    const tr=rr&&share?rr/share:0;
+    return {sold:a.sold+sold,avail:a.avail+av,roomsRev:a.roomsRev+rr,totRev:a.totRev+tr,
+            gop:a.gop+(tr&&gopPct!=null?tr*gopPct:0)}; },{sold:0,avail:0,roomsRev:0,totRev:0,gop:0});
+  const TOT={sold:actAgg.sold+fcAgg.sold,avail:actAgg.avail+fcAgg.avail,
+    roomsRev:actAgg.roomsRev+fcAgg.roomsRev,totRev:actAgg.totRev+fcAgg.totRev,gop:actAgg.gop+fcAgg.gop};
+  const subOcc=TOT.avail?TOT.sold/TOT.avail:null;
+  const subAdr=TOT.sold?TOT.roomsRev/TOT.sold:null;
+  const subRp =TOT.avail?TOT.roomsRev/TOT.avail:null;
+  const subRow=`<tr class="tot"><td>Full year ${fcYear} — actual + forecast</td>
+    <td>${subOcc!=null?pct(subOcc):na()}</td><td>${money(subAdr)}</td><td>${money(subRp)}</td>
+    <td class="small">—</td><td>—</td>
+    <td>${money(TOT.roomsRev)}</td><td>${money(TOT.totRev)}</td><td>${money(TOT.gop)}</td></tr>`;
+
+  /* ---- next 3 months, laid out like the UOL report's forecast blocks ----
+     Forecast from the management Rolling Forecast file; that month's Budget from the
+     consolidated 2026 budget; Last Year from the same month one year earlier. */
+  let next3Html='';
+  if(rf&&rf.months){
+    const fwd=rf.months.map((m,i)=>({m,i})).filter(x=>x.m>st.monthKey&&/forecast/i.test(rf.flags[x.i]||'')).slice(0,3);
+    if(fwd.length){
+      const MET=[['Occupancy','occ','stats.occ',true],['ADR','adr','stats.adr'],['RevPAR','revpar','stats.revpar'],
+        ['Total revenue','totalRev','rev.totalIncl'],['Rooms revenue','roomsRev','rev.rooms'],
+        ['F&B revenue','fbRev',null],['Total dept profit','deptProfit','dp.total'],
+        ['Overheads','overheads',null],['GOP','gop','sum.gop']];
+      const lyOf=(ym,path)=>{ const k=`${+ym.slice(0,4)-1}-${ym.slice(5,7)}`;
+        return state.store.months[k]?.pnlVND?g(state.store.months[k].pnlVND,path,'MTD','act'):null; };
+      const body=MET.map(([lbl,rk,bPath,isPct])=>{
+        let tds='';
+        for(const {m,i} of fwd){
+          const f=rf.rows[rk]?rf.rows[rk][i]:null;
+          const b=bPath?(budget2026For(m)?b26Path(budget2026For(m),bPath):null):null;
+          const l=bPath?lyOf(m,bPath):null;
+          const fmt=v=>v==null?'':(isPct?pct(v):moneyM(v,m));
+          tds+=`<td style="border-left:2px solid var(--navy)">${fmt(f)}</td><td>${fmt(b)}</td>
+            <td class="${cls(varPct(f,b))}">${b==null?'':pct(varPct(f,b))}</td>
+            <td>${fmt(l)}</td><td class="${cls(varPct(f,l))}">${l==null?'':pct(varPct(f,l))}</td>`;
+        }
+        return `<tr class="${/GOP|Total revenue/.test(lbl)?'tot':''}"><td>${lbl}</td>${tds}</tr>`;
+      }).join('');
+      next3Html=`<div class="panel"><h3>Next 3 months — management rolling forecast vs budget &amp; last year</h3>
+        <div style="overflow-x:auto"><table class="uol"><thead>
+          <tr><th rowspan="2">Line</th>${fwd.map(x=>`<th colspan="5" style="border-left:2px solid var(--navy)">${fmtMonthKey(x.m)}</th>`).join('')}</tr>
+          <tr>${fwd.map(()=>`<th style="border-left:2px solid var(--navy)">Forecast</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th>`).join('')}</tr></thead>
+          <tbody>${body}</tbody></table></div>
+        <div class="small" style="margin-top:6px">Same shape as the UOL report's 3-month forecast blocks. Forecast = <b>${rf.title||'rolling forecast'}</b>; Budget = consolidated 2026 budget; LY = the same calendar month one year earlier from that month's own P&amp;L. F&amp;B revenue and Overheads have no line in the consolidated budget, so their Budget cells stay blank.</div></div>`;
+    }
+  }
+
   el.innerHTML=`
+    ${rfHtml}
+    ${next3Html}
+    ${paceHtml}
+    <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold)">
+      <h3 style="margin:0">Independent outlook — not derived from the rolling forecast</h3>
+      <div class="small">Everything below is this dashboard's <b>own</b> statistical projection, built from STAR trend data (same-month-last-year × trailing run-rate). It is deliberately independent of the management rolling forecast above, so the two can be compared as a cross-check rather than one confirming the other.</div></div>
+    <div class="panel"><h3>Full-year ${fcYear} outlook — ${actKeys.length} actual month(s) + ${H.length}-month projection</h3>
+      <table><thead><tr><th>Month</th><th>Occ</th><th>ADR</th><th>RevPAR</th><th>RevPAR range</th><th>RGI proj</th><th>Rooms revenue</th><th>Total revenue</th><th>GOP est.</th></tr></thead>
+      <tbody>${actRows}${rows}${subRow}</tbody></table>
+      <div class="small" style="margin-top:6px">Grey rows are <b>actual</b> months from each month's own P&amp;L; the rest are projected. Method: same-month-LY × (1 + median YoY of trailing 6 months); band = ±1σ of that growth. Rooms revenue = RevPAR × ${ROOMS} × days; total revenue via rooms share ${pct(share)}; GOP at trailing ${gopPcts.length}-month margin ${pct(gopPct)}. RGI projected by linear trend of last 12 months. This is a control-tool projection, not a commitment.</div>
+      <div class="small">Subtotal note: Occupancy, ADR and RevPAR on the total line are <b>re-derived from the year's totals</b> (rooms sold ÷ rooms available, rooms revenue ÷ rooms sold, rooms revenue ÷ rooms available) — averaging monthly ratios would misweight short and low-occupancy months.</div></div>
     ${adrPanelHtml}
     <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
       <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>
-    ${paceHtml}
-    <div class="cols c2">${rfHtml}${cfHtml}</div>
-    <div class="panel"><h3>6-month outlook</h3>
-      <table><thead><tr><th>Month</th><th>Occ</th><th>ADR</th><th>RevPAR</th><th>RevPAR range</th><th>RGI proj</th><th>Rooms revenue</th><th>Total revenue</th><th>GOP est.</th></tr></thead>
-      <tbody>${rows}</tbody></table>
-      <div class="small" style="margin-top:6px">Method: same-month-LY × (1 + median YoY of trailing 6 months); band = ±1σ of that growth. Rooms revenue = RevPAR × 284 × days; total revenue via rooms share ${pct(share)}; GOP at trailing ${gopPcts.length}-month margin ${pct(gopPct)}. RGI projected by linear trend of last 12 months. This is a control-tool projection, not a commitment.</div></div>
     ${modelHtml}
     ${otaHtml}`;
   /* forecast chart — history window can be trimmed with the shared focus period (From) */
@@ -4658,6 +4750,10 @@ function refreshMonths(){
      = Total operating cost = Total revenue - GOP
    "Other" is the residual (departmental cost of sales, dept other-expenses, etc.),
    so the six always reconcile to the cascade exactly. */
+/* jump to another tab from an in-panel link — reuses the sidebar button so the
+   active-tab styling, kgrid re-balance and any tab-switch side effects all still run */
+window.__goTab=t2=>{ const b=document.querySelector('[data-tab="'+t2+'"]'); if(b) b.click(); };
+window.__setExpFull=v=>{ state.expFull=!!v; renderExpenses(derive()); };
 function renderExpenses(d){
   const el=$('#tab-expenses'); if(!el) return;
   if(!d.ok){ el.innerHTML=noData(); return; }
@@ -4674,12 +4770,37 @@ function renderExpenses(d){
     ['Sales & Marketing',['undist.sm.oth'],'non-payroll'],
     ['Energy & POMEC',['undist.energy.oth','undist.pomec.oth'],'non-payroll'],
   ];
-  const rows=CATS.map(([label,paths,note])=>{
-    const o={}; for(const f of F) o[f]=many(paths,f);
-    return {label,note,...o};
-  });
-  /* residual so the six reconcile to Total revenue - GOP */
-  const other={label:'Other expenses',note:'residual — dept cost of sales & other dept expenses'};
+  const mkRow=(label,paths,note)=>{ const o={label,note}; for(const f of F) o[f]=many(paths,f); return o; };
+  const full=!!state.expFull;
+  let rows;
+  if(!full){
+    rows=CATS.map(([label,paths,note])=>mkRow(label,paths,note));
+  } else {
+    /* Full detail keeps the SAME total by splitting every overhead category into its
+       payroll and non-payroll halves and separating departmental payroll from
+       departmental other costs:
+         Σ overhead.pay + departmental payroll = Total payroll
+         Σ overhead.oth + departmental other   = the rest of the cost base
+       so the lines still add to Total revenue − GOP exactly. */
+    const OHPAY=['undist.ag.pay','undist.it.pay','undist.sm.pay','undist.pomec.pay'];
+    const deptPay={label:'Departmental payroll',note:'rooms / F&B / other departments'};
+    for(const f of F){ const tp=G('sum.payrollIncl',f), op=many(OHPAY,f);
+      deptPay[f]=tp==null?null:tp-(op??0); }
+    rows=[deptPay,
+      mkRow('Admin &amp; General — payroll',['undist.ag.pay'],'overhead wages'),
+      mkRow('Admin &amp; General — other',['undist.ag.oth'],''),
+      mkRow('IT / Telecom — payroll',['undist.it.pay'],''),
+      mkRow('IT / Telecom — other',['undist.it.oth'],''),
+      mkRow('Sales &amp; Marketing — payroll',['undist.sm.pay'],''),
+      mkRow('Sales &amp; Marketing — other',['undist.sm.oth'],''),
+      mkRow('POMEC — payroll',['undist.pomec.pay'],''),
+      mkRow('POMEC — other',['undist.pomec.oth'],''),
+      mkRow('Energy, Water and Waste',['undist.energy.oth'],'non-payroll'),
+    ];
+  }
+  /* residual so the lines always reconcile to Total revenue - GOP */
+  const other={label:full?'Departmental other costs':'Other expenses',
+    note:full?'cost of sales &amp; other departmental expenses':'residual — dept cost of sales & other dept expenses'};
   for(const f of F){ const named=rows.reduce((a,r)=>a+(r[f]??0),0);
     other[f]=totCost[f]==null?null:totCost[f]-named; }
   rows.push(other);
@@ -4719,7 +4840,11 @@ function renderExpenses(d){
     <div class="panel"><h3>Cost categories vs budget &amp; last year — ${P}</h3>
       <div class="chartbox" style="margin-top:14px"><canvas id="chExp"></canvas></div>
       <div class="small" style="margin-top:6px">Actual bars turn <b style="color:#d64545">red</b> where the category is running over budget${nOver?` (${nOver} this period)`:''}. Because cost is a "lower is better" line, every variance on this tab is signed so green = favourable.</div></div>
-    <div class="panel"><h3>Cost line items — ${P} <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+    <div class="panel"><h3>Cost line items — ${P} <input class="tblflt noprint" placeholder="${t('filter')}">
+        <span class="noprint" style="float:right;font-weight:400">
+          <button class="heatbtn ${full?'':'on'}" onclick="__setExpFull(false)">Summary</button>
+          <button class="heatbtn ${full?'on':''}" onclick="__setExpFull(true)">Full detail</button>
+        </span></h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Category</th><th>Actual</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>Per occ. room</th><th>Per avail. room</th><th>% of cost</th></tr></thead>
       <tbody>${body}${totRow}</tbody></table></div>
       <div class="small" style="margin-top:6px">The six categories are built to add up to <b>Total revenue − GOP</b>, so they reconcile to the P&amp;L cascade exactly. Payroll is shown whole (departments + overheads), which is why the overhead categories carry only their non-payroll portion — otherwise the same wages would appear twice.</div></div>
