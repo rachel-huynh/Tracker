@@ -2273,9 +2273,9 @@ const UOL_AG=['undist.ag.pay','undist.ag.oth'], UOL_SM=['undist.sm.pay','undist.
       UOL_EN=['undist.energy.oth'];
 const UOL_OH=[...UOL_AG,...UOL_SM,...UOL_IT,...UOL_PM,...UOL_EN];
 function uolTable(d){
-  const p=d.p, per=state.period; if(!p) return '';
-  const one=(path,f)=>g(p,path,per,f);
-  const many=(paths,f)=>{ let s=null; for(const pa of paths){ const v=g(p,pa,per,f); if(v!=null) s=(s??0)+v; } return s; };
+  const p=d.p; if(!p) return '';
+  const one=(path,f,per)=>g(p,path,per,f);
+  const many=(paths,f,per)=>{ let s=null; for(const pa of paths){ const v=g(p,pa,per,f); if(v!=null) s=(s??0)+v; } return s; };
   const R=(label,paths,o={})=>({label,paths:Array.isArray(paths)?paths:[paths],...o});
   const rows=[
     R('Occupancy','stats.occ',{pctVal:true,noTR:true}),
@@ -2303,40 +2303,76 @@ function uolTable(d){
     {gap:true},
     R('GOP','sum.gop',{bold:true}),
   ];
-  const TR=f=>one('rev.totalIncl',f);
+  const TR=(f,per)=>one('rev.totalIncl',f,per);
   const fmtV=(v,r)=>v==null?'':(r.pctVal?pct(v):money(v));
   const cellPct=(v,tot)=>(v==null||!tot)?'':pct(v/tot);
+  const PERS=['MTD','YTD'];
+  const SEP='border-left:2px solid var(--navy)';   // divider between the two blocks
+
+  /* ---- STR indices: current value + LAST YEAR's same-period index ----
+     LY comes from the STAR file's own 18-month Comp history (st.comp.<met>.idx aligned
+     to .months), so it needs no prior-year file. The Comp history is monthly, so an
+     exact LY figure exists for MTD only; a YTD index cannot be averaged from monthly
+     indexes without revenue weighting, so it is left blank rather than approximated —
+     the Market · STR tab carries the full index history. */
+  const gl=d.star?.glance, cs=d.star?.comp, stMk=d.star?.monthKey;
+  const lyKey=stMk?`${+stMk.slice(0,4)-1}-${stMk.slice(5,7)}`:null;
+  const idxNow=(blk,met)=>gl?.[blk]?.[met]?.idx??null;
+  const idxLy=met=>{ const a=cs?.[met]; if(!a?.months||!a.idx) return null;
+    const i=a.months.indexOf(lyKey); return i>=0?(a.idx[i]??null):null; };
+  const IDX=[['MPI','occ'],['ARI','adr'],['RGI','revpar']];
+
   let html='';
-  /* STR index rows first — value + rank, no budget (matches the source sheet) */
-  const idxRows=[['MPI',d.mpi],['ARI',d.ari],['RGI',d.rgi]];
-  for(const [nm,v] of idxRows)
-    html+=`<tr><td>${nm}</td><td>${v==null?'':idx(v)}</td><td colspan="9" class="small" style="color:var(--grey)">${v==null?'STR not loaded':'index vs comp set — no budget basis'}</td></tr>`;
-  html+=`<tr class="gap"><td colspan="11"></td></tr>`;
-  for(const r of rows){
-    if(r.gap){ html+=`<tr class="gap"><td colspan="11"></td></tr>`; continue; }
-    const a=r.paths.length>1?many(r.paths,'act'):one(r.paths[0],'act');
-    const b=r.paths.length>1?many(r.paths,'bud'):one(r.paths[0],'bud');
-    const l=r.paths.length>1?many(r.paths,'ly') :one(r.paths[0],'ly');
-    const vb=(a!=null&&b!=null)?a-b:null, vl=(a!=null&&l!=null)?a-l:null;
-    const pad=r.ind?`padding-left:${12+r.ind*14}px`:'';
-    html+=`<tr class="${r.bold?'tot':''}">
-      <td style="${pad}">${r.label}</td>
-      <td>${fmtV(a,r)}</td><td>${r.noTR?'':cellPct(a,TR('act'))}</td>
-      <td>${fmtV(b,r)}</td><td>${r.noTR?'':cellPct(b,TR('bud'))}</td>
-      <td class="${cls(r.invert?-vb:vb)}">${vb==null?'':fmtV(vb,r)}</td>
-      <td class="${cls(varPct(a,b))}">${b==null?'':pct(varPct(a,b))}</td>
-      <td>${fmtV(l,r)}</td><td>${r.noTR?'':cellPct(l,TR('ly'))}</td>
-      <td class="${cls(vl)}">${vl==null?'':fmtV(vl,r)}</td>
-      <td class="${cls(varPct(a,l))}">${l==null?'':pct(varPct(a,l))}</td></tr>`;
+  for(const [nm,met] of IDX){
+    let cells='';
+    for(const per of PERS){
+      const a=idxNow(per==='MTD'?'cm':'ytd',met), l=per==='MTD'?idxLy(met):null;
+      const first=per==='YTD'?SEP:'';
+      cells+=`<td style="${first}">${a==null?'':idx(a)}</td><td></td>`   // no budget basis for an index
+            +`<td></td><td></td><td></td><td></td>`
+            +`<td>${l==null?'':idx(l)}</td><td></td>`
+            +`<td>${(a!=null&&l!=null)?n1(a-l,1):''}</td>`
+            +`<td class="${cls(varPct(a,l))}">${l==null?'':pct(varPct(a,l))}</td>`;
+    }
+    html+=`<tr><td>${nm}</td>${cells}</tr>`;
   }
-  return `<div class="panel"><h3>P&amp;L detail — UOL report format (${per})</h3>
+  html+=`<tr class="gap"><td colspan="21"></td></tr>`;
+
+  for(const r of rows){
+    if(r.gap){ html+=`<tr class="gap"><td colspan="21"></td></tr>`; continue; }
+    const pad=r.ind?`padding-left:${12+r.ind*14}px`:'';
+    let cells='';
+    for(const per of PERS){
+      const a=r.paths.length>1?many(r.paths,'act',per):one(r.paths[0],'act',per);
+      const b=r.paths.length>1?many(r.paths,'bud',per):one(r.paths[0],'bud',per);
+      const l=r.paths.length>1?many(r.paths,'ly',per) :one(r.paths[0],'ly',per);
+      const vb=(a!=null&&b!=null)?a-b:null, vl=(a!=null&&l!=null)?a-l:null;
+      const first=per==='YTD'?SEP:'';
+      cells+=`<td style="${first}">${fmtV(a,r)}</td><td>${r.noTR?'':cellPct(a,TR('act',per))}</td>
+        <td>${fmtV(b,r)}</td><td>${r.noTR?'':cellPct(b,TR('bud',per))}</td>
+        <td class="${cls(r.invert?-vb:vb)}">${vb==null?'':fmtV(vb,r)}</td>
+        <td class="${cls(varPct(a,b))}">${b==null?'':pct(varPct(a,b))}</td>
+        <td>${fmtV(l,r)}</td><td>${r.noTR?'':cellPct(l,TR('ly',per))}</td>
+        <td class="${cls(vl)}">${vl==null?'':fmtV(vl,r)}</td>
+        <td class="${cls(varPct(a,l))}">${l==null?'':pct(varPct(a,l))}</td>`;
+    }
+    html+=`<tr class="${r.bold?'tot':''}"><td style="${pad}">${r.label}</td>${cells}</tr>`;
+  }
+
+  const grp=first=>`<th colspan="2" style="${first?SEP:''}">Actual</th><th colspan="2">Budget</th>
+      <th colspan="2">Var. vs Budget</th><th colspan="2">Last Year</th><th colspan="2">Var. vs LY</th>`;
+  const sub=first=>`<th style="${first?SEP:''}">Value</th><th>% of TR</th><th>Value</th><th>% of TR</th>
+      <th>$</th><th>%</th><th>Value</th><th>% of TR</th><th>$</th><th>%</th>`;
+  const mLbl=stMk?fmtMonthKey(stMk):fmtMonthKey(state.month);
+  return `<div class="panel"><h3>P&amp;L detail — UOL report format</h3>
     <div style="overflow-x:auto"><table class="uol"><thead>
-      <tr><th rowspan="2">Line</th><th colspan="2">Actual</th><th colspan="2">Budget</th>
-          <th colspan="2">Var. vs Budget</th><th colspan="2">Last Year</th><th colspan="2">Var. vs LY</th></tr>
-      <tr><th>Value</th><th>% of TR</th><th>Value</th><th>% of TR</th><th>$</th><th>%</th>
-          <th>Value</th><th>% of TR</th><th>$</th><th>%</th></tr></thead>
+      <tr><th rowspan="3">Line</th><th colspan="10">MTD — ${mLbl}</th>
+          <th colspan="10" style="${SEP}">YTD — ${mLbl}</th></tr>
+      <tr>${grp(false)}${grp(true)}</tr>
+      <tr>${sub(false)}${sub(true)}</tr></thead>
       <tbody>${html}</tbody></table></div>
-    <div class="small" style="margin-top:6px">Same rows and definitions as the UOL report's Dashboard sheet. % of TR divides each scenario by <b>its own</b> Total Revenue. Occupancy / ADR / RevPAR and the STR indices carry no % of TR — they aren't revenue amounts. Budget for 2026 months comes from the consolidated 2026 budget (GOP net of Marketing Fees, matching UOL).</div></div>`;
+    <div class="small" style="margin-top:6px">MTD on the left, YTD on the right — same rows and definitions as the UOL report's Dashboard sheet. % of TR divides each scenario by <b>its own</b> Total Revenue. Occupancy / ADR / RevPAR and the STR indices carry no % of TR — they aren't revenue amounts. Budget for 2026 months comes from the consolidated 2026 budget (GOP net of Marketing Fees, matching UOL).</div>
+    <div class="small" style="margin-top:4px">MPI / ARI / RGI have no budget basis — they are indexes versus the comp set. The Last-Year index is the same calendar month one year earlier, taken from the STAR file's own comp history; a YTD index cannot be averaged from monthly indexes without revenue weighting, so it is left blank here. <b>Full index history, ranks, comp-set members and daily detail are on the Market · STR tab.</b></div></div>`;
 }
 
 /* ---------------- COCKPIT ---------------- */
