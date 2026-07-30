@@ -963,6 +963,24 @@ function parsePnl(wb){
     o.name=name; out.fnbOutlets.push(o);
   }
 
+  /* ---- Undistributed / overhead department sheets — FULL expense line detail ----
+     The Summary P&L collapses each of these to one payroll total + one other-expenses
+     total; the department's own sheet carries every line (Audit Fees, Bank Charges,
+     Credit Card Commission, Training, …). Reuses the same parseExpenseLines() the Rooms
+     sheet uses. "ENERGY & POMEC " has a trailing space in the workbook — sheetByRe
+     trims sheet names, so the anchored regex still matches. */
+  out.undistDepts=[];
+  for(const [re,nm] of [[/^Administration & General$/i,'Administration & General'],
+                        [/^IT & Telecom$/i,'IT & Telecom'],
+                        [/^Sales & Marketing$/i,'Sales & Marketing'],
+                        [/^ENERGY & POMEC$/i,'Energy & POMEC']]){
+    const ws3=sheetByRe(wb,re); if(!ws3) continue;      // optional — no warning
+    const gd3=grid(ws3);
+    const o3=parseDeptSheet(gd3,MAP.deptSheet.genericRows,warns,nm);
+    o3.name=nm; o3.lines=parseExpenseLines(gd3,o3._cols,warns,nm)||[];
+    out.undistDepts.push(o3);
+  }
+
   /* ---- Tracking Segmentation ---- */
   out.seg=parseSegmentation(wb,warns);
   /* ---- other operating departments ---- */
@@ -4790,42 +4808,56 @@ function renderExpenses(d){
   if(!full){
     rows=CATS.map(([label,paths,note])=>mkRow(label,paths,note));
   } else {
-    /* Full detail keeps the SAME total by splitting every overhead category into its
-       payroll and non-payroll halves and separating departmental payroll from
-       departmental other costs:
-         Σ overhead.pay + departmental payroll = Total payroll
-         Σ overhead.oth + departmental other   = the rest of the cost base
-       so the lines still add to Total revenue − GOP exactly. */
-    const OHPAY=['undist.ag.pay','undist.it.pay','undist.sm.pay','undist.pomec.pay'];
-    const deptPay={label:'Departmental payroll',note:'rooms / F&B / other departments'};
-    for(const f of F){ const tp=G('sum.payrollIncl',f), op=many(OHPAY,f);
-      deptPay[f]=tp==null?null:tp-(op??0); }
-    rows=[deptPay,
-      mkRow('Admin &amp; General — payroll',['undist.ag.pay'],'overhead wages'),
-      mkRow('Admin &amp; General — other',['undist.ag.oth'],''),
-      mkRow('IT / Telecom — payroll',['undist.it.pay'],''),
-      mkRow('IT / Telecom — other',['undist.it.oth'],''),
-      mkRow('Sales &amp; Marketing — payroll',['undist.sm.pay'],''),
-      mkRow('Sales &amp; Marketing — other',['undist.sm.oth'],''),
-      mkRow('POMEC — payroll',['undist.pomec.pay'],''),
-      mkRow('POMEC — other',['undist.pomec.oth'],''),
-      mkRow('Energy, Water and Waste',['undist.energy.oth'],'non-payroll'),
-    ];
+    /* Full detail = the ACTUAL line items from each overhead department's own sheet
+       (Audit Fees, Bank Charges, Credit Card Commission, Training, …), which the Summary
+       P&L collapses into one payroll + one other-expenses total.
+       Rows flagged `sub` are display-only: they are NOT summed into the total, because
+       their department's group row already carries the department's whole cost. That
+       keeps the reconciliation to Total revenue − GOP intact at any level of detail. */
+    const DV=(o,k,f)=>o?.[k]?.[P]?.[f]??null;
+    const LV=(l,f)=>l?.[P]?.[f]??null;
+    rows=[];
+    for(const dd of (p.undistDepts||[])){
+      const grp={label:dd.name,group:true};
+      for(const f of F){ const a=DV(dd,'payrollIncl',f), b=DV(dd,'otherExp',f);
+        grp[f]=(a==null&&b==null)?null:(a??0)+(b??0); }
+      rows.push(grp);
+      const pr={label:'Payroll &amp; related (incl. service charge)',sub:true};
+      for(const f of F) pr[f]=DV(dd,'payrollIncl',f);
+      if(F.some(f=>pr[f]!=null)) rows.push(pr);
+      for(const l of (dd.lines||[])){
+        const r2={label:l.label,sub:true};
+        for(const f of F) r2[f]=LV(l,f);
+        if(F.some(f=>r2[f]!=null)) rows.push(r2);
+      }
+    }
+    if(!rows.length){   // no department sheets in this workbook — fall back to the summary split
+      rows=CATS.map(([label,paths,note])=>mkRow(label,paths,note));
+    } else {
+      const deptPay={label:'Departmental payroll',note:'rooms / F&amp;B / other departments — not split by line here'};
+      for(const f of F){ const tp=G('sum.payrollIncl',f);
+        let oh=null; for(const dd of p.undistDepts){ const v=DV(dd,'payrollIncl',f); if(v!=null) oh=(oh??0)+v; }
+        deptPay[f]=tp==null?null:tp-(oh??0); }
+      rows.push(deptPay);
+    }
   }
   /* residual so the lines always reconcile to Total revenue - GOP */
   const other={label:full?'Departmental other costs':'Other expenses',
     note:full?'cost of sales &amp; other departmental expenses':'residual — dept cost of sales & other dept expenses'};
-  for(const f of F){ const named=rows.reduce((a,r)=>a+(r[f]??0),0);
+  /* only COUNTED rows feed the residual — `sub` rows are the line-level breakdown of a
+     group row that is already counted, so including them would double count */
+  for(const f of F){ const named=rows.filter(r=>!r.sub).reduce((a,r)=>a+(r[f]??0),0);
     other[f]=totCost[f]==null?null:totCost[f]-named; }
   rows.push(other);
+  const counted=rows.filter(r=>!r.sub);
 
   const por=v=>div(v,d.roomsSold), par=v=>div(v,d.roomsAvail);
-  const overBud=r=>r.act!=null&&r.bud!=null&&r.act>r.bud;
+  const overBud=r=>!r.sub&&r.act!=null&&r.bud!=null&&r.act>r.bud;
   const body=rows.map(r=>`<tr class="${overBud(r)?'bad':''}">
-      <td>${r.label}${overBud(r)?' <span class="tag r">over budget</span>':''}<div class="small" style="color:var(--grey)">${r.note}</div></td>
-      <td>${money(r.act)}</td><td>${money(r.bud)}</td>
+      <td style="${r.sub?'padding-left:26px':''}${r.group?';font-weight:700':''}">${r.sub?'<span style="color:var(--grey)">'+r.label+'</span>':r.label}${overBud(r)?' <span class="tag r">over budget</span>':''}${r.note?`<div class="small" style="color:var(--grey)">${r.note}</div>`:''}</td>
+      <td${r.sub?' style="color:var(--grey)"':''}>${money(r.act)}</td><td${r.sub?' style="color:var(--grey)"':''}>${money(r.bud)}</td>
       <td class="${cls(r.bud==null?null:-(varPct(r.act,r.bud)))}">${r.bud==null?'':pct(varPct(r.act,r.bud))}</td>
-      <td>${money(r.ly)}</td>
+      <td${r.sub?' style="color:var(--grey)"':''}>${money(r.ly)}</td>
       <td class="${cls(r.ly==null?null:-(varPct(r.act,r.ly)))}">${r.ly==null?'':pct(varPct(r.act,r.ly))}</td>
       <td>${money(por(r.act))}</td><td>${money(par(r.act))}</td>
       <td>${totCost.act?pct(r.act/totCost.act):''}</td></tr>`).join('');
@@ -4835,7 +4867,7 @@ function renderExpenses(d){
       <td>${money(totCost.ly)}</td>
       <td class="${cls(totCost.ly==null?null:-(varPct(totCost.act,totCost.ly)))}">${pct(varPct(totCost.act,totCost.ly))}</td>
       <td>${money(por(totCost.act))}</td><td>${money(par(totCost.act))}</td><td>100%</td></tr>`;
-  const nOver=rows.filter(overBud).length;
+  const nOver=counted.filter(overBud).length;
 
   el.innerHTML=`
     <div class="kgrid">
@@ -4864,11 +4896,13 @@ function renderExpenses(d){
       <div class="small" style="margin-top:6px">The six categories are built to add up to <b>Total revenue − GOP</b>, so they reconcile to the P&amp;L cascade exactly. Payroll is shown whole (departments + overheads), which is why the overhead categories carry only their non-payroll portion — otherwise the same wages would appear twice.</div></div>
     ${marketingShareHtml(d)}`;
 
-  mkChart('chExp',{type:'bar',data:{labels:rows.map(r=>r.label),datasets:[
-      {label:'Actual',data:rows.map(r=>cv(r.act)),
-       backgroundColor:rows.map(r=>overBud(r)?'#d64545':'#4a7dbd')},
-      {label:'Budget',data:rows.map(r=>cv(r.bud)),backgroundColor:'rgba(201,162,39,.65)'},
-      {label:'Last year',data:rows.map(r=>cv(r.ly)),backgroundColor:'rgba(120,130,145,.45)'}]},
+  /* chart always plots the COUNTED categories, so it stays readable and stays consistent
+     with the total whichever view the table is in */
+  mkChart('chExp',{type:'bar',data:{labels:counted.map(r=>r.label),datasets:[
+      {label:'Actual',data:counted.map(r=>cv(r.act)),
+       backgroundColor:counted.map(r=>overBud(r)?'#d64545':'#4a7dbd')},
+      {label:'Budget',data:counted.map(r=>cv(r.bud)),backgroundColor:'rgba(201,162,39,.65)'},
+      {label:'Last year',data:counted.map(r=>cv(r.ly)),backgroundColor:'rgba(120,130,145,.45)'}]},
     options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,0)}},x:{ticks:{maxRotation:35,minRotation:0}}},
       maintainAspectRatio:false}});
 }
