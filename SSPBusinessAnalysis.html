@@ -1825,6 +1825,57 @@ async function parseEngPdf(buf){
   return {monthKey,wo,locs,sys,critical,items:maxItem,pages:pdf.numPages};
 }
 
+/* ---------- Room-category performance from "3. Booked vs. Stayed.xlsx" ----------
+   Three long-format sheets keyed by Source.Name ("2024.01_Room_Type_Report.xlsx"):
+     Booked vs Stayed_Nights   → Nights   (room nights sold)
+     Booked vs Stayed_Room Rev → Room Rev (room revenue)
+   plus the workbook's own Dim_Room Category for inventory and the category rollup.
+   Two things that will bite if changed:
+   1. Inventory comes from **Qnt_Breakdown2**, not Qnt_Sum. Qnt_Breakdown2 sums to 284 —
+      the hotel's sellable rooms — while Qnt_Sum is a category rollup that does NOT
+      reconcile (Superior reads 182 against breakdowns of 25+145=170).
+   2. Room_Stayed appears as BOTH the readable name ("Luxury King") and the PMS code
+      ("KGA") in the same column, so the join tries Room Type_Breakdown then Room Type_Label.
+   Rank 0 / blank = pseudo rooms (Office Rental, House Accounts, Banquet…) — excluded.
+   ADR/occupancy are NOT taken from the workbook's ADR sheet: they are derived per the
+   owner's definitions (ADR = revenue ÷ nights sold, occ = nights ÷ available,
+   RevPAR = ADR × occ) so they stay consistent when periods are aggregated. */
+function parseRoomCat(wb){
+  const S=n=>wb.Sheets[wb.SheetNames.find(s=>s.trim().toLowerCase()===n)];
+  const dimWs=S('dim_room category'), nWs=S('booked vs stayed_nights'), rWs=S('booked vs stayed_room rev');
+  if(!dimWs||!nWs||!rWs) return null;
+  const J=ws=>XLSX.utils.sheet_to_json(ws,{defval:null});
+  const inv={}, ranks={}, byLabel={}, byName={};
+  for(const r of J(dimWs)){
+    const rank=+r['Rank']; if(!rank) continue;                 // 0/blank = pseudo room
+    const cat=String(r['Room Type_Sum']||'').trim(); if(!cat) continue;
+    inv[cat]=(inv[cat]||0)+(+r['Qnt_Breakdown2']||0);
+    if(ranks[cat]==null) ranks[cat]=rank;
+    const lab=String(r['Room Type_Label']||'').trim().toUpperCase();
+    const nm =String(r['Room Type_Breakdown']||'').trim().toUpperCase();
+    if(lab) byLabel[lab]=cat;
+    if(nm)  byName[nm]=cat;
+  }
+  const catOf=v=>{ const s=String(v||'').trim().toUpperCase(); return byName[s]||byLabel[s]||null; };
+  const mkOf=s=>{ const m=String(s||'').match(/(\d{4})[.\-_](\d{1,2})/); return m?`${m[1]}-${String(+m[2]).padStart(2,'0')}`:null; };
+  /* CRITICAL: these sheets hold every figure TWICE — once as detail (Membership = a real
+     membership) and once as a room-type SUBTOTAL, where the Membership column carries the
+     room-type CODE instead of a membership. Verified on Jun-2026: subtotal rows sum to
+     5,723 nights and detail rows sum to 5,723 nights, so summing the sheet naively gives
+     exactly double (11,446) and occupancy came out at 134%. Skip the subtotal rows. */
+  const isSubtotal=m=>!!byLabel[String(m||'').trim().toUpperCase()];
+  const months={}; let unmatched=0, skipped=0;
+  const add=(rows,field,key)=>{ for(const r of rows){
+    const mk=mkOf(r['Source.Name']), v=+r[field];
+    if(!mk||!isFinite(v)) continue;
+    if(isSubtotal(r['Membership'])){ skipped++; continue; }
+    const cat=catOf(r['Room_Stayed']);
+    if(!cat){ if(v) unmatched++; continue; }
+    const C=(months[mk]=months[mk]||{}); const A=C[cat]=C[cat]||{rn:0,rev:0}; A[key]+=v; } };
+  add(J(nWs),'Nights','rn'); add(J(rWs),'Room Rev','rev');
+  return {months,inv,ranks,unmatched,skipped,totalRooms:Object.values(inv).reduce((a,b)=>a+b,0)};
+}
+
 const REV_PARSERS={keyacct:parseKeyAcct,ota:parseOta,nor1:parseNor1,fnbdisc:parseFnbDisc,fnbsum:parseFnbSum,upsell:parseUpsell,bookstay:parseBookStay};
 const REV_LABELS={keyacct:'Key accounts',ota:'OTA price observations',nor1:'Nor1 upsell transactions',fnbdisc:'F&B discounts',fnbsum:'F&B meal-period history',upsell:'FO/Reservation upsell',bookstay:'Room upgrades (booked vs stayed)'};
 
@@ -1954,6 +2005,9 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
       parsed=REV_PARSERS[type](wb);
       state.store.rev=state.store.rev||{};
       state.store.rev[type]=parsed;
+      /* the Booked-vs-Stayed workbook also carries the room-category matrices used by
+         the Rooms tab's ADR/occupancy-by-category table */
+      if(type==='bookstay'){ const rc=parseRoomCat(wb); if(rc) state.store.rev.roomCat=rc; }
       label=REV_LABELS[type]+' ingested';
     }
     toast('✔ '+label);
@@ -2620,6 +2674,53 @@ function renderExec(d){
 }
 
 /* ---------------- ROOMS ---------------- */
+/* ---- ADR / occupancy by room category (source: 3. Booked vs. Stayed.xlsx) ----
+   Owner's definitions, applied here rather than reading the workbook's ADR sheet so the
+   figures stay correct when a period spans several months:
+     ADR    = room revenue ÷ room nights sold
+     avail  = rooms in category × days in period
+     Occ    = room nights sold ÷ available room nights
+     RevPAR = ADR × Occ
+   YTD sums Jan..selected month, then re-derives the ratios from the totals. */
+function roomCatTable(d){
+  const rc=state.store.rev?.roomCat;
+  if(!rc||!rc.months) return '';
+  const P=state.period, mk=state.month;
+  const keys = P==='YTD'
+    ? Object.keys(rc.months).filter(k=>k.slice(0,4)===mk.slice(0,4)&&k<=mk).sort()
+    : (rc.months[mk]?[mk]:[]);
+  if(!keys.length) return `<div class="panel"><h3>ADR &amp; occupancy by room category — ${P}</h3>
+    <div class="small">${na('No room-type data for '+fmtMonthKey(mk)+' in "3. Booked vs. Stayed.xlsx"')}
+    Stored months: ${Object.keys(rc.months).sort().map(fmtMonthKey).join(', ')||'none'}.</div></div>`;
+  const days=keys.reduce((a,k)=>a+daysIn(k),0);
+  const agg={};
+  for(const k of keys) for(const [cat,v] of Object.entries(rc.months[k]||{})){
+    const A=agg[cat]=agg[cat]||{rn:0,rev:0}; A.rn+=v.rn||0; A.rev+=v.rev||0; }
+  const cats=Object.keys(agg).sort((a,b)=>(rc.ranks[a]??99)-(rc.ranks[b]??99));
+  const T={rn:0,rev:0,avail:0};
+  const body=cats.map(cat=>{
+    const a=agg[cat], q=rc.inv[cat]||0, avail=q*days;
+    const adr=a.rn?a.rev/a.rn:null, occ=avail?a.rn/avail:null;
+    T.rn+=a.rn; T.rev+=a.rev; T.avail+=avail;
+    return `<tr><td>${cat}</td><td>${n1(q,0)}</td><td>${n1(avail,0)}</td><td>${n1(a.rn,0)}</td>
+      <td>${occ==null?'':pct(occ)}</td><td>${money(adr)}</td>
+      <td>${money(adr!=null&&occ!=null?adr*occ:null)}</td><td>${money(a.rev)}</td>
+      <td>${T.rev?'':''}${pct(a.rev/(Object.values(agg).reduce((s,x)=>s+x.rev,0)||1))}</td></tr>`;
+  }).join('');
+  const tAdr=T.rn?T.rev/T.rn:null, tOcc=T.avail?T.rn/T.avail:null;
+  return `<div class="panel"><h3>ADR &amp; occupancy by room category — ${P}
+      <span class="small">(${keys.length} month${keys.length>1?'s':''}, ${days} days)</span>
+      <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+    <div style="overflow-x:auto"><table><thead><tr><th>Room category</th><th>Rooms</th><th>Avail. RN</th>
+      <th>RN sold</th><th>Occupancy</th><th>ADR</th><th>RevPAR</th><th>Room revenue</th><th>% of room rev</th></tr></thead>
+      <tbody>${body}
+        <tr class="tot"><td>Total</td><td>${n1(rc.totalRooms,0)}</td><td>${n1(T.avail,0)}</td><td>${n1(T.rn,0)}</td>
+        <td>${tOcc==null?'':pct(tOcc)}</td><td>${money(tAdr)}</td>
+        <td>${money(tAdr!=null&&tOcc!=null?tAdr*tOcc:null)}</td><td>${money(T.rev)}</td><td>100%</td></tr>
+      </tbody></table></div>
+    <div class="small" style="margin-top:6px">ADR = room revenue ÷ RN sold · Available RN = rooms in category × ${days} days · Occupancy = RN sold ÷ available RN · RevPAR = ADR × Occupancy. Inventory (${n1(rc.totalRooms,0)} rooms) comes from the workbook's <b>Dim_Room Category</b> breakdown quantities; pseudo rooms (office rental, house accounts, banquet) are excluded. Totals re-derive the ratios from the period's totals rather than averaging the category rows.</div>
+    <div class="small" style="margin-top:4px"><b>Basis note — this ADR is NET of service charge.</b> The room-type report is net, so it sits ~6% below the P&amp;L "Rooms" line and the STR ADR, which are both <i>incl.</i> the 5% service charge. Cross-checked for Jun-2026: room nights 5,723 here vs 5,677 in the P&amp;L (+0.8%), and revenue 20.30bn vs the P&amp;L's <i>net</i> rooms revenue of 20.59bn (−1.4%). Compare these ADRs with each other, not against the P&amp;L/STR figures.${rc.unmatched?` ${n1(rc.unmatched,0)} source row(s) carried a room type absent from Dim_Room Category and were skipped.`:''}</div></div>`;
+}
 function renderRooms(d){
   const el=$('#tab-rooms'); if(!d.ok){ el.innerHTML=noData(); return; }
   const P=state.period, p=d.p, R=p.depts.rooms||{};
@@ -2687,6 +2788,7 @@ function renderRooms(d){
           <tbody>${topSeg||'<tr><td colspan=5>'+na('Tracking Segmentation sheet not parsed')+'</td></tr>'}</tbody></table></div>
       </div>
     </div>
+    ${roomCatTable(d)}
     <div class="panel"><h3>Rooms cost lines — ${P} <span class="small">(red = &gt;50M over budget)</span>
         <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Cost line</th><th>Actual</th><th>% Rooms rev</th><th>Budget</th><th>LY</th><th>vs Bud %</th><th>vs LY %</th></tr></thead>
@@ -3221,6 +3323,8 @@ function renderMarket(d){
       <div class="chartbox"><canvas id="chBand"></canvas></div>
       <div class="small" style="margin-top:6px">Green = Sofitel SSP occupancy; shaded band = comp-set ↔ industry envelope${hasBwInd?'':' (industry rows missing — comp set shown as dashed line only)'};
         grey columns = STR weekends (Fri–Sat, daily view). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
+    <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold);margin-top:4px">
+      <h3 style="margin:0">Operator STR Benchmark</h3></div>
     ${dailyPanel}`;
 
   /* weekend-column shading plugin factory (only meaningful on the daily view) */
@@ -4068,7 +4172,21 @@ function renderForecast(d){
      consolidated 2026 budget; Last Year from the same month one year earlier. */
   let next3Html='';
   if(rf&&rf.months){
-    const fwd=rf.months.map((m,i)=>({m,i})).filter(x=>x.m>st.monthKey&&/forecast/i.test(rf.flags[x.i]||'')).slice(0,3);
+    /* Anchor on the SELECTED reporting month, not the STAR month — the STAR file often
+       lags the P&L by a month and would silently shift the window. */
+    const anchor=state.month>st.monthKey?state.month:st.monthKey;
+    const fwd=rf.months.map((m,i)=>({m,i})).filter(x=>x.m>anchor&&/forecast/i.test(rf.flags[x.i]||'')).slice(0,3);
+    if(!fwd.length){
+      /* Explain rather than vanish: the panel used to disappear entirely whenever the
+         loaded RF held no forecast month after the reporting month (e.g. an FY2024 RF
+         while viewing 2026), which just looked like the table was missing. */
+      const rfLast=rf.months[rf.months.length-1];
+      next3Html=`<div class="panel"><h3>Next 3 months — P&amp;L cascade</h3>
+        <div class="small">${na('No forecast month after '+fmtMonthKey(anchor)+' in the loaded rolling forecast')}
+        The stored RF is <b>${rf.title||'—'}</b>, covering ${fmtMonthKey(rf.months[0])} – ${fmtMonthKey(rfLast)}.
+        Drop the rolling forecast for the current fiscal year to populate this table — only the most recently
+        dropped RF file is kept, so loading an older year replaces a newer one.</div></div>`;
+    }
     if(fwd.length){
       /* full P&L cascade — same row hierarchy as the Sofitel "P&L detail" table.
          [label, RF-row key, P&L path(s) for Budget/LY, opts]. Multi-path entries
