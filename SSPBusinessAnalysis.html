@@ -643,6 +643,8 @@ function monthKeyFromText(t){                       // "May 2026" -> "2026-05"
   return i<0?null:`${m[2]}-${String(i+1).padStart(2,'0')}`;
 }
 function fmtMonthKey(k){ if(!k) return '—'; const [y,m]=k.split('-'); return MONTHS[+m-1].slice(0,3)+' '+y; }
+/* compact MMM-YY for dropdowns / axes (e.g. 2026-06 -> "Jun-26") */
+function fmtMMMYY(k){ if(!k) return '—'; const [y,m]=k.split('-'); return MONTHS[+m-1].slice(0,3)+'-'+String(y).slice(2); }
 
 let state = {
   month:null, period:'MTD', cur:'VND', lang:'en', heatMetric:'revpar', benchMetric:'gop',
@@ -961,6 +963,7 @@ function parsePnl(wb){
     const gd2=grid(ws2);
     const o=parseDeptSheet(gd2,MAP.deptSheet.outletRows,warns,name);
     o.meals=parseOutletMeals(gd2,o._cols);
+    o.lines=parseExpenseLines(gd2,o._cols,warns,name)||[];   // other-expense line items
     o.name=name; out.fnbOutlets.push(o);
   }
 
@@ -989,7 +992,12 @@ function parsePnl(wb){
   for(const [re,name] of MAP.deptSheet.otherDepts){
     const ws2=sheetByRe(wb,re);
     if(!ws2) continue;                       // optional sheets — no warning
-    const o=parseDeptSheet(grid(ws2),MAP.deptSheet.genericRows,warns,name);
+    const gd4=grid(ws2);
+    const o=parseDeptSheet(gd4,MAP.deptSheet.genericRows,warns,name);
+    o.lines=parseExpenseLines(gd4,o._cols,warns,name)||[];   // other-expense line items
+    o.cosTotal=(()=>{ const r=findRow(gd4,/^Total Cost of Sales$/i); if(r<0||!o._cols) return null;
+      return {MTD:{act:num(gd4[r][o._cols.act]),bud:num(gd4[r][o._cols.bud]),ly:num(gd4[r][o._cols.ly])},
+              YTD:{act:num(gd4[r][o._cols.yact]),bud:num(gd4[r][o._cols.ybud])}}; })();
     o.name=name; out.otherDepts.push(o);
   }
   return out;
@@ -3541,10 +3549,9 @@ function monthOptGroups(keys,cur){
   const byYear={};
   for(const k of keys){ if(!/^\d{4}-\d{2}$/.test(k)) continue; (byYear[k.slice(0,4)]=byYear[k.slice(0,4)]||[]).push(k); }
   return Object.keys(byYear).sort().reverse().map(y=>
-    `<optgroup label="${y}">`+byYear[y].sort().reverse().map(k=>{
-      const lbl=fmtMonthKey(k), short=lbl.replace(new RegExp('\\s*'+y+'$'),'')||lbl;
-      return `<option value="${k}" ${k===cur?'selected':''}>${short}</option>`;
-    }).join('')+`</optgroup>`).join('');
+    `<optgroup label="${y}">`+byYear[y].sort().reverse().map(k=>
+      `<option value="${k}" ${k===cur?'selected':''}>${fmtMMMYY(k)}</option>`
+    ).join('')+`</optgroup>`).join('');
 }
 function tsRangeSel(){ // From/To month selects, options = every month in the merged history
   const set=new Set(Object.keys(state.store.months));
@@ -4850,42 +4857,47 @@ function renderExpenses(d){
   if(!full){
     rows=CATS.map(([label,paths,note])=>mkRow(label,paths,note));
   } else {
-    /* Full detail = the ACTUAL line items from each overhead department's own sheet
-       (Audit Fees, Bank Charges, Credit Card Commission, Training, …), which the Summary
-       P&L collapses into one payroll + one other-expenses total.
+    /* Full detail = every department's OWN cost lines — payroll, cost of sales and each
+       "other expense" line item (Cleaning Supplies, Reservation Expenses, Cost of Food
+       Sold, Audit Fees, …), across Rooms + all F&B outlets + other operating depts +
+       overheads. The Summary P&L collapses each department to one payroll + one
+       other-expenses total; here every line is shown.
        Rows flagged `sub` are display-only: they are NOT summed into the total, because
-       their department's group row already carries the department's whole cost. That
+       their department's `group` row already carries that department's whole cost. That
        keeps the reconciliation to Total revenue − GOP intact at any level of detail. */
-    const DV=(o,k,f)=>o?.[k]?.[P]?.[f]??null;
-    const LV=(l,f)=>l?.[P]?.[f]??null;
+    const DV=(o,k,f)=>o?.[k]?.[P]?.[f]??null;   // parseDeptSheet field (payrollIncl/otherExp/costTotal…)
+    const LV=(l,f)=>l?.[P]?.[f]??null;          // a parsed line/cost object {MTD:{…},YTD:{…}}
+    /* ordered department list with its cost-of-sales total, cos display sub-lines, and
+       other-expense line items */
+    const DEPTS=[];
+    if(p.depts?.rooms) DEPTS.push({name:'Rooms',o:p.depts.rooms,cosTotal:null,cosSubs:[],lines:p.depts.rooms.expenses||[]});
+    for(const o of (p.fnbOutlets||[])) DEPTS.push({name:'F&B — '+o.name,o,cosTotal:o.costTotal,
+      cosSubs:[['Cost of food sold',o.costFood],['Cost of beverage',o.costBev]],lines:o.lines||[]});
+    for(const o of (p.otherDepts||[])) DEPTS.push({name:o.name,o,cosTotal:o.cosTotal,cosSubs:[],lines:o.lines||[]});
+    for(const o of (p.undistDepts||[])) DEPTS.push({name:o.name,o,cosTotal:null,cosSubs:[],lines:o.lines||[]});
     rows=[];
-    for(const dd of (p.undistDepts||[])){
-      const grp={label:dd.name,group:true};
-      for(const f of F){ const a=DV(dd,'payrollIncl',f), b=DV(dd,'otherExp',f);
-        grp[f]=(a==null&&b==null)?null:(a??0)+(b??0); }
+    for(const dg of DEPTS){
+      const grp={label:dg.name,group:true};
+      for(const f of F){ const pay=DV(dg.o,'payrollIncl',f), cos=LV(dg.cosTotal,f), oth=DV(dg.o,'otherExp',f);
+        grp[f]=(pay==null&&cos==null&&oth==null)?null:(pay??0)+(cos??0)+(oth??0); }
+      if(F.every(f=>grp[f]==null||grp[f]===0)) continue;    // skip empty departments
       rows.push(grp);
       const pr={label:'Payroll &amp; related (incl. service charge)',sub:true};
-      for(const f of F) pr[f]=DV(dd,'payrollIncl',f);
-      if(F.some(f=>pr[f]!=null)) rows.push(pr);
-      for(const l of (dd.lines||[])){
-        const r2={label:l.label,sub:true};
-        for(const f of F) r2[f]=LV(l,f);
-        if(F.some(f=>r2[f]!=null)) rows.push(r2);
-      }
+      for(const f of F) pr[f]=DV(dg.o,'payrollIncl',f);
+      if(F.some(f=>pr[f]!=null&&pr[f]!==0)) rows.push(pr);
+      for(const [clbl,c] of dg.cosSubs){ const r2={label:clbl,sub:true}; for(const f of F) r2[f]=LV(c,f);
+        if(F.some(f=>r2[f]!=null&&r2[f]!==0)) rows.push(r2); }
+      /* other-dept cost of sales with no line split → show the total as one sub */
+      if(dg.cosTotal&&!dg.cosSubs.length){ const r2={label:'Cost of sales',sub:true}; for(const f of F) r2[f]=LV(dg.cosTotal,f);
+        if(F.some(f=>r2[f]!=null&&r2[f]!==0)) rows.push(r2); }
+      for(const l of dg.lines){ const r2={label:l.label,sub:true}; for(const f of F) r2[f]=LV(l,f);
+        if(F.some(f=>r2[f]!=null&&r2[f]!==0)) rows.push(r2); }
     }
-    if(!rows.length){   // no department sheets in this workbook — fall back to the summary split
-      rows=CATS.map(([label,paths,note])=>mkRow(label,paths,note));
-    } else {
-      const deptPay={label:'Departmental payroll',note:'rooms / F&amp;B / other departments — not split by line here'};
-      for(const f of F){ const tp=G('sum.payrollIncl',f);
-        let oh=null; for(const dd of p.undistDepts){ const v=DV(dd,'payrollIncl',f); if(v!=null) oh=(oh??0)+v; }
-        deptPay[f]=tp==null?null:tp-(oh??0); }
-      rows.push(deptPay);
-    }
+    if(!rows.length) rows=CATS.map(([label,paths,note])=>mkRow(label,paths,note));  // no dept sheets → summary split
   }
   /* residual so the lines always reconcile to Total revenue - GOP */
-  const other={label:full?'Departmental other costs':'Other expenses',
-    note:full?'cost of sales &amp; other departmental expenses':'residual — dept cost of sales & other dept expenses'};
+  const other={label:full?'Unallocated / reconciliation':'Other expenses',
+    note:full?'balancing residual to Total revenue − GOP (service-charge distribution, rounding, minor cost centres)':'residual — dept cost of sales & other dept expenses'};
   /* only COUNTED rows feed the residual — `sub` rows are the line-level breakdown of a
      group row that is already counted, so including them would double count */
   for(const f of F){ const named=rows.filter(r=>!r.sub).reduce((a,r)=>a+(r[f]??0),0);
