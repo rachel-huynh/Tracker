@@ -1825,6 +1825,34 @@ async function parseEngPdf(buf){
   return {monthKey,wo,locs,sys,critical,items:maxItem,pages:pdf.numPages};
 }
 
+/* ---------- which competitive set is this STAR workbook for? ----------
+   The two comp sets ship under identical filenames (same STR ID / same
+   "Monthly STAR_119514-YYYYMM00-VND-E-live.xlsx" pattern), so routing MUST be by content.
+   Verified markers, present in every file checked (2025-01 … 2026-06):
+     Table of Contents row 4 : "Competitive Set Data Includes / Excludes Subject Property"
+     Glance / Summary / Comp row 0 : "Current Compset (incl.)" / "New Compset (After Reno) - excl"
+   Structure is otherwise identical, so parseStarMonthly() handles both unmodified.
+   NOTE the census consequence: for an INCL file "Competitive Set: Competitors" already counts
+   the whole set (5), but for an EXCL file it counts competitors only (4) — see compN in
+   renderMarket, which adds 1 back for EXCL so the rank still reads "of 5". */
+const COMPSET_MEMBERS={
+  cur:['Sofitel Saigon Plaza','Caravelle','Renaissance','Hilton','JW Marriott'],
+  new:['Sofitel Saigon Plaza','Hilton','Park Hyatt','JW Marriott','Sheraton'],
+};
+const COMPSET_LABEL={cur:'Current comp set',new:'New comp set (after reno)'};
+function starCompsetKind(wb){
+  const scan=n=>{ const ws=wb.Sheets[n]; if(!ws) return '';
+    const gd=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+    return gd.slice(0,12).flat().filter(v=>typeof v==='string').join(' | '); };
+  const txt=scan('Table of Contents')+' | '+scan('Glance')+' | '+scan('Summary');
+  return /Excludes Subject Property|New Compset/i.test(txt)?'new':'cur';
+}
+/* the STAR object for a month under the currently selected comp set, with fallback so a
+   month that only has one of the two still renders instead of going blank */
+function starOf(mk){ const m=state.store.months[mk]||{};
+  return (state.compset==='new') ? (m.starNew||m.star||null) : (m.star||m.starNew||null); }
+function compsetHasNew(){ return Object.values(state.store.months).some(m=>m&&m.starNew); }
+
 /* ---------- Room-category performance from "3. Booked vs. Stayed.xlsx" ----------
    Three long-format sheets keyed by Source.Name ("2024.01_Room_Type_Report.xlsx"):
      Booked vs Stayed_Nights   → Nights   (room nights sold)
@@ -1958,8 +1986,18 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
     }
     else if(type==='starMonthly'){ parsed=parseStarMonthly(wb);
       const key=parsed.monthKey||state.month||'unknown'; const slot=monthSlot(key);
-      slot.star=parsed; slot.warns=(slot.warns||[]).concat(parsed.warns.map(w=>'STAR: '+w));
-      label=`Monthly STAR → ${fmtMonthKey(key)}`; state.month=state.month||key;
+      /* Two comp sets are in play and their FILENAMES ARE IDENTICAL (same STR ID, same
+         Monthly STAR_119514-YYYYMM00-... pattern), so they can only be told apart by
+         content. They must go to separate slots or dropping one silently destroys the
+         other for that month. */
+      const kind=starCompsetKind(wb);
+      parsed.compsetKind=kind; parsed.inclSubject=(kind==='cur');
+      if(kind==='new'){ slot.starNew=parsed; state.compsetSeen=true; }
+      else slot.star=parsed;
+      slot.warns=(slot.warns||[]).filter(w=>!w.startsWith('STAR '+kind))
+        .concat(parsed.warns.map(w=>'STAR '+kind+': '+w));
+      label=`Monthly STAR (${kind==='new'?'NEW comp set — after reno':'current comp set'}) → ${fmtMonthKey(key)}`;
+      state.month=state.month||key;
     }
     else if(type==='starWeekly'){ parsed=parseStarWeekly(wb); state.store.pace.weekly=parsed; label='Weekly STAR (pace): '+parsed.label;
       /* bonus: its Daily by Month sheets give a PROVISIONAL month until the official Monthly STAR */
@@ -3071,6 +3109,8 @@ function usd(v,dec){ return v==null||!isFinite(v)?na():'$'+v.toLocaleString('en'
 function starMoney(v,dec){ return v==null||!isFinite(v)?na():(Math.abs(v)>20000?money(v,dec):usd(v,dec)); }
 function chgTd(v,dec=1){ return `<td class="${cls(v)}" data-v="${v==null?'':v}">${v==null?'—':(v>0?'+':'')+n1(v,dec)+'%'}</td>`; }
 window.__setSnapPer=v=>{ state.snapPer=v; renderMarket(derive()); };
+window.__setCompset=v=>{ state.compset=v; renderMarket(derive()); };
+window.__setStrLy=v=>{ state.strLy=!!v; renderMarket(derive()); };
 window.__setDailyBench=v=>{ state.dailyBench=v; renderMarket(derive()); };
 const IDX_NAMES={occ:'MPI',adr:'ARI',revpar:'RGI'};
 /* Day-of-week pattern table — lives on the Patterns & Heatmaps tab (moved off
@@ -3087,8 +3127,15 @@ function dowTableHtml(){
 }
 function renderMarket(d){
   const el=$('#tab-market');
-  const st=curMonth().star;
+  /* every panel on this tab reads through starOf()/state.compset, so the top-right
+     comp-set switch re-sources the whole page at once */
+  const st=starOf(state.month);
   if(!st){ el.innerHTML=noData(); return; }
+  const csKind=st.compsetKind||'cur';
+  const csBtns=`<span class="noprint" style="float:right;font-weight:400">
+    ${[['cur','Current comp set'],['new','New comp set (after reno)']].map(([k,l])=>
+      `<button class="heatbtn ${(state.compset||'cur')===k?'on':''}" onclick="__setCompset('${k}')"
+        ${k==='new'&&!compsetHasNew()?'disabled title="Drop the New-Compset Monthly STAR files to enable"':''}>${l}</button>`).join(' ')}</span>`;
   const gl=st.glance||{}, sum=st.summary||{};
   const [stY,stM]=st.monthKey.split('-').map(Number);
   const lyKey=(stY-1)+'-'+String(stM).padStart(2,'0');
@@ -3102,11 +3149,12 @@ function renderMarket(d){
   /* STR's own "N of X" rank text counts the WHOLE competitive set including us, so the
      census "Competitive Set: Competitors" figure is already the right denominator —
      adding 1 for the subject produced "#3 of 6" where the STAR file says "#3 of 5". */
-  const compN=st.census?.props!=null?st.census.props:5;
-  /* comp-set members: use the names the STAR export carries if it has them, else the
-     known Saigon comp set. */
-  const compSet=(st.compMembers&&st.compMembers.length)?st.compMembers
-    :['Sofitel Saigon Plaza','Caravelle','Renaissance','Hilton','JW Marriott'];
+  /* For an INCL file the census "Competitors" figure already counts the whole set (5);
+     for an EXCL (new comp set) file it counts competitors only (4), so add the subject
+     back or the rank renders "#3 of 4". Verified: INCL=5, EXCL=4 for Jun-2026. */
+  const compRaw=st.census?.props;
+  const compN=(compRaw!=null?compRaw:(csKind==='new'?4:5))+(st.inclSubject===false?1:0);
+  const compSet=(st.compMembers&&st.compMembers.length)?st.compMembers:COMPSET_MEMBERS[csKind];
   const compChips=compSet.map(n=>`<span class="tag ${/sofitel/i.test(n)?'g':''}" style="margin-right:6px">${n}</span>`).join('');
   const rankOf=met=>{ const r=st.comp?.[met]?.rank; if(!r) return null;
     for(let i=r.length-1;i>=0;i--){ const v=String(r[i]??'').trim(); if(v){ const n=parseInt(v,10); return isNaN(n)?v:n; } } return null; };
@@ -3114,6 +3162,15 @@ function renderMarket(d){
     const n=typeof rk==='number'?rk:parseInt(rk,10);
     const cl2=isNaN(n)?'':(n===1?'pos':n>=compN-1?'neg':'');
     return `<td data-v="${isNaN(n)?'':n}" class="${cl2}"><b>${isNaN(n)?rk:'#'+n+' of '+compN}</b></td>`; };
+  /* vs-Last-Year: absolute LY levels beside the current ones, read from the STAR file's own
+     18-month comp history at the same calendar month one year back (so no prior-year file
+     is needed). Only meaningful for the Current-Month block — the comp history is monthly,
+     so a YTD/3M/12M LY level cannot be taken from it without re-weighting. */
+  const showLy=!!state.strLy;
+  const lyI=(st.comp?.occ?.months||[]).indexOf(lyKey);
+  const lyAt=(met,ent)=>lyI<0?null:(st.comp?.[met]?.[ent]?.[lyI]??null);
+  const lyBtns=`<button class="heatbtn ${showLy?'':'on'}" onclick="__setStrLy(false)">This year</button>
+    <button class="heatbtn ${showLy?'on':''}" onclick="__setStrLy(true)" ${lyI<0?'disabled title="No same-month-last-year row in this STAR file\'s comp history"':''}>+ Last year</button>`;
   let snapRows='';
   for(const [met,label,fmt] of SNAP_MET){
     const pv = sum[met]?.prop?.[sp]     ?? gl[sp]?.[met]?.my;
@@ -3124,9 +3181,13 @@ function renderMarket(d){
     const ic = gl[sp+'Chg']?.[met]?.idx;
     const mv = sum[met]?.market?.[sp] ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
     const mc = sum[met]?.market?.[sp+'Chg'];
+    const lyP=showLy?lyAt(met,'my'):null, lyC=showLy?lyAt(met,'comp'):null, lyX=showLy?lyAt(met,'idx'):null;
     snapRows+=`<tr><td>${label}</td><td data-v="${pv??''}">${fmt(pv)}</td>${chgTd(pc)}
+      ${showLy?`<td data-v="${lyP??''}" style="color:var(--grey)">${fmt(lyP)}</td>`:''}
       <td data-v="${cVal??''}">${fmt(cVal)}</td>${chgTd(cChg)}
+      ${showLy?`<td data-v="${lyC??''}" style="color:var(--grey)">${fmt(lyC)}</td>`:''}
       <td data-v="${iv??''}">${idx(iv)}</td>${chgTd(ic)}
+      ${showLy?`<td data-v="${lyX??''}" style="color:var(--grey)">${idx(lyX)}</td>`:''}
       <td data-v="${mv??''}">${fmt(mv)}</td>${chgTd(mc)}${rankCell(met)}</tr>`;
   }
 
@@ -3182,7 +3243,7 @@ function renderMarket(d){
     const days=[...Array(nDays)].map((_,i)=>i+1)
       .filter(d2=>['occ','adr','revpar'].some(m=>dl[m]?.my?.[d2-1]!=null||dl[m]?.[bKey]?.[d2-1]!=null));
     const isWE=(ym,d2)=>{const w=dowOf(ym,d2);return w===4||w===5;};   // STR convention: weekend = Fri+Sat
-    const lyDl=state.store.months[lyKey]?.star?.daily||null;
+    const lyDl=starOf(lyKey)?.daily||null;
     /* aggregates: occ & RevPAR are day averages; ADR is revenue-weighted = ΣRevPAR/Σ(Occ/100) */
     const agg=(src,who,ym,set)=>{ if(!src) return {occ:null,adr:null,revpar:null};
       const take=m=>set.map(d3=>src[m]?.[who]?.[d3-1]).filter(v=>v!=null);
@@ -3249,7 +3310,7 @@ function renderMarket(d){
      `star?.daily?.occ` alone is truthy even for an empty {} skeleton (e.g. a
      provisional/partial STAR upload), which was inflating the "N stored months"
      label while those months contributed zero visible points to the chart below */
-  const hasRealDaily=k=>{ const o=state.store.months[k]?.star?.daily?.occ; if(!o) return false;
+  const hasRealDaily=k=>{ const o=starOf(k)?.daily?.occ; if(!o) return false;
     return (o.my&&o.my.some(v=>v!=null))||(o.comp&&o.comp.some(v=>v!=null)); };
   const bwAll=Object.keys(state.store.months).filter(hasRealDaily).sort();
   const wMonths=(state.tsFrom||state.tsTo)? bwAll.filter(tsInRange) : bwAll.filter(k=>k<=st.monthKey).slice(-3);
@@ -3258,7 +3319,7 @@ function renderMarket(d){
     const dayOk=(mk2,d2)=>{ const w=dowOf(mk2,d2), isW=(w===4||w===5);
       return !(dayF2==='wd'&&isW)&&!(dayF2==='we'&&!isW); };
     if(mg==='daily'){
-      for(const mk2 of wMonths){ const s2=state.store.months[mk2].star.daily?.[met2]; if(!s2) continue;
+      for(const mk2 of wMonths){ const s2=starOf(mk2)?.daily?.[met2]; if(!s2) continue;
         const [y2,m2]=mk2.split('-').map(Number); const n2=new Date(y2,m2,0).getDate();
         for(let d2=1;d2<=n2;d2++){
           if(!dayOk(mk2,d2)) continue;
@@ -3273,7 +3334,7 @@ function renderMarket(d){
         (groups[gk]=groups[gk]||[]).push(mk2); }
       for(const gk of Object.keys(groups).sort()){
         const acc={my:[],comp:[],ind:[]};
-        for(const mk2 of groups[gk]){ const s2=state.store.months[mk2].star.daily?.[met2]; if(!s2) continue;
+        for(const mk2 of groups[gk]){ const s2=starOf(mk2)?.daily?.[met2]; if(!s2) continue;
           const [y2,m2]=mk2.split('-').map(Number); const n2=new Date(y2,m2,0).getDate();
           for(let d2=1;d2<=n2;d2++){ if(!dayOk(mk2,d2)) continue;
             for(const e of ['my','comp','ind']){ const v=s2[e]?.[d2-1]; if(v!=null) acc[e].push(v); } } }
@@ -3294,12 +3355,17 @@ function renderMarket(d){
 
   el.innerHTML=`
     <div class="panel" style="padding:8px 12px;border-left:4px solid var(--navy)">
-      <h3 style="margin:0">Owner STR Benchmark</h3>
-      <div class="small">Owner-side read of the STAR data — competitive position, index trend and daily envelopes. The operator's own STR extract is reproduced at the bottom of this tab.</div></div>
+      <h3 style="margin:0">Owner STR Benchmark ${csBtns}</h3>
+      <div class="small">Owner-side read of the STAR data — competitive position, index trend and daily envelopes. The comp-set switch above re-sources <b>every panel on this tab</b>.
+        Now showing: <b>${COMPSET_LABEL[csKind]}</b> — ${compSet.join(' · ')}${st.inclSubject===false?' <span class="tag a">comp-set averages exclude Sofitel</span>':''}
+        ${(state.compset==='new'&&csKind!=='new')?' <span class="tag r">No New-Compset file stored for this month — showing the current comp set instead</span>':''}</div></div>
     <div class="cols c2">
       <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
-          <span class="noprint" style="float:right">${spBtns}</span></h3>
-        <table><thead><tr><th></th><th>Property</th><th>% Chg</th><th>Comp Set</th><th>% Chg</th><th>Index</th><th>% Chg</th><th>Market</th><th>% Chg</th><th>Rank</th></tr></thead>
+          <span class="noprint" style="float:right">${lyBtns} &nbsp;|&nbsp; ${spBtns}</span></h3>
+        <table><thead><tr><th></th><th>Property</th><th>% Chg</th>${showLy?'<th>Property LY</th>':''}
+          <th>Comp Set</th><th>% Chg</th>${showLy?'<th>Comp Set LY</th>':''}
+          <th>Index</th><th>% Chg</th>${showLy?'<th>Index LY</th>':''}
+          <th>Market</th><th>% Chg</th><th>Rank</th></tr></thead>
         <tbody>${snapRows}</tbody></table>
         <div class="small" style="margin-top:8px"><b>Competitive set (${compN}):</b><br>${compChips}</div>
         <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). Market = HCMC market row of the STAR Summary sheet${sum.occ?.market?'':' — not in this file; Industry MTD shown when a weekly/daily STR extract is loaded'}. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
@@ -3310,7 +3376,7 @@ function renderMarket(d){
         <div class="small" style="margin-top:6px">Top rows = property levels (STR Glance); bottom rows = indexes vs comp set — an index % change &lt; 0 means the market grew faster than we did.</div></div>
     </div>
     <div class="cols c2">
-      <div class="panel"><h3>Index trend ${granCtl()}</h3>
+      <div class="panel"><h3>Index trend ${showLy?'<span class="small">(dashed = same month last year)</span>':''} ${granCtl()}</h3>
         <div class="chartbox" style="margin-top:14px"><canvas id="chIdxTrend"></canvas></div>
         ${granNote('MPI / ARI / RGI are averaged across the months of each quarter')}</div>
       <div class="panel"><h3>RevPAR positioning matrix — ARI vs MPI (trail = last 12 months · gold = ${fmtMonthKey(st.monthKey)} · red ring = ${fmtMonthKey(lyKey)})</h3><div class="chartbox tall"><canvas id="chQuad"></canvas></div></div>
@@ -3386,11 +3452,20 @@ function renderMarket(d){
         ctx.fillText('Losing on both',x.getPixelForValue(81),y.getPixelForValue(72)); ctx.restore(); }}]});
   }
   const cr=st.comp?.revpar;
-  const gI=cr?granGroup(cr.months,[{data:st.comp.occ?.idx||[],agg:'avg'},{data:st.comp.adr?.idx||[],agg:'avg'},{data:cr.idx,agg:'avg'}]):null;
+  /* LY series = the same index array shifted 12 months, so each x-position compares with
+     the same calendar month a year earlier. Shifting the SERIES (rather than averaging a
+     period) keeps it exact — an index is a ratio and must not be averaged across months. */
+  const shift12=a=>a?a.map((_,i)=>i>=12?(a[i-12]??null):null):[];
+  const gI=cr?granGroup(cr.months,[{data:st.comp.occ?.idx||[],agg:'avg'},{data:st.comp.adr?.idx||[],agg:'avg'},{data:cr.idx,agg:'avg'},
+      {data:shift12(st.comp.occ?.idx),agg:'avg'},{data:shift12(st.comp.adr?.idx),agg:'avg'},{data:shift12(cr.idx),agg:'avg'}]):null;
   if(cr) mkChart('chIdxTrend',{type:'line',data:{labels:gI.labels,datasets:[
       {label:'MPI',data:gI.out[0],borderColor:'#4a7dbd',tension:.3},
       {label:'ARI',data:gI.out[1],borderColor:'#d69e2e',tension:.3},
-      {label:'RGI',data:gI.out[2],borderColor:'#1e7e4f',backgroundColor:'#1e7e4f',borderWidth:2.5,tension:.3}]},
+      {label:'RGI',data:gI.out[2],borderColor:'#1e7e4f',backgroundColor:'#1e7e4f',borderWidth:2.5,tension:.3},
+      ...(showLy?[
+      {label:'MPI LY',data:gI.out[3],borderColor:'#4a7dbd',borderWidth:1.3,borderDash:[3,3],pointRadius:0,tension:.3},
+      {label:'ARI LY',data:gI.out[4],borderColor:'#d69e2e',borderWidth:1.3,borderDash:[3,3],pointRadius:0,tension:.3},
+      {label:'RGI LY',data:gI.out[5],borderColor:'#1e7e4f',borderWidth:1.3,borderDash:[3,3],pointRadius:0,tension:.3}]:[])]},
     options:{plugins:{},scales:{y:{suggestedMin:70,suggestedMax:120}},maintainAspectRatio:false},
     plugins:[{id:'l100',afterDraw(ch){const{ctx,scales:{y}}=ch;ctx.save();ctx.strokeStyle='rgba(214,69,69,.6)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(ch.chartArea.left,y.getPixelForValue(100));ctx.lineTo(ch.chartArea.right,y.getPixelForValue(100));ctx.stroke();ctx.restore();}}]});
 }
@@ -4250,17 +4325,17 @@ function renderForecast(d){
     ${rfHtml}
     ${next3Html}
     ${paceHtml}
-    <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold)">
-      <h3 style="margin:0">Independent outlook — not derived from the rolling forecast</h3>
-      <div class="small">Everything below is this dashboard's <b>own</b> statistical projection, built from STAR trend data (same-month-last-year × trailing run-rate). It is deliberately independent of the management rolling forecast above, so the two can be compared as a cross-check rather than one confirming the other.</div></div>
-    ${adrPanelHtml}
-    <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
-      <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>
     <div class="panel"><h3>Full-year ${fcYear} outlook — ${actKeys.length} actual month(s) + ${H.length}-month projection</h3>
       <table><thead><tr><th>Month</th><th>Occ</th><th>ADR</th><th>RevPAR</th><th>RevPAR range</th><th>RGI proj</th><th>Rooms revenue</th><th>Total revenue</th><th>GOP est.</th></tr></thead>
       <tbody>${actRows}${rows}${subRow}</tbody></table>
-      <div class="small" style="margin-top:6px">Grey rows are <b>actual</b> months from each month's own P&amp;L; the rest are projected. Method: same-month-LY × (1 + median YoY of trailing 6 months); band = ±1σ of that growth. Rooms revenue = RevPAR × ${ROOMS} × days; total revenue via rooms share ${pct(share)}; GOP at trailing ${gopPcts.length}-month margin ${pct(gopPct)}. RGI projected by linear trend of last 12 months. This is a control-tool projection, not a commitment.</div>
+      <div class="small" style="margin-top:6px">Grey rows are <b>actual</b> months from each month's own P&amp;L; the rest are projected to year-end. Rooms revenue = RevPAR × ${ROOMS} × days; total revenue via rooms share ${pct(share)}; GOP at trailing ${gopPcts.length}-month margin ${pct(gopPct)}.</div>
       <div class="small">Subtotal note: Occupancy, ADR and RevPAR on the total line are <b>re-derived from the year's totals</b> (rooms sold ÷ rooms available, rooms revenue ÷ rooms sold, rooms revenue ÷ rooms available) — averaging monthly ratios would misweight short and low-occupancy months.</div></div>
+    <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold)">
+      <h3 style="margin:0">Independent outlook — not derived from the rolling forecast</h3>
+      <div class="small">The two charts below are this dashboard's <b>own</b> statistical projection, built from STAR trend data (same-month-last-year × trailing run-rate). They are deliberately independent of the management rolling forecast above, so the two can be compared as a cross-check rather than one confirming the other.</div></div>
+    ${adrPanelHtml}
+    <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
+      <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>
     ${modelHtml}
     ${otaHtml}`;
   /* forecast chart — history window can be trimmed with the shared focus period (From) */
