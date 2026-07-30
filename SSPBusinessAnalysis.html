@@ -3513,13 +3513,27 @@ window.__setTsDay=v=>{ state.tsDay=v; renderAll(); };
 window.__setMktGran=v=>{ state.mktGran=v; renderMarket(derive()); };
 function tsDayBtns(){ return [['all','All days'],['wd','Weekday'],['we','Weekend']]
   .map(([k,l])=>`<button class="heatbtn ${(state.tsDay||'all')===k?'on':''}" onclick="__setTsDay('${k}')">${l}</button>`).join(' '); }
+/* ---------- shared month-dropdown builder ----------
+   Every month picker in the app uses this: two layers (year > month) via <optgroup>,
+   newest year first and newest month first inside each year, so the current period is
+   always at the top of the list instead of buried at the bottom of a flat 24+ item list.
+   The month label drops its redundant year since the group header already carries it. */
+function monthOptGroups(keys,cur){
+  const byYear={};
+  for(const k of keys){ if(!/^\d{4}-\d{2}$/.test(k)) continue; (byYear[k.slice(0,4)]=byYear[k.slice(0,4)]||[]).push(k); }
+  return Object.keys(byYear).sort().reverse().map(y=>
+    `<optgroup label="${y}">`+byYear[y].sort().reverse().map(k=>{
+      const lbl=fmtMonthKey(k), short=lbl.replace(new RegExp('\\s*'+y+'$'),'')||lbl;
+      return `<option value="${k}" ${k===cur?'selected':''}>${short}</option>`;
+    }).join('')+`</optgroup>`).join('');
+}
 function tsRangeSel(){ // From/To month selects, options = every month in the merged history
   const set=new Set(Object.keys(state.store.months));
   for(const k of Object.keys(state.store.months)){ const c2=state.store.months[k].star?.comp;
     (c2?.occ?.months||[]).forEach(m2=>{ if(m2) set.add(m2); }); }
-  const opts=[...set].sort();
+  const opts=[...set];
   const sel=(id,cur,ph)=>`<select onchange="__setTsRange(${id==='f'?'this.value,null':'null,this.value'})" style="padding:2px 4px">
-    <option value="">${ph}</option>${opts.map(m2=>`<option value="${m2}" ${m2===cur?'selected':''}>${fmtMonthKey(m2)}</option>`).join('')}</select>`;
+    <option value="">${ph}</option>${monthOptGroups(opts,cur)}</select>`;
   return `<span class="small">Focus:</span> ${sel('f',state.tsFrom,'start')} → ${sel('t',state.tsTo,'end')}`;
 }
 
@@ -4738,7 +4752,7 @@ window.__setFxRate=(mk,v)=>{
 /* ---------------- top-level render ---------------- */
 function refreshMonths(){
   const sel=$('#selMonth'); const keys=Object.keys(state.store.months).sort().reverse();
-  sel.innerHTML=keys.map(k=>`<option value="${k}" ${k===state.month?'selected':''}>${fmtMonthKey(k)}</option>`).join('')||'<option>— no data —</option>';
+  sel.innerHTML=monthOptGroups(keys,state.month)||'<option>— no data —</option>';
   if(!state.month&&keys.length) state.month=keys[0];
 }
 /* ---------------- EXPENSES ----------------
