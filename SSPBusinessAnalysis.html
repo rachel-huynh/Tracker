@@ -1893,14 +1893,23 @@ function parseRoomCat(wb){
      exactly double (11,446) and occupancy came out at 134%. Skip the subtotal rows. */
   const isSubtotal=m=>!!byLabel[String(m||'').trim().toUpperCase()];
   const months={}; let unmatched=0, skipped=0;
-  const add=(rows,field,key)=>{ for(const r of rows){
+  /* also split each figure by whether the stay was an UPGRADE (stayed room rank >
+     booked room rank) vs booked-as-stayed (rank equal) so the render can show the
+     ADR the hotel earns on given-away upgrades vs rooms sold at their own level.
+     Downgrades (rs<rb, rare) are left out of both buckets. */
+  const add=(rows,field,key,keyUp,keyNon)=>{ for(const r of rows){
     const mk=mkOf(r['Source.Name']), v=+r[field];
     if(!mk||!isFinite(v)) continue;
     if(isSubtotal(r['Membership'])){ skipped++; continue; }
     const cat=catOf(r['Room_Stayed']);
     if(!cat){ if(v) unmatched++; continue; }
-    const C=(months[mk]=months[mk]||{}); const A=C[cat]=C[cat]||{rn:0,rev:0}; A[key]+=v; } };
-  add(J(nWs),'Nights','rn'); add(J(rWs),'Room Rev','rev');
+    const C=(months[mk]=months[mk]||{}); const A=C[cat]=C[cat]||{rn:0,rev:0,rnUp:0,revUp:0,rnNon:0,revNon:0}; A[key]+=v;
+    /* classify by the Dim category RANK of booked vs stayed. Must use catOf()+ranks,
+       not roomRank(): the monthly room-type reports name rooms by CODE (KGA, KGB, SKC…),
+       which roomRank (name-based) can't read, whereas catOf() maps codes and names alike. */
+    const cb=catOf(r['Room_Booked']); const rkB=cb!=null?ranks[cb]:null, rkS=ranks[cat];
+    if(rkB!=null&&rkS!=null){ if(rkS>rkB) A[keyUp]+=v; else if(rkS===rkB) A[keyNon]+=v; } } };
+  add(J(nWs),'Nights','rn','rnUp','rnNon'); add(J(rWs),'Room Rev','rev','revUp','revNon');
   return {months,inv,ranks,unmatched,skipped,totalRooms:Object.values(inv).reduce((a,b)=>a+b,0)};
 }
 
@@ -2720,6 +2729,7 @@ function renderExec(d){
      Occ    = room nights sold ÷ available room nights
      RevPAR = ADR × Occ
    YTD sums Jan..selected month, then re-derives the ratios from the totals. */
+window.__setRcUpg=v=>{ state.rcUpg=!!v; renderRooms(derive()); };
 function roomCatTable(d){
   const rc=state.store.rev?.roomCat;
   if(!rc||!rc.months) return '';
@@ -2731,33 +2741,57 @@ function roomCatTable(d){
     <div class="small">${na('No room-type data for '+fmtMonthKey(mk)+' in "3. Booked vs. Stayed.xlsx"')}
     Stored months: ${Object.keys(rc.months).sort().map(fmtMonthKey).join(', ')||'none'}.</div></div>`;
   const days=keys.reduce((a,k)=>a+daysIn(k),0);
+  /* The room-type report is NET of service charge; gross up by the 5% SC so ADR/RevPAR/
+     revenue are on the SAME basis as the P&L "Rooms" line and STR ADR (apple-to-apple). */
+  const SVC=1.05;
+  const upg=!!state.rcUpg;   // upgrade-ADR analysis columns (hidden until toggled)
   const agg={};
   for(const k of keys) for(const [cat,v] of Object.entries(rc.months[k]||{})){
-    const A=agg[cat]=agg[cat]||{rn:0,rev:0}; A.rn+=v.rn||0; A.rev+=v.rev||0; }
+    const A=agg[cat]=agg[cat]||{rn:0,rev:0,rnUp:0,revUp:0,rnNon:0,revNon:0};
+    A.rn+=v.rn||0; A.rev+=v.rev||0; A.rnUp+=v.rnUp||0; A.revUp+=v.revUp||0; A.rnNon+=v.rnNon||0; A.revNon+=v.revNon||0; }
   const cats=Object.keys(agg).sort((a,b)=>(rc.ranks[a]??99)-(rc.ranks[b]??99));
-  const T={rn:0,rev:0,avail:0};
+  const totRev=Object.values(agg).reduce((s,x)=>s+x.rev,0)||1;
+  const T={rn:0,rev:0,avail:0,rnUp:0,revUp:0,rnNon:0,revNon:0,costOpp:0};
+  const uHead=upg?`<th>Upgraded RN</th><th>ADR — upgraded</th><th>ADR — non-upgraded</th><th>ADR gap</th><th>Cost opportunity</th>`:'';
   const body=cats.map(cat=>{
     const a=agg[cat], q=rc.inv[cat]||0, avail=q*days;
-    const adr=a.rn?a.rev/a.rn:null, occ=avail?a.rn/avail:null;
-    T.rn+=a.rn; T.rev+=a.rev; T.avail+=avail;
+    const adr=a.rn?a.rev/a.rn*SVC:null, occ=avail?a.rn/avail:null;
+    T.rn+=a.rn; T.rev+=a.rev; T.avail+=avail; T.rnUp+=a.rnUp; T.revUp+=a.revUp; T.rnNon+=a.rnNon; T.revNon+=a.revNon;
+    let uCells='';
+    if(upg){
+      const adrUp=a.rnUp?a.revUp/a.rnUp*SVC:null, adrNon=a.rnNon?a.revNon/a.rnNon*SVC:null;
+      const gap=(adrUp!=null&&adrNon!=null)?adrNon-adrUp:null;
+      const costOpp=(gap!=null)?gap*a.rnUp:null; if(costOpp!=null) T.costOpp+=costOpp;
+      uCells=`<td data-v="${a.rnUp}">${n1(a.rnUp,0)}</td><td data-v="${adrUp??''}">${money(adrUp)}</td>
+        <td data-v="${adrNon??''}">${money(adrNon)}</td>
+        <td data-v="${gap??''}" class="${gap!=null?(gap>0?'neg':'pos'):''}">${money(gap)}</td>
+        <td data-v="${costOpp??''}" class="${costOpp>0?'neg':''}">${money(costOpp)}</td>`;
+    }
     return `<tr><td>${cat}</td><td>${n1(q,0)}</td><td>${n1(avail,0)}</td><td>${n1(a.rn,0)}</td>
       <td>${occ==null?'':pct(occ)}</td><td>${money(adr)}</td>
-      <td>${money(adr!=null&&occ!=null?adr*occ:null)}</td><td>${money(a.rev)}</td>
-      <td>${T.rev?'':''}${pct(a.rev/(Object.values(agg).reduce((s,x)=>s+x.rev,0)||1))}</td></tr>`;
+      <td>${money(adr!=null&&occ!=null?adr*occ:null)}</td><td>${money(a.rev*SVC)}</td>
+      <td>${pct(a.rev/totRev)}</td>${uCells}</tr>`;
   }).join('');
-  const tAdr=T.rn?T.rev/T.rn:null, tOcc=T.avail?T.rn/T.avail:null;
+  const tAdr=T.rn?T.rev/T.rn*SVC:null, tOcc=T.avail?T.rn/T.avail:null;
+  let uTot='';
+  if(upg){ const tAdrUp=T.rnUp?T.revUp/T.rnUp*SVC:null, tAdrNon=T.rnNon?T.revNon/T.rnNon*SVC:null;
+    const tGap=(tAdrUp!=null&&tAdrNon!=null)?tAdrNon-tAdrUp:null;
+    uTot=`<td>${n1(T.rnUp,0)}</td><td>${money(tAdrUp)}</td><td>${money(tAdrNon)}</td><td>${money(tGap)}</td><td>${money(T.costOpp)}</td>`; }
+  const upgBtn=`<button class="heatbtn ${upg?'on':''} noprint" style="float:right" onclick="__setRcUpg(${upg?'false':'true'})">${upg?'Hide upgrade ADR analysis':'Show upgrade ADR analysis'}</button>`;
   return `<div class="panel"><h3>ADR &amp; occupancy by room category — ${P}
-      <span class="small">(${keys.length} month${keys.length>1?'s':''}, ${days} days)</span>
+      <span class="small">(${keys.length} month${keys.length>1?'s':''}, ${days} days · incl. 5% SC)</span>
+      ${upgBtn}
       <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
     <div style="overflow-x:auto"><table><thead><tr><th>Room category</th><th>Rooms</th><th>Avail. RN</th>
-      <th>RN sold</th><th>Occupancy</th><th>ADR</th><th>RevPAR</th><th>Room revenue</th><th>% of room rev</th></tr></thead>
+      <th>RN sold</th><th>Occupancy</th><th>ADR</th><th>RevPAR</th><th>Room revenue</th><th>% of room rev</th>${uHead}</tr></thead>
       <tbody>${body}
         <tr class="tot"><td>Total</td><td>${n1(rc.totalRooms,0)}</td><td>${n1(T.avail,0)}</td><td>${n1(T.rn,0)}</td>
         <td>${tOcc==null?'':pct(tOcc)}</td><td>${money(tAdr)}</td>
-        <td>${money(tAdr!=null&&tOcc!=null?tAdr*tOcc:null)}</td><td>${money(T.rev)}</td><td>100%</td></tr>
+        <td>${money(tAdr!=null&&tOcc!=null?tAdr*tOcc:null)}</td><td>${money(T.rev*SVC)}</td><td>100%</td>${uTot}</tr>
       </tbody></table></div>
     <div class="small" style="margin-top:6px">ADR = room revenue ÷ RN sold · Available RN = rooms in category × ${days} days · Occupancy = RN sold ÷ available RN · RevPAR = ADR × Occupancy. Inventory (${n1(rc.totalRooms,0)} rooms) comes from the workbook's <b>Dim_Room Category</b> breakdown quantities; pseudo rooms (office rental, house accounts, banquet) are excluded. Totals re-derive the ratios from the period's totals rather than averaging the category rows.</div>
-    <div class="small" style="margin-top:4px"><b>Basis note — this ADR is NET of service charge.</b> The room-type report is net, so it sits ~6% below the P&amp;L "Rooms" line and the STR ADR, which are both <i>incl.</i> the 5% service charge. Cross-checked for Jun-2026: room nights 5,723 here vs 5,677 in the P&amp;L (+0.8%), and revenue 20.30bn vs the P&amp;L's <i>net</i> rooms revenue of 20.59bn (−1.4%). Compare these ADRs with each other, not against the P&amp;L/STR figures.${rc.unmatched?` ${n1(rc.unmatched,0)} source row(s) carried a room type absent from Dim_Room Category and were skipped.`:''}</div></div>`;
+    ${upg?`<div class="small" style="margin-top:4px"><b>Upgrade ADR analysis.</b> <b>ADR — upgraded</b> = ADR earned on room-nights where the stayed room out-ranks the booked room (a given-away upgrade); <b>ADR — non-upgraded</b> = ADR on nights booked and stayed at that category's own level. <b>ADR gap</b> = non-upgraded − upgraded (a positive gap, shown red, means upgraded guests paid less than direct bookers of that room). <b>Cost opportunity</b> = ADR gap × upgraded RN — the room revenue foregone by giving the upgrade, if those nights had instead sold at the non-upgraded rate. All ADRs incl. 5% SC.</div>`:''}
+    <div class="small" style="margin-top:4px"><b>Basis note — grossed up to INCL. the 5% service charge (×1.05).</b> The room-type report is net; it is grossed up here so these ADRs sit on the same basis as the P&amp;L "Rooms" line and STR ADR. Cross-checked for Jun-2026 (net): room nights 5,723 here vs 5,677 in the P&amp;L (+0.8%), revenue 20.30bn vs the P&amp;L's net rooms revenue 20.59bn (−1.4%).${rc.unmatched?` ${n1(rc.unmatched,0)} source row(s) carried a room type absent from Dim_Room Category and were skipped.`:''}</div></div>`;
 }
 function renderRooms(d){
   const el=$('#tab-rooms'); if(!d.ok){ el.innerHTML=noData(); return; }
@@ -3992,7 +4026,7 @@ function olsNext(vals,steps){ // simple linear projection of a series
 }
 function renderForecast(d){
   const el=$('#tab-forecast');
-  const st=curMonth().star, ch=st?.comp;
+  const st=starOf(state.month), ch=st?.comp;   // starOf → works under either comp set
   if(!ch?.revpar){ el.innerHTML=noData(); return; }
   const M=ch.revpar.months, n=M.length;
   const series={occ:ch.occ?.my||[], adr:ch.adr?.my||[], revpar:ch.revpar.my||[]};
@@ -4247,17 +4281,23 @@ function renderForecast(d){
      consolidated 2026 budget; Last Year from the same month one year earlier. */
   let next3Html='';
   if(rf&&rf.months){
-    /* Anchor on the SELECTED reporting month, not the STAR month — the STAR file often
-       lags the P&L by a month and would silently shift the window. */
+    /* Honour the shared focus period: when a Focus range is set, show the RF forecast
+       months inside it (capped at 6 for width); otherwise the default "next 3 forecast
+       months" after the selected reporting month. Anchor on the SELECTED reporting month,
+       not the STAR month — the STAR file often lags the P&L by a month. */
     const anchor=state.month>st.monthKey?state.month:st.monthKey;
-    const fwd=rf.months.map((m,i)=>({m,i})).filter(x=>x.m>anchor&&/forecast/i.test(rf.flags[x.i]||'')).slice(0,3);
+    const focused=!!(state.tsFrom||state.tsTo);
+    const fwd=focused
+      ? rf.months.map((m,i)=>({m,i})).filter(x=>/forecast/i.test(rf.flags[x.i]||'')&&tsInRange(x.m)).slice(0,6)
+      : rf.months.map((m,i)=>({m,i})).filter(x=>x.m>anchor&&/forecast/i.test(rf.flags[x.i]||'')).slice(0,3);
+    const casLabel=focused?`Forecast months in focus (${fwd.length})`:`Next ${fwd.length} months`;
     if(!fwd.length){
       /* Explain rather than vanish: the panel used to disappear entirely whenever the
          loaded RF held no forecast month after the reporting month (e.g. an FY2024 RF
          while viewing 2026), which just looked like the table was missing. */
       const rfLast=rf.months[rf.months.length-1];
-      next3Html=`<div class="panel"><h3>Next 3 months — P&amp;L cascade</h3>
-        <div class="small">${na('No forecast month after '+fmtMonthKey(anchor)+' in the loaded rolling forecast')}
+      next3Html=`<div class="panel"><h3>${casLabel} — P&amp;L cascade</h3>
+        <div class="small">${na('No forecast month '+(focused?'in the focus period':'after '+fmtMonthKey(anchor))+' in the loaded rolling forecast')}
         The stored RF is <b>${rf.title||'—'}</b>, covering ${fmtMonthKey(rf.months[0])} – ${fmtMonthKey(rfLast)}.
         Drop the rolling forecast for the current fiscal year to populate this table — only the most recently
         dropped RF file is kept, so loading an older year replaces a newer one.</div></div>`;
@@ -4298,24 +4338,26 @@ function renderForecast(d){
         return pv?pathSum(pa=>g(pv,pa,'MTD','act'),paths):null; };
       const budOf=(ym,paths)=>{ const bo=budget2026For(ym); return bo?pathSum(pa=>b26Path(bo,pa),paths):null; };
       const totCols=1+5*fwd.length;
+      /* divider only BETWEEN month blocks — none between the Line column and month 1 */
+      const msep=mi=>mi>0?'border-left:2px solid var(--navy)':'';
       const body=MET.map(row=>{
         if(row.gap) return `<tr class="gap"><td colspan="${totCols}"></td></tr>`;
         const [lbl,rk,paths,o={}]=row;
         let tds='';
-        for(const {m,i} of fwd){
+        fwd.forEach(({m,i},mi)=>{
           const f=rf.rows[rk]?rf.rows[rk][i]:null, b=budOf(m,paths), l=lyOf(m,paths);
           const fmt=v=>v==null?'':(o.pct?pct(v):moneyM(v,m));
-          tds+=`<td style="border-left:2px solid var(--navy)">${fmt(f)}</td><td>${fmt(b)}</td>
+          tds+=`<td style="${msep(mi)}">${fmt(f)}</td><td>${fmt(b)}</td>
             <td class="${cls(varPct(f,b))}">${b==null?'':pct(varPct(f,b))}</td>
             <td>${fmt(l)}</td><td class="${cls(varPct(f,l))}">${l==null?'':pct(varPct(f,l))}</td>`;
-        }
+        });
         const pad=o.ind?`padding-left:${12+o.ind*14}px`:'';
         return `<tr class="${o.bold?'tot':''}"><td style="${pad}">${lbl}</td>${tds}</tr>`;
       }).join('');
-      next3Html=`<div class="panel"><h3>Next 3 months — P&amp;L cascade (management rolling forecast vs budget &amp; last year)</h3>
+      next3Html=`<div class="panel"><h3>${casLabel} — P&amp;L cascade (management rolling forecast vs budget &amp; last year)</h3>
         <div style="overflow-x:auto"><table class="uol"><thead>
-          <tr><th rowspan="2">Line</th>${fwd.map(x=>`<th colspan="5" style="border-left:2px solid var(--navy)">${fmtMonthKey(x.m)}</th>`).join('')}</tr>
-          <tr>${fwd.map(()=>`<th style="border-left:2px solid var(--navy)">Forecast</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th>`).join('')}</tr></thead>
+          <tr><th rowspan="2">Line</th>${fwd.map((x,mi)=>`<th colspan="5" style="${msep(mi)}">${fmtMonthKey(x.m)}</th>`).join('')}</tr>
+          <tr>${fwd.map((x,mi)=>`<th style="${msep(mi)}">Forecast</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th>`).join('')}</tr></thead>
           <tbody>${body}</tbody></table></div>
         <div class="small" style="margin-top:6px">Same row hierarchy as the Sofitel <b>P&amp;L detail</b> table, for the next ${fwd.length} forecast month(s). Forecast = <b>${rf.title||'rolling forecast'}</b>; Budget = consolidated 2026 budget; LY = the same calendar month one year earlier from that month's own P&amp;L. Lines with no consolidated-budget equivalent (F&amp;B, OOD, overheads) show a blank Budget but still carry Forecast &amp; LY.</div></div>`;
     }
