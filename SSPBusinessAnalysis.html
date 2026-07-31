@@ -820,9 +820,13 @@ function budget2026SofitelSheet(wb){
   }
   return cols?{gd,cols}:null;
 }
-function budget2026MktgFees(wb){
+function budget2026MktgFees(wb){ return budget2026HotelRow(wb,/^Marketing Fees\s*$/i); }
+/* Read any single labelled row of the hotel budget sheet as 12 monthly values.
+   NOTE the regex must be anchored where it matters: /^EBITDA$/i deliberately does NOT
+   match the "EBITDAR" row that sits four rows above it. */
+function budget2026HotelRow(wb,re){
   const s=budget2026SofitelSheet(wb); if(!s) return null;
-  const r=findRow(s.gd,/^Marketing Fees\s*$/i); if(r<0) return null;
+  const r=findRow(s.gd,re); if(r<0) return null;
   const out=s.cols.map(c=>num((s.gd[r]||[])[c]));
   return out.every(v=>v!=null)?out:null;
 }
@@ -861,10 +865,50 @@ function parseBudget2026(wb){
   const val=(r,c)=>{ const v=(gd[r]||[])[c]; return typeof v==='number'?v:(v==null?null:parseFloat(v)); };
   const mktg=budget2026MktgFees(wb);
   const ood=budget2026OOD(wb);
+  /* EBITDA budget is taken from the hotel budget sheet's OWN "EBITDA" row (owner
+     pointed at it, 2026-07-31) rather than derived. On that sheet the cascade runs
+     GROSS OPERATING PROFIT → −Base Management Fee → −Incentive Management Fee →
+     −Other Taxes → EBITDAR → −Rent → EBITDA → … → −FF&E → NET RETURN, so this row is
+     BEFORE the FF&E provision. Verified Jun-26 = 11,203,883,637 (= the Consolidated
+     sheet's "Net Income from Hotel", Rent and Insurance-Owners both being nil).
+     This supersedes the old netIncomeHotel−MarketingFees derivation, which was a third
+     definition again and is what left the EBITDA budget inconsistent before. */
+  const ebit=budget2026HotelRow(wb,/^EBITDA$/i);
   const out={ __v:B26_SCHEMA,
     __warn: mktg?null:'Marketing Fees row not found — GOP budget will be overstated vs the UOL report',
     __warnOod: ood?null:'Minor-operated-dept detail not found in "3.Sofitel Saigon 2026 Budget" — Rental & Other Income budget stays blank and the OOD budget still includes Miscellaneous' };
   const oodAt=(grp,k,m)=>ood?.[grp]?.[k]?.[m-1]??null;
+
+  /* ---- consolidated / group block (below the hotel block on the same sheet) ----
+     Owner instruction 2026-07-31: the Consolidated tab's Budget column must come from
+     THIS sheet, not from the FS workbook's own budget column — the FS carries an older
+     budget vintage (Jun-26 NPAT budget 10.48bn per FS vs 11.34bn here; totalRev and
+     CENTRAL GOP happen to agree already, the rest do not).
+     Read by LABEL rather than fixed row numbers, and only ABOVE the USD repeat: the
+     entire summary is duplicated in USD lower down the sheet (row ~71 "PROFIT & LOSS
+     SUMMARY USD"), so an unbounded label search would return USD figures.
+     Verified the sheet's own cascade closes exactly for Jun-26:
+       NetIncomeFromHotel 11,203,883,637 + CENTRAL GOP 6,469,305,310
+         − TotalFixedCharges 911,927,984            = 16,761,260,963 (Before Interest)
+         − TotalInterest&Fin (−1,166,666,667)       = 17,927,927,630 (Before Depr.)
+         + Depreciation (−3,923,855,261)            = 14,004,072,369 (Before Tax)
+         − CIT 2,660,773,750                        = 11,343,298,619 (NPAT)
+     NOTE hotelGop here is the RAW "Net Income from Hotel" row, deliberately NOT the
+     marketing-fee-adjusted sum.ebitda: the group cascade only reconciles to this
+     sheet's own NPAT with the raw row, and the FS's "Sofitel GOP" is likewise the
+     after-mgmt/incentive-fee figure. Signs follow the FS convention so the render
+     needs no special-casing: finNet stays negative (negative = net income, the render
+     negates it for display) and depreciation is stored POSITIVE (the sheet has it
+     negative, the FS positive). */
+  const usdLimit=(()=>{ const r=findRow(gd,/PROFIT\s*&\s*LOSS SUMMARY\s+USD/i); return r<0?gd.length:r; })();
+  const cRow=re=>{ const r=findRow(gd,re); return (r<0||r>=usdLimit)?null:r; };
+  const CR={ nih:cRow(/^Net Income from Hotel/i), cg:cRow(/^CENTRAL GOP/i),
+    fix:cRow(/^Total Fixed Charges/i), fin:cRow(/^Total Interest and Financial Exps/i),
+    dep:cRow(/^Depreciation$/i), pbt:cRow(/^Net Profit \(Loss\) Before Tax/i),
+    tax:cRow(/^Corporate Income Tax/i), npat:cRow(/^Net Profit \(Loss\) After Tax/i) };
+  const cv2=(r,c)=>r==null?null:val(r,c);
+  out.__warnConso=CR.npat==null
+    ?'Consolidated group block not found in "Consolidated P&L Monthly" — the Consolidated tab will keep using the FS budget column':null;
   for(let m=1;m<=12;m++){
     const c=4+m; // Jan=col5
     const roomsAvail=val(4,c), roomsSold=val(5,c), adr=val(6,c);
@@ -910,9 +954,20 @@ function parseBudget2026(wb){
          excludes Marketing Fees for the same reason GOP did — deduct them here too,
          otherwise EBITDA budget stays overstated while GOP is correct. */
       sum:{gop:(deptTotal!=null&&overheads!=null)?deptTotal-overheads-(mf||0):null,
-           ebitda:netIncomeHotel==null?null:netIncomeHotel-(mf||0)},
+           /* prefer the budget sheet's own EBITDA row; fall back to the raw
+              "Net Income from Hotel" row, which equals it whenever Rent is nil */
+           ebitda:(ebit?ebit[m-1]:null)??netIncomeHotel},
       mktgFee:mktg?mktg[m-1]:null,
-      overheadsInclMktg:(overheads!=null)?overheads+(mf||0):null
+      overheadsInclMktg:(overheads!=null)?overheads+(mf||0):null,
+      /* group cascade — keys mirror the FS field names renderConso already uses */
+      conso:(()=>{
+        const nih=cv2(CR.nih,c), cg=cv2(CR.cg,c), dv=cv2(CR.dep,c);
+        return { totalRev:val(8,c), hotelGop:nih, centralGop:cg,
+          pbfc:(nih==null&&cg==null)?null:(nih??0)+(cg??0),
+          fixed:cv2(CR.fix,c), finNet:cv2(CR.fin,c),
+          dep:dv==null?null:Math.abs(dv),
+          pbt:cv2(CR.pbt,c), tax:cv2(CR.tax,c), npat:cv2(CR.npat,c) };
+      })()
     };
   }
   return out;
@@ -924,8 +979,11 @@ const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','s
    F&B/OOD revenue+profit and the 5 overhead categories (previously silently blank
    in the Next-3-months and P&L-detail Budget columns); v4 split the lumped "Minor
    Operated Department" into its six members so Miscellaneous (= "Rental & Other
-   Income") has its own budget and is no longer double-counted inside OOD. */
-const B26_SCHEMA=4;
+   Income") has its own budget and is no longer double-counted inside OOD; v5 added the
+   `conso` group cascade so the Consolidated tab's Budget column comes from this
+   workbook instead of the FS's own (older) budget column; v6 took sum.ebitda from the
+   hotel budget sheet's own "EBITDA" row instead of deriving netIncomeHotel−MarketingFees. */
+const B26_SCHEMA=6;
 function budget2026Stale(){ const b=state.store.budget2026; return !!b && b.__v!==B26_SCHEMA; }
 function b26StaleBanner(){ return budget2026Stale()
   ? `<div class="panel" style="padding:8px 12px;border-left:4px solid var(--red)"><div class="small">
@@ -1770,8 +1828,26 @@ function parseRF(wb){
     ohPOMEC:     bothOH(/^Property Opn & Maintenance$/i),
     ohEnergy:    readAfter(/^Energy$/i,ohOth),
     mktgFee:     read(/^Marketing Fees\s*$/i),
+    baseFee:     read(/^Base Management Fee/i),
+    incFee:      read(/^Incentive Management Fee/i),
+    ffe:         read(/^FF&E, Replacement Prov/i),
   });
   rows.overheads=[rows.ohAG,rows.ohSM,rows.ohIT,rows.ohPOMEC,rows.ohEnergy].reduce((a,b)=>addArr(a,b),null);
+  /* Hotel EBITDA. This template has no row called EBITDA — but its "NET RETURN" row IS
+     the same figure the monthly P&L prints as "EBITDA", verified to 0 VND on an
+     overlapping ACTUAL month (Jun-2026, RF 06A+06F vs the Jun-26 P&L):
+       GOP        RF 11,383,658,023 = P&L 11,383,658,023
+       Base fee      309,273,093    = P&L  309,273,093
+       Incentive     662,106,062    = P&L  662,106,062
+       FF&E          927,819,278    = P&L  927,819,278
+       GOP−base−inc  10,412,278,868 = P&L "Income Before Fixed Charges"
+       NET RETURN     9,363,199,256 = P&L "EBITDA"          ← same line, different label
+     So this sheet's GOP is already struck after marketing fees (marketing sits inside
+     its overheads, as in the P&L) and NET RETURN is after FF&E + insurance. Alias it
+     rather than re-deriving: an earlier attempt to rebuild it as GOP−marketing−base
+     −incentive double-deducted marketing and missed insurance, and could not be
+     reconciled because this export carries values only, no formulas. */
+  rows.ebitda=rows.netReturn||null;
   return { months:cols.map(x=>x.ym), flags:cols.map(x=>x.flag), rows, title };
 }
 /* ---------- Cashflow forecast (FY yyyy sheet) ---------- */
@@ -2529,6 +2605,12 @@ function uolTable(d){
     R('Energy, Water, and Waste',UOL_EN,{ind:1}),
     {gap:true},
     R('GOP','sum.gop',{bold:true}),
+    /* EBITDA (Hotel): Actual/LY = the monthly hotel P&L's own EBITDA row; Budget = the
+       2026 budget workbook's EBITDA row (g() applies that override for 2026 months).
+       DEFINITION CAVEAT the owner accepted: the P&L's EBITDA is struck after the FF&E
+       provision and insurance, the budget's EBITDA row before FF&E — so the variance
+       carries roughly one month of FF&E (~0.85-0.93bn). Flagged in the note below. */
+    R('EBITDA (Hotel)','sum.ebitda',{bold:true}),
   ];
   const TR=(f,per)=>one('rev.totalIncl',f,per);
   const fmtV=(v,r)=>v==null?'':(r.pctVal?pct(v):money(v));
@@ -2612,7 +2694,7 @@ function uolTable(d){
       <tr>${grp(false)}${grp(true)}</tr>
       <tr>${sub(false)}${sub(true)}</tr></thead>
       <tbody>${html}</tbody></table></div>
-    <div class="small" style="margin-top:6px">MTD on the left, YTD on the right. % of TR divides each scenario by <b>its own</b> Total Revenue. Occupancy / ADR / RevPAR and the STR indices carry no % of TR — they aren't revenue amounts. Budget for 2026 months comes from the consolidated 2026 budget (GOP net of Marketing Fees).</div>
+    <div class="small" style="margin-top:6px">MTD on the left, YTD on the right. % of TR divides each scenario by <b>its own</b> Total Revenue. Occupancy / ADR / RevPAR and the STR indices carry no % of TR — they aren't revenue amounts. Budget for 2026 months comes from the consolidated 2026 budget (GOP net of Marketing Fees). <b>EBITDA (Hotel)</b>: actual/LY are the P&amp;L's own EBITDA row (struck <i>after</i> the FF&amp;E provision and insurance); budget is the budget workbook's EBITDA row (struck <i>before</i> FF&amp;E) — so the variance carries about one month of FF&amp;E.</div>
     <div class="small" style="margin-top:4px">MPI / ARI / RGI have no budget basis — they are indexes versus the comp set. The Last-Year index comes from the STAR file's own comp history: for MTD, the same calendar month one year earlier; for YTD, rebuilt from that year's raw property-vs-comp levels weighted by days per month (an index is a ratio, so averaging monthly index values would misweight short and low-occupancy months). ARI uses the STR identity ARI = RGI ÷ MPI × 100.
       <a href="#" onclick="__goTab('market');return false" style="color:var(--red);font-weight:700;text-decoration:underline">Full index history, ranks, comp-set members and daily detail are on the Market — STR tab →</a></div></div>`;
 }
@@ -3867,18 +3949,37 @@ function renderConso(d){
   if(!fs){ el.innerHTML=noData(); return; }
   const V=(k,f='act')=>fs[k]?.[f]??null;
   const P=state.period, f= P==='YTD'?'yact':'act', fb=P==='YTD'?'ybud':'bud';
+  /* BUDGET SOURCE (owner instruction 2026-07-31): for 2026 months the consolidated
+     budget is read from the budget workbook's "Consolidated P&L Monthly" sheet rather
+     than the FS's own budget column, which is an older vintage. Any other year, or no
+     budget workbook loaded, still falls back to the FS so nothing goes blank.
+     B() replaces every former V(key,fb) in this tab. */
+  const B=key=>{
+    const b=budget2026For(state.month);
+    if(b?.conso){
+      const v= P==='YTD' ? budget2026YTD(parseInt(state.month.slice(5,7),10),'conso.'+key)
+                         : b26Path(b,'conso.'+key);
+      if(v!=null) return v;
+    }
+    return fs[key]?.[fb]??null;
+  };
+  const b26Conso=!!budget2026For(state.month)?.conso;
+  /* per-month budget for the trend charts (same precedence, month by month) */
+  const budM=(k,key)=>{ const b=budget2026For(k); const v=b?.conso?b26Path(b,'conso.'+key):null;
+    return v!=null?v:(fsAll[k]?.[key]?.bud??null); };
   const hotel=V('hotelGop',f), central=V('centralGop',f), group=hotel+central;
   const rows=[
-    ['Total revenue (Sofitel)',V('totalRev',f),V('totalRev',fb),P==='MTD'?V('totalRev','ly'):null],
-    ['Sofitel GOP',hotel,V('hotelGop',fb),P==='MTD'?V('hotelGop','ly'):null],
-    ['Central Plaza GOP',central,V('centralGop',fb),P==='MTD'?V('centralGop','ly'):null],
-    ['Profit before fixed charges (Consolidated)',V('pbfc',f),V('pbfc',fb),P==='MTD'?V('pbfc','ly'):null],
-    ['Fixed charges',V('fixed',f),V('fixed',fb),P==='MTD'?V('fixed','ly'):null],
-    ['Financial income/(exp) net',-(V('finNet',f)??0),null,P==='MTD'?-(V('finNet','ly')??0):null],
-    ['Depreciation & amortisation',V('dep',f),V('dep',fb),P==='MTD'?V('dep','ly'):null],
-    ['Profit before tax',V('pbt',f),V('pbt',fb),P==='MTD'?V('pbt','ly'):null],
-    ['CIT',V('tax',f),V('tax',fb),P==='MTD'?V('tax','ly'):null],
-    ['Net profit after tax',V('npat',f),V('npat',fb),P==='MTD'?V('npat','ly'):null],
+    ['Total revenue (Sofitel)',V('totalRev',f),B('totalRev'),P==='MTD'?V('totalRev','ly'):null],
+    ['Sofitel GOP',hotel,B('hotelGop'),P==='MTD'?V('hotelGop','ly'):null],
+    ['Central Plaza GOP',central,B('centralGop'),P==='MTD'?V('centralGop','ly'):null],
+    ['Profit before fixed charges (Consolidated)',V('pbfc',f),B('pbfc'),P==='MTD'?V('pbfc','ly'):null],
+    ['Fixed charges',V('fixed',f),B('fixed'),P==='MTD'?V('fixed','ly'):null],
+    /* financial result is shown as income-positive, so negate budget the same way as actual */
+    ['Financial income/(exp) net',-(V('finNet',f)??0),B('finNet')==null?null:-B('finNet'),P==='MTD'?-(V('finNet','ly')??0):null],
+    ['Depreciation & amortisation',V('dep',f),B('dep'),P==='MTD'?V('dep','ly'):null],
+    ['Profit before tax',V('pbt',f),B('pbt'),P==='MTD'?V('pbt','ly'):null],
+    ['CIT',V('tax',f),B('tax'),P==='MTD'?V('tax','ly'):null],
+    ['Net profit after tax',V('npat',f),B('npat'),P==='MTD'?V('npat','ly'):null],
     /* blank (not N/A, not 0%) wherever the FS carries no budget or no LY for that line —
        e.g. financial income/(expense) has no budget at all */
   ].map(r=>`<tr class="${/Net profit/.test(r[0])?'tot':''}"><td>${r[0]}</td><td>${money(r[1])}</td>
@@ -3904,14 +4005,14 @@ function renderConso(d){
   const contrib= group? `${pct(hotel/group)} Sofitel / ${pct(central/group)} Central Plaza` : '—';
   /* top 5 things to look at — consolidated */
   const alC=[];
-  const npV=varPct(V('npat',f),V('npat',fb));
-  if(npV!=null) alC.push([npV<-.05?'crit':npV<0?'warn':'good','NPAT vs budget '+pct(npV),`${money(V('npat',f))} vs budget ${money(V('npat',fb))}${P==='MTD'&&V('npat','ly')!=null?' · vs LY '+pct(varPct(V('npat',f),V('npat','ly'))):''}.`]);
-  const hgV=varPct(hotel,V('hotelGop',fb));
-  if(hgV!=null) alC.push([hgV<-.05?'crit':hgV<0?'warn':'good','Sofitel GOP vs budget '+pct(hgV),`${money(hotel)} vs ${money(V('hotelGop',fb))} — see the Sofitel Saigon Plaza tab for the driver bridge.`]);
-  const cgV=varPct(central,V('centralGop',fb));
-  if(cgV!=null) alC.push([cgV<-.03?'crit':cgV<0?'warn':'good','Central Plaza NOI vs budget '+pct(cgV),`${money(central)} vs ${money(V('centralGop',fb))} — cost detail on the Central Plaza tab.`]);
-  const fxV=varPct(V('fixed',f),V('fixed',fb));
-  if(fxV!=null&&fxV>.05) alC.push(['warn','Fixed charges over budget '+pct(fxV),`${money(V('fixed',f))} vs ${money(V('fixed',fb))} — insurance / owner's expense drift.`]);
+  const npV=varPct(V('npat',f),B('npat'));
+  if(npV!=null) alC.push([npV<-.05?'crit':npV<0?'warn':'good','NPAT vs budget '+pct(npV),`${money(V('npat',f))} vs budget ${money(B('npat'))}${P==='MTD'&&V('npat','ly')!=null?' · vs LY '+pct(varPct(V('npat',f),V('npat','ly'))):''}.`]);
+  const hgV=varPct(hotel,B('hotelGop'));
+  if(hgV!=null) alC.push([hgV<-.05?'crit':hgV<0?'warn':'good','Sofitel GOP vs budget '+pct(hgV),`${money(hotel)} vs ${money(B('hotelGop'))} — see the Sofitel Saigon Plaza tab for the driver bridge.`]);
+  const cgV=varPct(central,B('centralGop'));
+  if(cgV!=null) alC.push([cgV<-.03?'crit':cgV<0?'warn':'good','Central Plaza NOI vs budget '+pct(cgV),`${money(central)} vs ${money(B('centralGop'))} — cost detail on the Central Plaza tab.`]);
+  const fxV=varPct(V('fixed',f),B('fixed'));
+  if(fxV!=null&&fxV>.05) alC.push(['warn','Fixed charges over budget '+pct(fxV),`${money(V('fixed',f))} vs ${money(B('fixed'))} — insurance / owner's expense drift.`]);
   if(V('finNet',f)!=null) alC.push([V('finNet',f)<0?'info':'good','Net financial result '+money(-(V('finNet',f)??0)),'Interest & financial income/(expense), net.']);
   if(group&&V('hotelGop','ly')!=null&&V('centralGop','ly')!=null){
     const shTY=central/group, grpLY=(V('hotelGop','ly')??0)+(V('centralGop','ly')??0), shLY=grpLY?V('centralGop','ly')/grpLY:null;
@@ -3923,10 +4024,10 @@ function renderConso(d){
     ${topC.map((a,i)=>`<div class="alert ${a[0]}"><div class="h">${i+1}. ${a[1]}</div><div class="d">${a[2]}</div></div>`).join('')}</div>`:'';
   el.innerHTML=`
     <div class="kgrid">
-      ${kpiCard('Sofitel GOP',money(hotel),varPct(hotel,V('hotelGop',fb)),P==='MTD'?varPct(hotel,V('hotelGop','ly')):null)}
-      ${kpiCard('Central Plaza GOP',money(central),varPct(central,V('centralGop',fb)),P==='MTD'?varPct(central,V('centralGop','ly')):null)}
+      ${kpiCard('Sofitel GOP',money(hotel),varPct(hotel,B('hotelGop')),P==='MTD'?varPct(hotel,V('hotelGop','ly')):null)}
+      ${kpiCard('Central Plaza GOP',money(central),varPct(central,B('centralGop')),P==='MTD'?varPct(central,V('centralGop','ly')):null)}
       ${kpiCard('Consolidated GOP contribution',contrib,null,null)}
-      ${kpiCard('NPAT',money(V('npat',f)),varPct(V('npat',f),V('npat',fb)),P==='MTD'?varPct(V('npat',f),V('npat','ly')):null)}
+      ${kpiCard('NPAT',money(V('npat',f)),varPct(V('npat',f),B('npat')),P==='MTD'?varPct(V('npat',f),V('npat','ly')):null)}
       ${kpiCard('FX ref rate',fs.fxRate?n1(fs.fxRate,0)+' ₫/$':na('FS note not found'),null,null)}
     </div>
     <div class="cols c2">
@@ -3936,7 +4037,7 @@ function renderConso(d){
     <div class="cols c2">
       <div class="panel"><h3>Consolidated cascade — ${P}</h3>
         <table><thead><tr><th>Line</th><th>Actual</th><th>Budget</th><th>LY</th><th>Var %</th></tr></thead><tbody>${rows}</tbody></table>
-        <div class="small" style="margin-top:6px">Central Plaza occupancy/yield is not disclosed in the FS workbook — only its GOP. Reconciliation: Sofitel GOP per FS ${money(hotel)} vs P&L GOP ${d.ok?money(state.period==='YTD'?g(d.p,'sum.gop','YTD','act'):d.gop.act):'—'} (FS is after mgmt/incentive fees — see cascade).</div></div>
+        <div class="small" style="margin-top:6px">Budget is read from the <b>${b26Conso?'2026 Consolidated Budget workbook ("Consolidated P&amp;L Monthly" sheet)':'FS workbook\'s own budget column'}</b>${b26Conso?'':' — drop the 2026 Consolidated Budget to use it instead'}. Central Plaza occupancy/yield is not disclosed in the FS workbook — only its GOP. Reconciliation: Sofitel GOP per FS ${money(hotel)} vs P&L GOP ${d.ok?money(state.period==='YTD'?g(d.p,'sum.gop','YTD','act'):d.gop.act):'—'} (FS is after mgmt/incentive fees — see cascade).</div></div>
       <div class="panel"><h3>Net profit after tax — trend ${granCtl()}</h3>
         <div class="chartbox" style="margin-top:14px"><canvas id="chNpat"></canvas></div>
         <div class="small" style="margin-top:6px">Consolidated NPAT from the stored FS months — actual vs budget vs last year.</div>
@@ -3950,7 +4051,7 @@ function renderConso(d){
   const ks=keys;
   /* NPAT trend — actual / budget / LY */
   const gN=granGroup(ks,[['act'],['bud'],['ly']].map(([fld])=>(
-    {data:ks.map(k=>cvM(fsAll[k].npat?.[fld],k)),agg:'sum'})));
+    {data:ks.map(k=>cvM(fld==='bud'?budM(k,'npat'):fsAll[k].npat?.[fld],k)),agg:'sum'})));
   mkChart('chNpat',{type:'line',data:{labels:gN.labels,datasets:[
     {label:'NPAT actual',data:gN.out[0],borderColor:'#0B1F3A',backgroundColor:'#0B1F3A',borderWidth:2.5,pointRadius:2,tension:.3},
     {label:'NPAT budget',data:gN.out[1],borderColor:'#C9A227',borderWidth:1.6,borderDash:[6,4],pointRadius:0,tension:.3},
@@ -3964,7 +4065,7 @@ function renderConso(d){
   const SER=[['hotelGop','act'],['centralGop','act'],['hotelGop','bud'],['centralGop','bud'],
              ['hotelGop','ly'],['centralGop','ly']];
   const gG=granGroup(ks,SER.map(([key,fld])=>(
-    {data:ks.map(k=>cvM(fsAll[k][key]?.[fld],k)),agg:'sum'})));
+    {data:ks.map(k=>cvM(fld==='bud'?budM(k,key):fsAll[k][key]?.[fld],k)),agg:'sum'})));
   const O=gG.out;
   mkChart('chGopCmp',{type:'bar',data:{labels:gG.labels,datasets:[
     {type:'bar',label:'Sofitel actual',data:O[0],backgroundColor:'rgba(201,162,39,.85)',order:5},
@@ -4587,6 +4688,12 @@ function renderForecast(d){
         ['Energy, Water, and Waste','ohEnergy',UOL_EN,{ind:1}],
         {gap:1},
         ['GOP','gop','sum.gop',{bold:1}],
+        /* EBITDA (Hotel): Forecast = the RF's "NET RETURN" row, which parseRF verified
+           IS the P&L's EBITDA line (identical to 0 VND on the overlapping actual month).
+           Budget = the budget workbook's EBITDA row; LY = prior-year P&L EBITDA.
+           Basis caveat (owner-accepted): Forecast/LY are after FF&E, the Budget row is
+           before it, so the variance carries about a month of FF&E. */
+        ['EBITDA (Hotel)','ebitda','sum.ebitda',{bold:1}],
       ];
       const pathSum=(fn,paths)=>{ if(!paths) return null; const arr=Array.isArray(paths)?paths:[paths];
         let s=null; for(const pa of arr){ const v=fn(pa); if(v!=null) s=(s??0)+v; } return s; };
@@ -4615,7 +4722,7 @@ function renderForecast(d){
           <tr><th rowspan="2">Line</th>${fwd.map((x,mi)=>`<th colspan="5" style="${msep(mi)}">${fmtMonthKey(x.m)}</th>`).join('')}</tr>
           <tr>${fwd.map((x,mi)=>`<th style="${msep(mi)}">Forecast</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th>`).join('')}</tr></thead>
           <tbody>${body}</tbody></table></div>
-        <div class="small" style="margin-top:6px">Same row hierarchy as the Sofitel <b>P&amp;L detail</b> table, for the next ${fwd.length} forecast month(s). Forecast = <b>${rf.title||'rolling forecast'}</b>; Budget = consolidated 2026 budget; LY = the same calendar month one year earlier from that month's own P&amp;L. Lines with no consolidated-budget equivalent (F&amp;B, OOD, overheads) show a blank Budget but still carry Forecast &amp; LY.</div></div>`;
+        <div class="small" style="margin-top:6px">Same row hierarchy as the Sofitel <b>P&amp;L detail</b> table, for the next ${fwd.length} forecast month(s). Forecast = <b>${rf.title||'rolling forecast'}</b>; Budget = consolidated 2026 budget; LY = the same calendar month one year earlier from that month's own P&amp;L. Lines with no consolidated-budget equivalent (F&amp;B, OOD, overheads) show a blank Budget but still carry Forecast &amp; LY. <b>EBITDA (Hotel)</b> forecast is the rolling forecast's <b>NET RETURN</b> row, which is the same line the P&amp;L calls EBITDA (verified identical on the overlapping actual month). Note the bases differ: Forecast and LY are struck <i>after</i> the FF&amp;E provision, the budget workbook's EBITDA row <i>before</i> it, so that variance carries about one month of FF&amp;E.</div></div>`;
     }
   }
 
