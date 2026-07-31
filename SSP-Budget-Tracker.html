@@ -498,15 +498,21 @@ function parseDetail(name,rows){
   let colAmt=colOf(H,c=>norm(c).startsWith('total amount'));
   if(colAmt<0) colAmt=colOf(H,c=>norm(c).startsWith('amount'));
   if(colAmt<0) return null;
-  const items=[]; let group='',category='';
+  const items=[]; let group='',category='',subject='',subgroup='',emitted=false;
   for(let r=hr+2;r<rows.length;r++){
     const row=rows[r]||[]; const a=row[0];
     const dD=s(row[3])||s(row[4]); const dB=s(row[1]), dC=s(row[2]);
     const amt=n(row[colAmt]);
     const isNo = (typeof a==='number') || (/^\d+(\.\d+)?$/.test(s(a)));
     if(!isNo){
-      if(dB&&!dD){ group=dB; category=dB; continue; }
-      if(dC&&!dD){ category=dC; continue; }
+      if(dB&&!dD){ group=dB; category=dB; subject=''; subgroup=''; emitted=false; continue; }
+      if(dC&&!dD){ category=dC; subject=''; subgroup=''; emitted=false; continue; }
+      /* dòng mô tả KHÔNG đánh số = tên món (bàn, ghế, TV panel…); dòng đánh số bên dưới
+         chỉ ghi kích thước. Giữ lại để biết "overall size 2450x2750mm" là món gì. */
+      if(dD&&!/^(the contractor|notwithstanding|we hereby|allow )/i.test(dD)&&dD.length<=400){
+        if(!emitted&&subject) subgroup=subject;   // dòng trước đó chỉ là tiêu đề nhóm
+        subject=dD; emitted=false;
+      }
       continue;
     }
     const desc=dD||dC||dB; if(!desc) continue;
@@ -518,7 +524,9 @@ function parseDetail(name,rows){
     let total=amt; if(total==null&&qty!=null&&rate!=null) total=qty*rate;
     if(total==null&&!inclFlag&&rate==null) continue;
     items.push({ id:name.replace(/[^A-Za-z0-9]/g,'')+'-r'+r, sheet:name, group, category,
+      subgroup:subgroup||undefined, subject:(subject&&norm(subject)!==norm(desc))?subject:undefined,
       no:s(a), desc, qty, unit:s(row[colUnit]), supply:sup, install:ins, rate, total:total||0, incl:inclFlag||undefined });
+    emitted=true;
   }
   return items.length?items:null;
 }
@@ -1413,14 +1421,17 @@ function renderCompare(){
 function cmpRows(){
   const A=ver(cmpState.a),B=ver(cmpState.b); const rows=[];
   if(cmpState.level==='item'){
-    // occurrence-indexed key: survives QS renumbering, disambiguates repeated descriptions
+    // occurrence-indexed key: survives QS renumbering, disambiguates repeated descriptions.
+    // Tên món (subject) chỉ đưa vào khóa khi CẢ HAI phiên bản đều có — để không phá việc
+    // so sánh với các phiên bản đã đọc bằng bản cũ (chưa có trường này).
+    const useSubj=(A.items||[]).some(i=>i.subject)&&(B.items||[]).some(i=>i.subject);
     const keyed=list=>{ const c={}; const m=new Map();
-      for(const i of (list||[])){ const b=norm(i.sheet)+'||'+norm(i.category||i.group)+'||'+norm(i.desc); c[b]=(c[b]||0)+1; m.set(b+'#'+c[b],i); } return m; };
+      for(const i of (list||[])){ const b=norm(i.sheet)+'||'+norm(i.category||i.group)+'||'+(useSubj?norm(i.subject)+'||':'')+norm(i.desc); c[b]=(c[b]||0)+1; m.set(b+'#'+c[b],i); } return m; };
     const mA=keyed(A.items), mB=keyed(B.items);
     const all=new Set([...mA.keys(),...mB.keys()]);
     for(const k of all){ const a=mA.get(k),b=mB.get(k); const src=b||a;
       if(cmpState.sect!=='__all'&&src.sheet!==cmpState.sect) continue;
-      rows.push({k,name:src.desc,sub:src.category||src.group||'',sheet:src.sheet,
+      rows.push({k,name:itemLabel(src),sub:itemCtx(src),sheet:src.sheet,subject:src.subject||'',desc:src.desc,
         aQty:a?a.qty:null,bQty:b?b.qty:null,aRate:a?a.rate:null,bRate:b?b.rate:null,
         a:a?a.total:null,b:b?b.total:null,status:!a?'added':(!b?'removed':'')}); }
   } else if(cmpState.level==='room'){
@@ -1500,7 +1511,7 @@ function renderEstimate(){
     const e=itemEff(v,it);
     html+=`<tr style="${e.inc?'':'opacity:.45'}">
       <td><input type="checkbox" ${e.inc?'checked':''} onchange="App.ovInc('${it.id}',this.checked)"></td>
-      <td>${refLinkify(it.desc)}${it.incl?' <span class="chip n">Incl.</span>':''}${e.changed?` <span class="chip a">${t('modified')}</span>`:''}</td>
+      <td>${refLinkify(itemLabel(it))}${it.incl?' <span class="chip n">Incl.</span>':''}${e.changed?` <span class="chip a">${t('modified')}</span>`:''}</td>
       <td class="num"><input type="number" step="any" value="${e.qty==null?'':e.qty}" style="width:90px" onchange="App.ovQty('${it.id}',this.value)"></td>
       <td>${esc(it.unit)}</td>
       <td class="num"><input type="number" step="any" value="${e.rate==null?'':e.rate}" style="width:120px" onchange="App.ovRate('${it.id}',this.value)"></td>
@@ -1544,6 +1555,20 @@ function refLinkify(txt){ return esc(txt).replace(/\b([A-Z]{2,3}-\d{2}[A-Z]?)\b/
 /* ============================== render: VE studio ============================== */
 let qc={desc:'',qty:1,unit:'',baseRate:'',newRate:'',link:''};
 let veState={q:'',study:'__all',status:'__all',sort:'new'};
+/* Dòng BOQ chỉ ghi kích thước ("overall size 2450x2750mm") thì ghép tên món ở dòng trên vào,
+   để biết đó là món nội thất nào. */
+function itemLabel(it){ const d=s(it.desc); let subj=s(it.subject);
+  if(!subj) return d;
+  /* chỉ ghép tên món khi dòng này tự nó không nói lên là món gì:
+     chỉ ghi kích thước, hoặc là mệnh đề nối ("to bathroom floor"), hoặc gần như không có chữ */
+  const isSize=/^(overall\s+)?size\b/i.test(d)||/^[\d(]\s*\d*\s*[x×]/i.test(d)||/^\d+\s*mm\b/i.test(d);
+  const isCont=/^(to|for|at|in|on|incl|including|with|as)\b/i.test(d);
+  const words=(d.match(/[A-Za-zÀ-ỹ]{3,}/g)||[]).length;
+  if(isSize||isCont||words<=1){
+    if(subj.length>64) subj=subj.slice(0,64).replace(/[\s,;:]+$/,'')+'…';   // giữ kích thước luôn nhìn thấy
+    return subj+' — '+d; }
+  return d; }
+function itemCtx(it){ return [s(it.subgroup),s(it.category)||s(it.group)].filter(Boolean).join(' · '); }
 function fmtQty(v){ if(v==null||v==='') return '—'; const x=+v; if(!isFinite(x)) return s(v); return x.toLocaleString('en-US',{maximumFractionDigits:2}); }
 /* unique picker entries: same description can exist on several sheets/categories with different qty & rate */
 let qcLinkMap=new Map();
@@ -2185,14 +2210,30 @@ const App={
    const add=(sheetName,aoa,cols)=>{ const ws=XLSX.utils.aoa_to_sheet(aoa); if(cols) ws['!cols']=cols; XLSX.utils.book_append_sheet(wb,ws,sheetName); };
    const v=activeVer();
    if(state.tab==='compare'){ const rows=cmpRows(); const A=ver(cmpState.a),B=ver(cmpState.b);
-     const aoa=[['Compare: A = '+(A?A.name:'')+' → B = '+(B?B.name:'')+' · '+t('level')+': '+cmpState.level+(cmpState.level==='section'&&cmpState.scope!=='__all'?' · '+cmpState.scope:'')],
-       [t('name'),t('section'),t('sheet'),'A (VND)','B (VND)',t('diff'),'Δ%','Status']];
-     for(const r of rows) aoa.push([r.name,r.sub||'',r.sheet||'',r.a,r.b,r.d,r.dp,r.status||'']);
-     add('Compare',aoa,[{wch:52},{wch:24},{wch:18},{wch:16},{wch:16},{wch:15},{wch:8},{wch:9}]);
-   } else if(state.tab==='estimate'&&v){ const aoa=[[t('sheet'),t('section'),'No',t('desc'),t('qty'),t('unit'),t('rate'),'Base total','Adj. total','Δ',t('inc')]];
-     for(const it of v.items){ const e=itemEff(v,it); aoa.push([it.sheet,it.category||it.group,it.no,it.desc,e.qty,it.unit,e.rate,it.total,e.total,e.total-it.total,e.inc?'Y':'N']); }
-     for(const ni of (v.newItems||[])){ const tt=(n(ni.qty)||0)*(n(ni.rate)||0); aoa.push(['(new)',ni.category,'',ni.desc,ni.qty,ni.unit,ni.rate,0,tt,tt,ni.inc!==false?'Y':'N']); }
-     add('BOQ',aoa,[{wch:20},{wch:26},{wch:6},{wch:60},{wch:10},{wch:7},{wch:12},{wch:15},{wch:15},{wch:13},{wch:5}]);
+     const isItem=cmpState.level==='item';
+     const aoa=[['Compare: A = '+(A?A.name:'')+' → B = '+(B?B.name:'')+' · '+t('level')+': '+cmpState.level+(cmpState.level==='section'&&cmpState.scope!=='__all'?' · '+cmpState.scope:'')]];
+     aoa.push(isItem
+       ? [t('item'),t('desc'),t('section'),t('sheet'),
+          t('qty')+' A',t('qty')+' B',t('qty')+' Δ',
+          t('rate')+' A',t('rate')+' B',t('rate')+' Δ',t('rate')+' Δ%',
+          t('amount')+' A',t('amount')+' B',t('diff'),'Δ%','Status']
+       : [t('name'),t('section'),t('sheet'),'A (VND)','B (VND)',t('diff'),'Δ%','Status']);
+     for(const r of rows){
+       if(isItem){
+         const dq=(r.aQty!=null&&r.bQty!=null)?r.bQty-r.aQty:'';
+         const dr=(r.aRate!=null&&r.bRate!=null)?r.bRate-r.aRate:'';
+         const drp=(r.aRate&&r.bRate!=null)?r.bRate/r.aRate-1:'';
+         aoa.push([r.subject||'',r.desc!==undefined?r.desc:r.name,r.sub||'',r.sheet||'',
+           r.aQty,r.bQty,dq, r.aRate,r.bRate,dr,drp, r.a,r.b,r.d,r.dp,r.status||'']);
+       } else aoa.push([r.name,r.sub||'',r.sheet||'',r.a,r.b,r.d,r.dp,r.status||'']);
+     }
+     add('Compare',aoa, isItem
+       ? [{wch:40},{wch:52},{wch:24},{wch:18},{wch:11},{wch:11},{wch:11},{wch:14},{wch:14},{wch:14},{wch:9},{wch:16},{wch:16},{wch:15},{wch:8},{wch:11}]
+       : [{wch:52},{wch:24},{wch:18},{wch:16},{wch:16},{wch:15},{wch:8},{wch:9}]);
+   } else if(state.tab==='estimate'&&v){ const aoa=[[t('sheet'),t('section'),t('item'),'No',t('desc'),t('qty'),t('unit'),t('rate'),'Base total','Adj. total','Δ',t('inc')]];
+     for(const it of v.items){ const e=itemEff(v,it); aoa.push([it.sheet,itemCtx(it),it.subject||'',it.no,it.desc,e.qty,it.unit,e.rate,it.total,e.total,e.total-it.total,e.inc?'Y':'N']); }
+     for(const ni of (v.newItems||[])){ const tt=(n(ni.qty)||0)*(n(ni.rate)||0); aoa.push(['(new)',ni.category,'','',ni.desc,ni.qty,ni.unit,ni.rate,0,tt,tt,ni.inc!==false?'Y':'N']); }
+     add('BOQ',aoa,[{wch:20},{wch:26},{wch:40},{wch:6},{wch:60},{wch:10},{wch:7},{wch:12},{wch:15},{wch:15},{wch:13},{wch:5}]);
    } else if(state.tab==='ve'){ const aoa=[[t('optTitle'),t('study'),t('qty'),t('unit'),t('curRate'),t('newRate'),t('variation'),'Δ%',t('include'),t('notes')]];
      for(const o of state.options){ const r=veCalc(o.baseRate,o.newRate,o.qty); aoa.push([o.title,o.study,o.qty,o.unit,n(o.baseRate),n(o.newRate),r.vari,r.p,o.include?'Y':'N',o.notes]); }
      add('VE Options',aoa,[{wch:38},{wch:16},{wch:9},{wch:7},{wch:13},{wch:13},{wch:16},{wch:8},{wch:8},{wch:42}]);
@@ -2257,12 +2298,12 @@ const App={
        for(const p of su.perKey) s1.push([p.name,p.totalVND,p.perKeyUSD?Math.round(p.perKeyUSD):'']); } }
    const ws1=XLSX.utils.aoa_to_sheet(s1); ws1['!cols']=[{wch:52},{wch:18},{wch:16},{wch:18},{wch:10}];
    XLSX.utils.book_append_sheet(wb,ws1,'Summary');
-   const r2=[[t('sheet'),t('section'),'No',t('desc'),t('qty'),t('unit'),t('rate'),'Base total','Adj. qty','Adj. rate','Adj. total','Δ',t('inc')]];
+   const r2=[[t('sheet'),t('section'),t('item'),'No',t('desc'),t('qty'),t('unit'),t('rate'),'Base total','Adj. qty','Adj. rate','Adj. total','Δ',t('inc')]];
    for(const it of v.items){ const e=itemEff(v,it);
-     r2.push([it.sheet,it.category||it.group,it.no,it.desc,it.qty,it.unit,it.rate,it.total,e.qty,e.rate,e.total,e.total-it.total,e.inc?'Y':'N']); }
+     r2.push([it.sheet,itemCtx(it),it.subject||'',it.no,it.desc,it.qty,it.unit,it.rate,it.total,e.qty,e.rate,e.total,e.total-it.total,e.inc?'Y':'N']); }
    for(const ni of (v.newItems||[])){ const tt=(n(ni.qty)||0)*(n(ni.rate)||0);
-     r2.push(['(new)',ni.category,'',ni.desc,ni.qty,ni.unit,ni.rate,0,ni.qty,ni.rate,tt,tt,ni.inc!==false?'Y':'N']); }
-   const ws2=XLSX.utils.aoa_to_sheet(r2); ws2['!cols']=[{wch:20},{wch:26},{wch:6},{wch:60},{wch:10},{wch:7},{wch:12},{wch:15},{wch:9},{wch:12},{wch:15},{wch:13},{wch:5}];
+     r2.push(['(new)',ni.category,'','',ni.desc,ni.qty,ni.unit,ni.rate,0,ni.qty,ni.rate,tt,tt,ni.inc!==false?'Y':'N']); }
+   const ws2=XLSX.utils.aoa_to_sheet(r2); ws2['!cols']=[{wch:20},{wch:26},{wch:40},{wch:6},{wch:60},{wch:10},{wch:7},{wch:12},{wch:15},{wch:9},{wch:12},{wch:15},{wch:13},{wch:5}];
    XLSX.utils.book_append_sheet(wb,ws2,'BOQ');
    if(state.options.length){ const r3=[[t('optTitle'),t('study'),t('qty'),t('unit'),t('curRate'),t('newRate'),t('variation')+' (VND)','Δ%',t('include'),t('notes')]];
      for(const o of state.options){ const r=veCalc(o.baseRate,o.newRate,o.qty);
