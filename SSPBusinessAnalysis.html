@@ -5764,11 +5764,22 @@ window.__loginGuest=async()=>{
   }catch(e){ $('#loginErr').textContent='Could not load the published data — it may require sign-in. ('+e.message+')'; }
   btn.textContent=orig; btn.disabled=false;
 };
-/* admin toggle: allow the live version to be viewed without signing in */
-window.__setPublicView=on=>{
+/* admin toggle: allow the live version to be viewed without signing in.
+   Publishes IMMEDIATELY rather than through the normal 1.5s-debounced
+   schedulePublish() — this flag gates whether anyone else can even get past
+   the login screen, so a reader hitting it in the few seconds before the
+   debounce fires (or if the admin closes the tab in that window) would see
+   "turned off by the administrator" even though the admin just switched it
+   on. Reported by a reviewer (celineho) 2026-07-31: toggle was on, but she
+   was blocked at the login modal with exactly that message. */
+window.__setPublicView=async on=>{
   if(myRole()!=='admin'){ toast('Only an admin can change this',true); return; }
-  state.store.publicView=!!on; saveStore(); schedulePublish(); renderUsers();
-  toast(on?'✔ Public viewing ENABLED — reviewers can open the live link without an account (System tabs stay hidden for them)':'✔ Public viewing DISABLED — everyone must sign in');
+  state.store.publicView=!!on; saveStore(); renderUsers();
+  if(!sbUser){ toast(on?'✔ Public viewing ENABLED locally — sign in and this will publish automatically':'✔ Public viewing DISABLED locally'); return; }
+  const ok=await cloudPublish(true);
+  toast(ok
+    ? (on?'✔ Public viewing ENABLED — reviewers can open the live link without an account (System tabs stay hidden for them)':'✔ Public viewing DISABLED — everyone must sign in')
+    : '⚠ Setting saved locally but publish FAILED — reviewers still see the OLD setting until this succeeds. Try again or use "⤴ Publish now".', !ok);
 };
 /* debounced auto-publish: any local change while signed in syncs itself */
 let _pubT=null;
@@ -5795,21 +5806,27 @@ async function cloudSignInGo(){
     await cloudPull(true); cloudSubscribe(); cloudUi();
   }catch(e){ $('#loginErr').textContent='Sign-in failed: '+e.message; }
 }
-async function cloudPublish(){
-  if(!sb||!sbUser) return;
-  if(myRole()==='view'){ toast('View-only account — publishing is disabled',true); return; }
+async function cloudPublish(quiet=false){
+  if(!sb||!sbUser) return false;
+  if(myRole()==='view'){ if(!quiet) toast('View-only account — publishing is disabled',true); return false; }
   try{
     const {error}=await sb.from(CLOUD.table).upsert({id:CLOUD.rowId,data:state.store,
       updated_by:sbUser.email,client_id:CLIENT_ID,updated_at:new Date().toISOString()});
     if(error) throw error;
-    toast('⤴ Published — reviewers updated');
-  }catch(e){ toast('Publish failed: '+e.message,true); }
+    if(!quiet) toast('⤴ Published — reviewers updated');
+    return true;
+  }catch(e){ if(!quiet) toast('Publish failed: '+e.message,true); return false; }
 }
 async function cloudPull(notify=true){
   if(!sb) return false;                    // works for signed-in AND anonymous readers (RLS permitting)
   try{
     const {data,error}=await sb.from(CLOUD.table).select('data,updated_by,updated_at').eq('id',CLOUD.rowId).maybeSingle();
     if(error) throw error;
+    /* Reflect the server's publicView flag even when the fuller store-merge
+       below is skipped (months empty/missing) -- this flag alone decides
+       whether an anonymous visitor can get past the login screen, so it must
+       never go stale just because that unrelated guard didn't fire. */
+    if(data?.data&&typeof data.data.publicView!=='undefined') state.store.publicView=data.data.publicView;
     if(data?.data?.months&&Object.keys(data.data.months).length){
       state.store=data.data; state.store.fx=state.store.fx||{};
       if(!state.viewOnly) saveStore();       // viewers don't persist the published copy locally
