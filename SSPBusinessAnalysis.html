@@ -169,7 +169,6 @@ tr.bad td{background:#fdeeec}
     <button data-tab="conso" class="on" data-i18n="tabConso">Consolidated</button>
     <button data-tab="cockpit" data-i18n="tabCockpit">Sofitel Saigon Plaza</button>
     <button data-tab="office" data-i18n="tabOffice">Central Plaza</button>
-    <button data-tab="exec" data-i18n="tabExec">Executive summary</button>
     <button data-tab="forecast" data-i18n="tabForecast">Forecast</button>
     <div class="navgroup" data-i18n="grpOps">Operations</div>
     <button data-tab="rooms" data-i18n="tabRooms">Rooms</button>
@@ -184,6 +183,7 @@ tr.bad td{background:#fdeeec}
     <button data-tab="heat" data-i18n="tabHeat">Patterns &amp; Heatmaps</button>
     <button data-tab="bench" data-i18n="tabBench">Benchmark — HotStats</button>
     <div class="navgroup" data-i18n="grpSystem">System</div>
+    <button data-tab="exec" data-i18n="tabExec">Executive summary</button>
     <button data-tab="dq">Data Quality <span id="warnbadge">0</span></button>
     <button data-tab="users" data-i18n="tabUsers">User Management</button>
     <button data-tab="settings" data-i18n="tabSettings">Settings &amp; Data</button>
@@ -4980,14 +4980,25 @@ function myRole(){
   return myProfile()?.role||'view';                // signed in but not listed → view only
 }
 /* System tabs (Data Quality, User Management, Settings) are only for account holders.
-   Anonymous viewers see the analytics tabs but never the data-management tabs. */
+   Anonymous viewers see the analytics tabs but never the data-management tabs.
+   Executive summary lives in the System group too, but its gate is role-based rather
+   than sign-in-based: any signed-in/offline viewer with role 'view' is excluded, while
+   'edit'/'admin' (and offline, which is always 'edit') can see it. */
 function applyTabVisibility(){
   const sysTabs=['dq','users','settings'];
   const cloudOn=!!(CLOUD.url&&CLOUD.anonKey);
   const show=!cloudOn||!!sbUser;             // local tool (no cloud) always shows them; cloud → account holders only
   sysTabs.forEach(t=>{ const b=$$('#tabs button').find(x=>x.dataset.tab===t); if(b) b.style.display=show?'':'none'; });
+
+  const editorOnly=myRole()!=='view';
+  const execBtn=$$('#tabs button').find(x=>x.dataset.tab==='exec');
+  if(execBtn) execBtn.style.display=editorOnly?'':'none';
+
+  const revaBtn=document.querySelector('[data-tab="reva"]');
+  if(revaBtn) revaBtn.style.display=revAVisible()?'':'none';
+
   const active=$$('#tabs button').find(b=>b.classList.contains('on'));
-  if(active&&!show&&sysTabs.includes(active.dataset.tab))
+  if(active&&((!show&&sysTabs.includes(active.dataset.tab))||(!editorOnly&&active.dataset.tab==='exec')||(!revAVisible()&&active.dataset.tab==='reva')))
     $$('#tabs button').find(b=>b.dataset.tab==='conso')?.click();
 }
 window.__userSet=(email,field,val)=>{
@@ -5290,17 +5301,6 @@ function renderAll(){
 /* Revenue Analysis is hidden by default — it is a deep-dive tab most readers do not
    need. Toggled from Settings & Data; the preference persists with the store. */
 function revAVisible(){ return !!state.store.showRevA; }
-function applyTabVisibility(){
-  const btn=document.querySelector('[data-tab="reva"]');
-  if(btn) btn.style.display=revAVisible()?'':'none';
-  /* if it gets hidden while it is the open tab, fall back to the cockpit */
-  if(!revAVisible()){
-    const sec=document.getElementById('tab-reva');
-    if(sec&&sec.classList.contains('on')){
-      const c=document.querySelector('[data-tab="cockpit"]'); if(c) c.click();
-    }
-  }
-}
 window.__toggleRevA=v=>{ state.store.showRevA=!!v; saveStore(); renderAll(); };
 
 /* Give every KPI scorecard equal-width cards spread evenly across rows: pick a column
