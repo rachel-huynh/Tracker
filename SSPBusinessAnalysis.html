@@ -63,6 +63,11 @@ textarea.notebody{width:100%;min-height:64px;border:1px solid #cfd6e2;border-rad
 .notero{white-space:pre-wrap;font-size:12px;line-height:1.5;border:1px solid var(--line);
   border-radius:6px;padding:6px 8px;background:#fdfdfc;min-height:22px}
 .notero.empty{color:var(--grey);font-style:italic}
+/* editable panel titles & captions (only decorated while ✎ Editing is on) */
+.ovedit{outline:1px dashed #cfd6e2;outline-offset:2px;border-radius:3px;cursor:text;transition:.15s}
+.ovedit:hover{outline-color:var(--gold);background:#fffdf6}
+.ovedit:focus{outline:1px solid var(--gold);background:#fffdf6}
+h3 .ovtxt{display:inline}
 /* ---------- dropzone ---------- */
 #drop,.dropzone{margin:10px 16px 0;border:2px dashed #c3cbda;border-radius:8px;padding:12px;text-align:center;color:var(--grey);background:#fff;transition:.2s;cursor:pointer}
 #drop.hot,.dropzone.hot{border-color:var(--gold);background:#fdf8ea;color:var(--gold)}
@@ -802,27 +807,64 @@ function sheetByRe(wb,re){
    CAUTION: in that sheet the month header serials read 2025-01..2025-12 but the data
    is 2026 (col 20 ADR = 3,486,000.27 = UOL's Jun-26 ADR). The serials are stale, so
    we take the 12 columns in order and ignore their year. */
-function budget2026MktgFees(wb){
+/* Shared reader for that sheet: returns {gd,cols} once so several callers can use it.
+   Month block = first row carrying >=12 date serials; serials are stale (decode to
+   2025) so we take the 12 columns IN ORDER and ignore their year. */
+function budget2026SofitelSheet(wb){
   const ws=wb.Sheets['3.Sofitel Saigon 2026 Budget']; if(!ws) return null;
   const gd=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
-  /* month block = first row carrying >=12 date serials */
   let cols=null;
   for(const row of gd){
     const cs=[]; (row||[]).forEach((v,c)=>{ if(typeof v==='number'&&v>40000&&v<60000) cs.push(c); });
     if(cs.length>=12){ cols=cs.slice(0,12); break; }
   }
-  if(!cols) return null;
-  const r=findRow(gd,/^Marketing Fees\s*$/i); if(r<0) return null;
-  const out=cols.map(c=>num((gd[r]||[])[c]));
+  return cols?{gd,cols}:null;
+}
+function budget2026MktgFees(wb){
+  const s=budget2026SofitelSheet(wb); if(!s) return null;
+  const r=findRow(s.gd,/^Marketing Fees\s*$/i); if(r<0) return null;
+  const out=s.cols.map(c=>num((s.gd[r]||[])[c]));
   return out.every(v=>v!=null)?out:null;
+}
+/* ---- minor-operated-department detail (owner-reported 2026-07-31) ----
+   The Consolidated sheet LUMPS Spa + Guest Laundry + Other Operating Depts +
+   Miscellaneous into one "Minor Operated Department" figure. Because of that,
+   rev.misc/dp.misc ("Rental & Other Income") had no budget at all — and, worse, the
+   OOD budget silently INCLUDED Miscellaneous, overstating it. The owner pointed out
+   the line is called "Miscellaneous" in the budget; it is itemised on this sheet.
+   Verified Jun-26 against the file — revenue after SC:
+     70,586,496 + 0 + 175,468,060 + 0 + 588,806,415 + 134,266,546 = 969,127,517
+     = the Consolidated sheet's Minor Operated Dept revenue; and dept profit:
+     -71,045,637 + 0 + 147,058,946 + 0 + 231,170,783 + 124,000,245 = 431,184,337
+     = its Minor Dept Profit. So the split is exact, not an approximation.
+   Anchors: each section heading's text repeats later as that section's TOTAL row, so
+   we take the FIRST match as the anchor and read the member lines after it. */
+const B26_OOD=[['spa',/^Spa & Health Club/i],['golf',/^Golf Operations/i],
+  ['laundry',/^Guest Laundry/i],['comms',/^Guest Communications/i],
+  ['otherOp',/^Other Operating Dept/i],['misc',/^Miscellaneous/i]];
+function budget2026OOD(wb){
+  const s=budget2026SofitelSheet(wb); if(!s) return null;
+  const {gd,cols}=s;
+  const revA=findRow(gd,/^TOTAL REVENUE AFTER SERVICE CHARGE\s*$/i);
+  const dpA=findRow(gd,/^DEPARTMENT PROFIT\s*$/i);
+  if(revA<0||dpA<0) return null;
+  const grab=anchor=>{ const o={};
+    for(const [k,re] of B26_OOD){ const r=findRow(gd,re,null,anchor);
+      if(r>=0) o[k]=cols.map(c=>num((gd[r]||[])[c])); }
+    return o; };
+  const out={rev:grab(revA), dp:grab(dpA)};
+  return (out.rev.misc&&out.dp.misc)?out:null;   // no Miscellaneous → not usable, fall back
 }
 function parseBudget2026(wb){
   const ws=wb.Sheets['Consolidated P&L Monthly'];
   const gd=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
   const val=(r,c)=>{ const v=(gd[r]||[])[c]; return typeof v==='number'?v:(v==null?null:parseFloat(v)); };
   const mktg=budget2026MktgFees(wb);
+  const ood=budget2026OOD(wb);
   const out={ __v:B26_SCHEMA,
-    __warn: mktg?null:'Marketing Fees row not found — GOP budget will be overstated vs the UOL report' };
+    __warn: mktg?null:'Marketing Fees row not found — GOP budget will be overstated vs the UOL report',
+    __warnOod: ood?null:'Minor-operated-dept detail not found in "3.Sofitel Saigon 2026 Budget" — Rental & Other Income budget stays blank and the OOD budget still includes Miscellaneous' };
+  const oodAt=(grp,k,m)=>ood?.[grp]?.[k]?.[m-1]??null;
   for(let m=1;m<=12;m++){
     const c=4+m; // Jan=col5
     const roomsAvail=val(4,c), roomsSold=val(5,c), adr=val(6,c);
@@ -837,17 +879,32 @@ function parseBudget2026(wb){
        Row anchors (verified against this exact workbook): 19 Total F&B revenue,
        27 F&B Dept Profit, 29 Minor Operated Dept revenue, 33 Minor Dept Profit,
        36 Admin & General, 37 IT, 38 Sales and Marketing, 39 Heat/Light/Power (=Energy),
-       40 Repair & maintenance (=POMEC). There is no separate "Rental & Other Income"
-       line in this sheet, so rev.misc/dp.misc are deliberately left unset — that Budget
-       cell stays blank because the figure genuinely is not in this budget source.
+       40 Repair & maintenance (=POMEC).
+       "Rental & Other Income" (rev.misc/dp.misc) is NOT absent from the budget after
+       all — an earlier note here wrongly concluded that. This sheet has no such line
+       because it lumps it into "Minor Operated Department"; the itemised figure is on
+       the "3.Sofitel Saigon 2026 Budget" sheet as "Miscellaneous", read by
+       budget2026OOD() above. When that split is available we take all six OOD members
+       from it; otherwise we fall back to the old lumped behaviour.
        Reuse the EXACT keys the render's UOL_OOD_REV/UOL_OOD_DP/UOL_AG/UOL_SM/UOL_IT/
        UOL_PM/UOL_EN constants already look up (they sum whichever keys exist), so no
        render-side change is needed — put each category's one combined figure under a
        single member of its group and leave the rest unset. */
     out[m]={
       stats:{roomsAvail,roomsSold,roomsOcc:roomsSold,adr,occ,revpar},
-      rev:{totalIncl:val(8,c), rooms:roomsRev, totalFb:val(19,c), spa:val(29,c)},
-      dp:{rooms:roomsDP, total:deptTotal??((roomsDP??0)+(fnbDP??0)+(minorDP??0)), fnb:fnbDP, spa:minorDP},
+      /* OOD: prefer the itemised split (so Miscellaneous = "Rental & Other Income"
+         gets its own budget and is no longer buried inside OOD); if the detail sheet
+         is missing, fall back to the old single lumped figure under spa. */
+      rev:{totalIncl:val(8,c), rooms:roomsRev, totalFb:val(19,c),
+           ...(ood?{spa:oodAt('rev','spa',m), golf:oodAt('rev','golf',m),
+                    laundry:oodAt('rev','laundry',m), comms:oodAt('rev','comms',m),
+                    otherOp:oodAt('rev','otherOp',m), misc:oodAt('rev','misc',m)}
+                :{spa:val(29,c)})},
+      dp:{rooms:roomsDP, total:deptTotal??((roomsDP??0)+(fnbDP??0)+(minorDP??0)), fnb:fnbDP,
+          ...(ood?{spa:oodAt('dp','spa',m), golf:oodAt('dp','golf',m),
+                   laundry:oodAt('dp','laundry',m), comms:oodAt('dp','comms',m),
+                   otherOp:oodAt('dp','otherOp',m), misc:oodAt('dp','misc',m)}
+               :{spa:minorDP})},
       undist:{ag:{pay:val(36,c)}, it:{pay:val(37,c)}, sm:{pay:val(38,c)}, energy:{oth:val(39,c)}, pomec:{pay:val(40,c)}},
       /* row45 "Net Income from Hotel" = row34 - row41 - mgmt fee - incentive fee, so it
          excludes Marketing Fees for the same reason GOP did — deduct them here too,
@@ -865,15 +922,18 @@ const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','s
    re-run on upgrade, so an old parse would keep serving superseded numbers with no
    visible sign — v2 added the Marketing-Fees deduction to GOP and EBITDA; v3 added
    F&B/OOD revenue+profit and the 5 overhead categories (previously silently blank
-   in the Next-3-months and P&L-detail Budget columns). */
-const B26_SCHEMA=3;
+   in the Next-3-months and P&L-detail Budget columns); v4 split the lumped "Minor
+   Operated Department" into its six members so Miscellaneous (= "Rental & Other
+   Income") has its own budget and is no longer double-counted inside OOD. */
+const B26_SCHEMA=4;
 function budget2026Stale(){ const b=state.store.budget2026; return !!b && b.__v!==B26_SCHEMA; }
 function b26StaleBanner(){ return budget2026Stale()
   ? `<div class="panel" style="padding:8px 12px;border-left:4px solid var(--red)"><div class="small">
-      ⚠ <b>2026 budget figures are out of date.</b> The stored budget was parsed before the Marketing-Fees
-      correction, so <b>GOP and EBITDA budget are overstated</b> (e.g. Jun-26 GOP shows 12.65bn instead of
-      12.32bn). Re-drop <b>“C. PHCL - Consolidated 2026 Budget”</b> in Settings &amp; Data to refresh it.
-      Every other budget line is unaffected.</div></div>` : ''; }
+      ⚠ <b>2026 budget figures are out of date.</b> The stored budget was parsed by an older version, so
+      <b>GOP/EBITDA budget may be overstated</b> (Marketing Fees not deducted — Jun-26 GOP would show 12.65bn
+      instead of 12.32bn), <b>“Rental &amp; Other Income” budget is blank</b> and the <b>OOD budget wrongly
+      includes Miscellaneous</b>. Re-drop <b>“C. PHCL - Consolidated 2026 Budget”</b> in Settings &amp; Data
+      to refresh it. Every other budget line is unaffected.</div></div>` : ''; }
 function budget2026For(mk){ // mk like '2026-04' -> that month's parsed budget object, or null
   if(!/^2026-\d\d$/.test(mk||'')) return null;
   const mm=parseInt(mk.slice(5,7),10);
@@ -2695,8 +2755,98 @@ function canEditNotes(){ return myRole()!=='view' && !!state.editMode; }
 window.__toggleEdit=()=>{
   if(myRole()==='view'){ toast('View-only account — notes are read-only',true); return; }
   state.editMode=!state.editMode;
-  editUi(); renderExec(derive());
+  editUi(); renderAll();     // re-render so captions/titles pick up (or drop) editability
   toast(state.editMode?'✎ Editing on — notes and titles are unlocked':'🔒 Locked — notes are read-only');
+};
+/* ---------------- EDITABLE PANEL TITLES & CAPTIONS ----------------
+   The explanatory captions under each panel/chart (".small") and the panel headings
+   ("h3") are authored in ~200 places inside template literals, many interpolating live
+   numbers. Rather than thread an override through every call site, overrides are applied
+   to the DOM after each render and keyed by the caption's own text.
+
+   KEY = djb2 hash of the text with every VOLATILE token masked — digit runs to '#' and
+   month names to '@'. Masking both matters: half these captions interpolate live figures
+   (FX rate, reconciliation %) and many also interpolate the selected month ("— Jun 2026"),
+   so an unmasked hash would change as soon as the month or the data changed and silently
+   lose the override. Masking also makes the key independent of WHERE the element sits, so
+   overrides survive panels appearing/disappearing with the loaded data — which a
+   position-based key would not.
+   Trade-off: two captions differing only in numbers/month share a key. */
+const OV_MONTHS=/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|tháng)\b/gi;
+function noteKeyOf(s){
+  const norm=String(s??'').replace(/\s+/g,' ').trim()
+    .replace(OV_MONTHS,'@').replace(/[\d][\d.,]*/g,'#');
+  if(!norm) return null;
+  let h=5381; for(let i=0;i<norm.length;i++) h=((h*33)^norm.charCodeAt(i))>>>0;
+  return h.toString(36);
+}
+function textOv(){ return state.store.textOverrides=state.store.textOverrides||{}; }
+/* Candidates: captions with no interactive children (never swallow a control), plus the
+   leading text of each panel heading — headings often carry buttons/filter inputs, so
+   only their first text node is made editable. */
+function ovTargets(){
+  const out=[];
+  for(const el of $$('main .small')){
+    if(el.querySelector('button,input,select,textarea,canvas,a,.small')) continue;
+    if(!el.textContent.trim()) continue;
+    out.push({el,mode:'full'});
+  }
+  for(const h of $$('main .panel h3')){
+    const n=[...h.childNodes].find(x=>x.nodeType===3&&x.textContent.trim());
+    if(n) out.push({el:h,node:n,mode:'node'});
+  }
+  return out;
+}
+function applyTextOverrides(){
+  const ov=textOv(), edit=canEditNotes();
+  for(const t of ovTargets()){
+    const el=t.el;
+    /* a node-mode target lives on the h3 itself, so track the two modes separately */
+    const flag=t.mode==='node'?'ovNode':'ovFull';
+    if(el.dataset[flag]) continue;                 // already processed this render
+    const cur=t.mode==='node'?t.node.textContent:el.textContent;
+    const key=noteKeyOf(cur); if(!key) continue;
+    el.dataset[flag]=key;
+    const val=ov[key];
+    if(val!=null){
+      if(t.mode==='node') t.node.textContent=val;
+      else el.textContent=val;
+    }
+    if(edit){
+      const host=t.mode==='node'?wrapNode(t.node,el):el;
+      host.setAttribute('contenteditable','true');
+      host.classList.add('ovedit');
+      host.dataset.ovKey=key;
+      host.title='Click to edit this text · empty it to restore the original';
+    }
+  }
+}
+/* wrap an h3's leading text node in a span so it can be edited without exposing the
+   heading's buttons/inputs to contenteditable */
+function wrapNode(node,h3){
+  if(node.parentNode&&node.parentNode.classList?.contains('ovtxt')) return node.parentNode;
+  const sp=document.createElement('span'); sp.className='ovtxt';
+  node.parentNode.replaceChild(sp,node); sp.appendChild(node);
+  return sp;
+}
+/* One delegated listener: commit on blur. Clearing the text drops the override so the
+   built-in wording comes back rather than leaving a blank caption. */
+document.addEventListener('focusout',e=>{
+  const host=e.target?.closest?.('[data-ov-key]'); if(!host) return;
+  if(!canEditNotes()) return;
+  const key=host.dataset.ovKey, ov=textOv();
+  const v=host.textContent.replace(/\s+/g,' ').trim();
+  if(!v){ delete ov[key]; saveStore(); schedulePublish(); renderAll(); toast('↩ Original wording restored'); return; }
+  if(ov[key]===v) return;                          // unchanged — don't churn the store
+  ov[key]=v; saveStore(); schedulePublish();
+  toast('✔ Text saved — it will show for every reviewer after Publish');
+},true);
+window.__resetTexts=()=>{
+  if(myRole()==='view'){ toast('View-only account',true); return; }
+  const n=Object.keys(textOv()).length;
+  if(!n){ toast('No edited titles or captions to reset'); return; }
+  state.store.textOverrides={}; saveStore(); schedulePublish(); renderAll();
+  toast(`↩ Reset ${n} edited text${n===1?'':'s'} to the original wording`);
 };
 /* Button reflects state, and hides entirely for view-only accounts. */
 function editUi(){
@@ -5160,6 +5310,11 @@ function renderSettings(){
         <input type="checkbox" ${revAVisible()?'checked':''} onchange="__toggleRevA(this.checked)">
         <span>Show the <b>Revenue Analysis</b> tab</span></label>
       <div class="small" style="margin-top:6px;color:var(--grey)">Hidden by default. It needs the Revenue-analysis workbooks (Key Account, Booked vs Stayed, Upgrades, Nor1, F&amp;B discount/summary) to be useful.</div></div>
+    <div class="panel"><h3>Edited titles &amp; captions
+        <button class="noprint" onclick="__resetTexts()" style="margin-left:8px">↩ Reset all to original</button></h3>
+      <div class="small">${Object.keys(state.store.textOverrides||{}).length} panel title(s) / caption(s) have been reworded on this dashboard.
+        Switch on <b>${t('edEditing')}</b> in the header, then click any heading or grey caption to rewrite it; empty it to bring the original wording back.
+        Edited wording is stored with the data and syncs to reviewers when you Publish.</div></div>
     <div class="cols c2">
       <div class="panel"><h3>Account & cloud sync</h3>
         <table><tbody>
@@ -5385,6 +5540,7 @@ function renderAll(){
   safe(renderExpenses,'expenses');
   safe(renderUsers,'users'); safe(renderSettings,'settings');
   applyTabVisibility();
+  applyTextOverrides();     // must run after every innerHTML rebuild
   balanceKgrids();
 }
 
