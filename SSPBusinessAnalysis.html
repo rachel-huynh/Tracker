@@ -49,6 +49,20 @@ button:hover,.btn:hover{border-color:var(--navy)}
 button.on{background:var(--navy);color:#fff;font-weight:700;border-color:var(--navy)}
 .seg{display:flex;border:1px solid #cfd6e2;border-radius:5px;overflow:hidden}
 .seg button{border:none;border-radius:0}
+/* ---------- editable notes (header "✎ Editing" toggle) ---------- */
+#btnEdit.on{background:var(--gold);border-color:var(--gold);color:#3a2c00}
+.notesec{margin-bottom:10px}
+.notesec>.notettl{font-weight:700;font-size:12px;margin-bottom:2px;color:var(--navy)}
+/* inputs only appear in edit mode; locked mode renders plain text so the panel reads
+   like a finished report rather than a form */
+input.notettl{width:100%;font:inherit;font-size:12px;font-weight:700;color:var(--navy);
+  border:1px dashed #cfd6e2;border-radius:5px;padding:3px 6px;margin-bottom:3px;background:#fffdf6}
+input.notettl:focus,textarea.notebody:focus{outline:none;border-color:var(--gold);border-style:solid}
+textarea.notebody{width:100%;min-height:64px;border:1px solid #cfd6e2;border-radius:6px;
+  padding:6px 8px;font:inherit;font-size:12px;background:#fffdf6}
+.notero{white-space:pre-wrap;font-size:12px;line-height:1.5;border:1px solid var(--line);
+  border-radius:6px;padding:6px 8px;background:#fdfdfc;min-height:22px}
+.notero.empty{color:var(--grey);font-style:italic}
 /* ---------- dropzone ---------- */
 #drop,.dropzone{margin:10px 16px 0;border:2px dashed #c3cbda;border-radius:8px;padding:12px;text-align:center;color:var(--grey);background:#fff;transition:.2s;cursor:pointer}
 #drop.hot,.dropzone.hot{border-color:var(--gold);background:#fdf8ea;color:var(--gold)}
@@ -201,6 +215,7 @@ tr.bad td{background:#fdeeec}
     <div class="seg"><button id="btnMTD" class="on">MTD</button><button id="btnYTD">YTD</button></div>
     <div class="seg"><button id="btnVND" class="on">VND</button><button id="btnUSD">USD</button></div>
     <div class="seg"><button id="btnEN" class="on">EN</button><button id="btnVI">VI</button></div>
+    <button id="btnEdit" class="noprint" style="display:none" title="Unlock the manual notes and their titles for editing">🔒 Locked</button>
     <button id="btnCloud" class="noprint" title="Cloud sync status">☁ Off</button>
     <button id="btnXlsx" title="Export every tab of the current view to a multi-sheet Excel file" data-i18n="xlsx">⬇ Export Excel</button>
     <button id="btnPrint" title="Print all tabs as an A4-landscape board pack (choose 'Save as PDF' in the dialog)" data-i18n="printPdf">🖨 Print / PDF</button>
@@ -651,6 +666,9 @@ let state = {
   snapPer:'cm', dailyBench:'comp',   // Market — STR: snapshot period + daily-table benchmark
   trendGran:'monthly', trendCmp:true, // Patterns tab: trend-explorer granularity + compare-to-previous-year
   tsDay:'all', mktGran:'daily',       // shared day-type filter (all/wd/we) + Market chart granularity
+  editMode:false,                     // "✎ Editing" header toggle — off every load, so notes
+                                      // and their titles cannot be changed by accident
+
   store:{ months:{}, pace:{} },   // persisted
   warnings:[],                    // parse warnings of the LAST ingest batch (also persisted per month)
   charts:{},
@@ -2302,6 +2320,7 @@ const I18N={
 en:{ subtitle:'Sofitel Saigon Plaza · Central Plaza',
   export:'💾 Backup JSON', import:'📂 Restore JSON', clearMonth:'Clear month',
   xlsx:'⬇ Export Excel', printPdf:'🖨 Print / PDF',
+  edLocked:'🔒 Locked', edEditing:'✎ Editing',
   dropTitle:'Drag & drop workbooks here', orClick:'…or click to choose files', dropPanel:'Load monthly files',
   dropNote:'(parsed in your browser — data stays local unless you sign in and Publish to your private Supabase)',
   tabCockpit:'Sofitel Saigon Plaza', tabOffice:'Central Plaza', tabRooms:'Rooms', tabFnb:'F&B', tabOther:'Other Ops & Miscellaneous', tabExpenses:'Expenses',
@@ -2337,6 +2356,7 @@ en:{ subtitle:'Sofitel Saigon Plaza · Central Plaza',
 vi:{ subtitle:'Sofitel Saigon Plaza · Central Plaza',
   export:'💾 Sao lưu JSON', import:'📂 Phục hồi JSON', clearMonth:'Xoá tháng',
   xlsx:'⬇ Xuất Excel', printPdf:'🖨 In / PDF',
+  edLocked:'🔒 Đang khoá', edEditing:'✎ Đang sửa',
   dropTitle:'Kéo & thả file Excel vào đây', orClick:'…hoặc bấm để chọn file', dropPanel:'Nạp file hàng tháng',
   dropNote:'(xử lý trên trình duyệt — dữ liệu chỉ đồng bộ lên Supabase riêng khi bạn đăng nhập và Publish)',
   tabCockpit:'Sofitel Saigon Plaza', tabOffice:'Central Plaza', tabRooms:'Phòng', tabFnb:'Ẩm thực', tabOther:'BP khác & Mục lẻ', tabExpenses:'Chi phí',
@@ -2637,7 +2657,58 @@ function renderCockpit(d){
 /* ---------------- EXECUTIVE SUMMARY (BOD email draft) ---------------- */
 function execNotes(){ state.store.execNotes=state.store.execNotes||{};
   return state.store.execNotes[state.month]=state.store.execNotes[state.month]||{ssp:'',cp:'',phcl:''}; }
-window.__execNote=(sec,val)=>{ execNotes()[sec]=val; saveStore(); renderExec(derive()); schedulePublish(); };
+window.__execNote=(sec,val)=>{
+  if(!canEditNotes()){ toast('Switch on ✎ Editing to change a note',true); return; }
+  execNotes()[sec]=val; saveStore(); renderExec(derive()); schedulePublish(); };
+
+/* user-supplied text goes into both attributes and element bodies — escape both ways */
+const escA=s=>String(s??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const escH=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* Note SECTION TITLES are editable too, but unlike the note bodies they are NOT per
+   month — a heading is a label for the section, so renaming it once applies to every
+   month. Stored in store.noteTitles; anything unset falls back to NOTE_SECS' default. */
+const NOTE_SECS=[
+  ['ssp','1/ SSP — qualitative items',
+   'e.g. Increase in complaints on room maintenance / AC / bed quality; booking window shortening to 7–10 days; Le17 dinner lagging while La Maison renovation proposal pending…'],
+  ['cp','2/ Central Plaza — leasing & tenants',
+   'e.g. UOB new tower by 2031 — two-phase leasing approach drafted; Avison Young to lead discussions…'],
+  ['phcl','3/ PHCL — corporate matters',
+   'e.g. HMA 6th-term extension counter-proposals sent to Operator; Board meeting agenda to be circulated by …'],
+];
+function noteTitle(sec){
+  const def=(NOTE_SECS.find(s=>s[0]===sec)||[])[1]||sec;
+  const t=state.store.noteTitles?.[sec];
+  return (t!=null&&String(t).trim())?String(t):def;
+}
+window.__noteTitle=(sec,val)=>{
+  if(!canEditNotes()){ toast('Switch on ✎ Editing to rename a note',true); return; }
+  state.store.noteTitles=state.store.noteTitles||{};
+  const v=String(val||'').trim();
+  /* empty → drop the override so the default label comes back rather than a blank heading */
+  if(v) state.store.noteTitles[sec]=v; else delete state.store.noteTitles[sec];
+  saveStore(); renderExec(derive()); schedulePublish();
+};
+
+/* Notes are writable only for edit/admin roles AND only while the header toggle is on. */
+function canEditNotes(){ return myRole()!=='view' && !!state.editMode; }
+window.__toggleEdit=()=>{
+  if(myRole()==='view'){ toast('View-only account — notes are read-only',true); return; }
+  state.editMode=!state.editMode;
+  editUi(); renderExec(derive());
+  toast(state.editMode?'✎ Editing on — notes and titles are unlocked':'🔒 Locked — notes are read-only');
+};
+/* Button reflects state, and hides entirely for view-only accounts. */
+function editUi(){
+  const b=$('#btnEdit'); if(!b) return;
+  const allowed=myRole()!=='view';
+  b.style.display=allowed?'':'none';
+  b.classList.toggle('on',!!state.editMode);
+  b.textContent=t(state.editMode?'edEditing':'edLocked');
+  b.title=state.editMode
+    ? 'Notes and their titles are unlocked — click to lock again'
+    : 'Unlock the manual notes and their titles for editing';
+}
 window.__execCopy=()=>{ const txt=$('#execDraft').innerText;
   const done=()=>toast('📋 Email draft copied — paste into Outlook');
   if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done,()=>fallback());
@@ -2723,19 +2794,30 @@ function buildExecDraft(d){
 function renderExec(d){
   const el=$('#tab-exec');
   const notes=execNotes();
-  const ta=(sec,label,ph)=>`<div style="margin-bottom:8px"><div class="small" style="font-weight:700;margin-bottom:2px">${label}</div>
-    <textarea onchange="__execNote('${sec}',this.value)" placeholder="${ph}" style="width:100%;min-height:64px;border:1px solid #cfd6e2;border-radius:6px;padding:6px 8px;font:inherit;font-size:12px">${notes[sec]||''}</textarea></div>`;
+  const canEdit=canEditNotes();
+  /* Two renderings of the same section: unlocked → editable title input + textarea;
+     locked → plain heading + read-only text, so the panel reads like a finished report. */
+  const ta=(sec,ph)=>{
+    const ttl=noteTitle(sec), body=notes[sec]||'';
+    if(canEdit) return `<div class="notesec">
+      <input class="notettl" value="${escA(ttl)}" title="Rename this note section (applies to every month)"
+        onchange="__noteTitle('${sec}',this.value)">
+      <textarea class="notebody" onchange="__execNote('${sec}',this.value)"
+        placeholder="${escA(ph)}">${escH(body)}</textarea></div>`;
+    return `<div class="notesec"><div class="notettl">${escH(ttl)}</div>
+      <div class="notero${body?'':' empty'}">${body?escH(body):'— no note for this month —'}</div></div>`;
+  };
   el.innerHTML=`
     <div class="cols c2">
       <div class="panel"><h3>Draft BOD email — ${fmtMonthKey(state.month)} <button class="noprint" onclick="__execCopy()" style="margin-left:8px">📋 Copy email</button></h3>
-        <div id="execDraft" contenteditable="true" spellcheck="false"
+        <div id="execDraft" contenteditable="${canEdit?'true':'false'}" spellcheck="false"
           style="white-space:pre-wrap;font-size:12.5px;line-height:1.55;border:1px solid var(--line);border-radius:6px;padding:12px;background:#fdfdfc;max-height:640px;overflow-y:auto">${buildExecDraft(d).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
-        <div class="small" style="margin-top:6px">Auto-written from the loaded reports in the house style (numbers switch with the VND/USD toggle; ADR quoted in US$ at the FS rate ${n1(fx(),0)}). Edit inline, then Copy. Regenerates when data or notes change — inline edits are not saved, notes are.</div></div>
-      <div class="panel"><h3>Manual notes — the parts only you know <span class="small">(saved per month, inserted into the draft)</span></h3>
-        ${ta('ssp','1/ SSP — qualitative items','e.g. Increase in complaints on room maintenance / AC / bed quality; booking window shortening to 7–10 days; Le17 dinner lagging while La Maison renovation proposal pending…')}
-        ${ta('cp','2/ Central Plaza — leasing & tenants','e.g. UOB new tower by 2031 — two-phase leasing approach drafted; Avison Young to lead discussions…')}
-        ${ta('phcl','3/ PHCL — corporate matters','e.g. HMA 6th-term extension counter-proposals sent to Operator; Board meeting agenda to be circulated by …')}
-        <div class="small">Tip: one line per bullet — each line becomes its own bullet in the draft. Notes sync to reviewers when you Publish.</div></div>
+        <div class="small" style="margin-top:6px">Auto-written from the loaded reports in the house style (numbers switch with the VND/USD toggle; ADR quoted in US$ at the FS rate ${n1(fx(),0)}). ${canEdit?'Edit inline, then Copy.':`Switch on <b>${t('edEditing')}</b> in the header to tweak the wording inline.`} Regenerates when data or notes change — inline edits are not saved, notes are.</div></div>
+      <div class="panel"><h3>Manual notes — the parts only you know <span class="small">(text saved per month; titles apply to all months)</span></h3>
+        ${NOTE_SECS.map(([sec,,ph])=>ta(sec,ph)).join('')}
+        <div class="small">${canEdit
+          ? 'Tip: one line per bullet — each line becomes its own bullet in the draft. The bold title above each box is editable too. Notes sync to reviewers when you Publish.'
+          : `🔒 Read-only. Click <b>${t('edLocked')}</b> in the header to switch on <b>${t('edEditing')}</b>, then you can change both the note text and its title.`}</div></div>
     </div>`;
 }
 
@@ -5000,6 +5082,11 @@ function applyTabVisibility(){
   const revaBtn=document.querySelector('[data-tab="reva"]');
   if(revaBtn) revaBtn.style.display=revAVisible()?'':'none';
 
+  /* role can change under us (sign-in / sign-out / guest): never leave a demoted
+     account sitting in edit mode, and keep the header button in sync. */
+  if(!editorOnly) state.editMode=false;
+  editUi();
+
   const active=$$('#tabs button').find(b=>b.classList.contains('on'));
   if(active&&((!show&&sysTabs.includes(active.dataset.tab))||(!editorOnly&&active.dataset.tab==='exec')||(!revAVisible()&&active.dataset.tab==='reva')))
     $$('#tabs button').find(b=>b.dataset.tab==='conso')?.click();
@@ -5568,6 +5655,7 @@ $('#btnVND').onclick=()=>{state.cur='VND';$('#btnVND').classList.add('on');$('#b
 $('#btnUSD').onclick=()=>{state.cur='USD';$('#btnUSD').classList.add('on');$('#btnVND').classList.remove('on');renderAll();};
 $('#btnEN').onclick=()=>{state.lang='en';$('#btnEN').classList.add('on');$('#btnVI').classList.remove('on');renderAll();};
 $('#btnVI').onclick=()=>{state.lang='vi';$('#btnVI').classList.add('on');$('#btnEN').classList.remove('on');renderAll();};
+$('#btnEdit').onclick=()=>__toggleEdit();
 
 window.__backup=()=>{
   const blob=new Blob([JSON.stringify(state.store,null,1)],{type:'application/json'});
