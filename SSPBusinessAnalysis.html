@@ -813,10 +813,24 @@ function parseBudget2026(wb){
     const roomsRev=val(10,c), roomsDP=val(13,c), fnbDP=val(27,c), minorDP=val(33,c);
     const deptTotal=val(34,c), overheads=val(41,c), netIncomeHotel=val(45,c);
     const mf=mktg?mktg[m-1]:0;
+    /* F&B/OOD revenue+profit and the 5 overhead categories ARE in this sheet — they
+       were just never extracted, so every "Next 3 months" / Sofitel P&L-detail Budget
+       cell for those rows fell through to null even though the source data exists.
+       Row anchors (verified against this exact workbook): 19 Total F&B revenue,
+       27 F&B Dept Profit, 29 Minor Operated Dept revenue, 33 Minor Dept Profit,
+       36 Admin & General, 37 IT, 38 Sales and Marketing, 39 Heat/Light/Power (=Energy),
+       40 Repair & maintenance (=POMEC). There is no separate "Rental & Other Income"
+       line in this sheet, so rev.misc/dp.misc are deliberately left unset — that Budget
+       cell stays blank because the figure genuinely is not in this budget source.
+       Reuse the EXACT keys the render's UOL_OOD_REV/UOL_OOD_DP/UOL_AG/UOL_SM/UOL_IT/
+       UOL_PM/UOL_EN constants already look up (they sum whichever keys exist), so no
+       render-side change is needed — put each category's one combined figure under a
+       single member of its group and leave the rest unset. */
     out[m]={
       stats:{roomsAvail,roomsSold,roomsOcc:roomsSold,adr,occ,revpar},
-      rev:{totalIncl:val(8,c), rooms:roomsRev},
-      dp:{rooms:roomsDP, total:deptTotal??((roomsDP??0)+(fnbDP??0)+(minorDP??0))},
+      rev:{totalIncl:val(8,c), rooms:roomsRev, totalFb:val(19,c), spa:val(29,c)},
+      dp:{rooms:roomsDP, total:deptTotal??((roomsDP??0)+(fnbDP??0)+(minorDP??0)), fnb:fnbDP, spa:minorDP},
+      undist:{ag:{pay:val(36,c)}, it:{pay:val(37,c)}, sm:{pay:val(38,c)}, energy:{oth:val(39,c)}, pomec:{pay:val(40,c)}},
       /* row45 "Net Income from Hotel" = row34 - row41 - mgmt fee - incentive fee, so it
          excludes Marketing Fees for the same reason GOP did — deduct them here too,
          otherwise EBITDA budget stays overstated while GOP is correct. */
@@ -831,8 +845,10 @@ function parseBudget2026(wb){
 const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','stats.roomsOcc']);
 /* Bump whenever parseBudget2026's OUTPUT changes meaning. Stored parses are not
    re-run on upgrade, so an old parse would keep serving superseded numbers with no
-   visible sign — v2 added the Marketing-Fees deduction to GOP and EBITDA. */
-const B26_SCHEMA=2;
+   visible sign — v2 added the Marketing-Fees deduction to GOP and EBITDA; v3 added
+   F&B/OOD revenue+profit and the 5 overhead categories (previously silently blank
+   in the Next-3-months and P&L-detail Budget columns). */
+const B26_SCHEMA=3;
 function budget2026Stale(){ const b=state.store.budget2026; return !!b && b.__v!==B26_SCHEMA; }
 function b26StaleBanner(){ return budget2026Stale()
   ? `<div class="panel" style="padding:8px 12px;border-left:4px solid var(--red)"><div class="small">
