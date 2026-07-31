@@ -1013,7 +1013,7 @@ function parsePnl(wb){
     o.lines=parseExpenseLines(gd4,o._cols,warns,name)||[];   // other-expense line items
     o.cosTotal=(()=>{ const r=findRow(gd4,/^Total Cost of Sales$/i); if(r<0||!o._cols) return null;
       return {MTD:{act:num(gd4[r][o._cols.act]),bud:num(gd4[r][o._cols.bud]),ly:num(gd4[r][o._cols.ly])},
-              YTD:{act:num(gd4[r][o._cols.yact]),bud:num(gd4[r][o._cols.ybud])}}; })();
+              YTD:{act:num(gd4[r][o._cols.yact]),bud:num(gd4[r][o._cols.ybud]),ly:num(gd4[r][o._cols.yly])}}; })();
     o.name=name; out.otherDepts.push(o);
   }
   return out;
@@ -1083,7 +1083,7 @@ function parseOutletMeals(gd,c){
   const out={}; const M=MAP.meals;
   const fr=findRow(gd,M.foodAnchor), br=findRow(gd,M.bevAnchor);
   const read=r=>r<0?null:{MTD:{act:num(gd[r]?.[c.act]),bud:num(gd[r]?.[c.bud]),ly:num(gd[r]?.[c.ly])},
-                          YTD:{act:num(gd[r]?.[c.yact]),bud:num(gd[r]?.[c.ybud])}};
+                          YTD:{act:num(gd[r]?.[c.yact]),bud:num(gd[r]?.[c.ybud]),ly:num(gd[r]?.[c.yly])}};
   for(const [key,covRe,mealRe] of M.list){
     const cr=findRow(gd,covRe); if(cr<0) continue;
     const m={covers:read(cr)};
@@ -1110,9 +1110,12 @@ function parseExpenseLines(gd,c,warns,name){
   for(let r=a+1;r<(end<0?Math.min(a+40,gd.length):end);r++){
     const row=gd[r]||[];
     const label=cellStr(row[2])||cellStr(row[1]); if(!label) continue;
+    /* YTD LY is a real column on these sheets (Rooms Jun-26: MTD LAST YEAR = H, YTD
+       LAST YEAR = O) — it was omitted here for a long time, which made every YTD
+       cost-line "vs LY %" render N/A while MTD worked. Read c.yly like parseDeptSheet does. */
     const v={label,
       MTD:{act:num(row[c.act]),bud:num(row[c.bud]),ly:num(row[c.ly])},
-      YTD:{act:num(row[c.yact]),bud:num(row[c.ybud])}};
+      YTD:{act:num(row[c.yact]),bud:num(row[c.ybud]),ly:num(row[c.yly])}};
     if(v.MTD.act!==null||v.MTD.bud!==null||v.MTD.ly!==null) lines.push(v);
   }
   return lines;
