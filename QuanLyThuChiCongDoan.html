@@ -1011,11 +1011,17 @@ function delUNC(id) {
   ]);
 }
 function uncListHTML() {
+  // Ô tìm kiếm nằm NGOÀI vùng vẽ lại → gõ được nhiều chữ, con trỏ không bị nhảy ra
+  return '<div class="searchrow"><input type="text" placeholder="Tìm theo số, ngày, người nhận, nội dung…" value="' + esc(FILTERS.unc || '') + '" oninput="FILTERS.unc=this.value;refreshUncTable()"></div>' +
+    '<div id="utbl">' + uncTableHTML() + '</div>';
+}
+function refreshUncTable() { const el = $('utbl'); if (el) el.innerHTML = uncTableHTML(); }
+function uncTableHTML() {
   const f = (FILTERS.unc || '').toLowerCase();
   let list = DB.unc.slice();
   if (f) list = list.filter(u => (u.so || '').toLowerCase().indexOf(f) >= 0 || fmtDate(u.ngay).indexOf(f) >= 0 || (u.nhanTen || '').toLowerCase().indexOf(f) >= 0 || (u.noiDung || '').toLowerCase().indexOf(f) >= 0);
   list.sort((a, b) => (b.ngay || '').localeCompare(a.ngay || ''));
-  let h = '<div class="searchrow"><input type="text" placeholder="Tìm theo số, ngày, người nhận, nội dung…" value="' + esc(FILTERS.unc || '') + '" oninput="FILTERS.unc=this.value;renderAll()"><span class="note">' + list.length + ' lệnh</span></div>' +
+  let h = '<p class="note" style="margin-bottom:6px">' + list.length + ' lệnh</p>' +
     '<div class="tblwrap"><table class="tbl"><tr><th>Số</th><th>Ngày</th><th>Người nhận</th><th>STK nhận</th><th>Ngân hàng</th><th>Nội dung</th><th class="num">Số tiền</th><th>Từ PC</th><th>Thao tác</th></tr>';
   for (const u of list) {
     const pc = DB.phieu.find(x => x.id === u.pcRef);
@@ -1101,9 +1107,15 @@ function soModuleHTML(kind) {
     '<div class="card"><div class="searchrow">' +
     '<label style="font-size:13px">Năm: <select onchange="soState.' + (isTM ? 'namTM' : 'namNH') + '=Number(this.value);renderAll()">' + years.map(y => '<option value="' + y + '"' + (y === nam ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></label>' +
     '<label style="font-size:13px">Số dư đầu kỳ: <input type="text" style="width:140px;text-align:right" value="' + fmt(getSoDu(nam)[isTM ? 'TM' : 'NH']) + '" onchange="setSoDu(' + nam + ',\'' + (isTM ? 'TM' : 'NH') + '\',this.value)"></label>' +
-    '<input type="text" placeholder="Lọc theo số phiếu, ngày, mã số…" value="' + esc(FILTERS[key] || '') + '" oninput="FILTERS[\'' + key + '\']=this.value;renderAll()">' +
+    '<input type="text" placeholder="Lọc theo số phiếu, ngày, mã số…" value="' + esc(FILTERS[key] || '') + '" oninput="FILTERS[\'' + key + '\']=this.value;refreshSoTable(\'' + kind + '\')">' +
     '<button class="btn sec" onclick="printSo(\'' + kind + '\',' + nam + ')">🖨 In sổ</button>' +
     '</div><div id="sotbl_' + kind + '">' + ledgerTableHTML(kind, nam, key) + '</div></div>';
+}
+function refreshSoTable(kind) {
+  const el = $('sotbl_' + kind); if (!el) return;
+  const isTM = kind === 'TM';
+  const nam = isTM ? soState.namTM : soState.namNH;
+  el.innerHTML = ledgerTableHTML(kind, nam, isTM ? 'soquy' : 'sonh');
 }
 function setSoDu(nam, kind, val) {
   if (!DB.settings.soDu[nam]) DB.settings.soDu[nam] = { TM: 0, NH: 0 };
@@ -1328,17 +1340,24 @@ function printKPDP() {
    ================================================================ */
 const tvState = { nam: new Date().getFullYear() };
 function renderModThamVieng() {
-  const f = (FILTERS.tv || '').toLowerCase();
   const nam = tvState.nam;
-  let h = '<h2 class="mtitle">Danh sách thăm viếng đoàn viên</h2>' +
+  $('mod-thamvieng').innerHTML = '<h2 class="mtitle">Danh sách thăm viếng đoàn viên</h2>' +
     '<div class="card"><h3>Thống kê hạn mức thăm hỏi năm ' + nam + ' — ' + fmt(HAN_MUC_TH) + ' đ/đoàn viên/năm</h3>' +
     '<div class="searchrow"><label style="font-size:13px">Năm: <select onchange="tvState.nam=Number(this.value);renderAll()">' + namesOfYears().map(y => '<option value="' + y + '"' + (y === nam ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></label></div>' +
     '<div id="tvStats">' + thamHoiStatsHTML(nam) + '</div></div>' +
     '<div class="card"><h3>Chi tiết các lần thăm viếng (năm ' + nam + ')</h3><div class="searchrow">' +
-    '<input type="text" placeholder="Tìm theo họ tên, bộ phận…" value="' + esc(FILTERS.tv || '') + '" oninput="FILTERS.tv=this.value;renderAll()">' +
+    // ô tìm kiếm nằm ngoài vùng vẽ lại → gõ được nhiều chữ liên tục
+    '<input type="text" placeholder="Tìm theo họ tên, bộ phận…" value="' + esc(FILTERS.tv || '') + '" oninput="FILTERS.tv=this.value;refreshTvTable()">' +
     '<button class="btn sec" onclick="tvAddRow()">＋ Thêm dòng</button>' +
     '<button class="btn sec" onclick="printTV()">🖨 In danh sách</button></div>' +
-    '<div class="tblwrap"><table class="tbl"><tr><th style="width:4%">STT</th><th>Họ tên</th><th>Bộ phận</th><th style="width:6%">Năm</th>' +
+    '<div id="tvtbl">' + tvTableHTML() + '</div>' +
+    '<p class="note" style="margin-top:8px">Khi lập Phiếu Chi mã số 33 (Thăm hỏi đoàn viên), tick "Thêm vào Danh sách thăm viếng" để tự tạo dòng ở đây. Các loại thăm hỏi: Thăm bệnh, Thăm viếng, Mừng cưới, Thăm thai sản — tính chung vào hạn mức ' + fmt(HAN_MUC_TH) + ' đ/đoàn viên/năm.</p></div>';
+}
+function refreshTvTable() { const el = $('tvtbl'); if (el) el.innerHTML = tvTableHTML(); }
+function tvTableHTML() {
+  const f = (FILTERS.tv || '').toLowerCase();
+  const nam = tvState.nam;
+  let h = '<div class="tblwrap"><table class="tbl"><tr><th style="width:4%">STT</th><th>Họ tên</th><th>Bộ phận</th><th style="width:6%">Năm</th>' +
     TH_LOAI.map(t => '<th class="num">' + t.ten + ' (đ)</th>').join('') +
     '<th class="num">Cộng</th><th>Ghi chú</th><th></th></tr>';
   const tot = { thamBenh: 0, thamVieng: 0, mungCuoi: 0, thaiSan: 0 };
@@ -1360,8 +1379,7 @@ function renderModThamVieng() {
   h += '<tr class="sum"><td colspan="4">TỔNG CỘNG NĂM ' + nam + '</td>' +
     TH_LOAI.map(t => '<td class="num">' + fmt(tot[t.k]) + '</td>').join('') +
     '<td class="num">' + fmt(tot.thamBenh + tot.thamVieng + tot.mungCuoi + tot.thaiSan) + '</td><td colspan="2"></td></tr>';
-  h += '</table></div><p class="note" style="margin-top:8px">Khi lập Phiếu Chi mã số 33 (Thăm hỏi đoàn viên), tick "Thêm vào Danh sách thăm viếng" để tự tạo dòng ở đây. Các loại thăm hỏi: Thăm bệnh, Thăm viếng, Mừng cưới, Thăm thai sản — tính chung vào hạn mức ' + fmt(HAN_MUC_TH) + ' đ/đoàn viên/năm.</p></div>';
-  $('mod-thamvieng').innerHTML = h;
+  return h + '</table></div>';
 }
 function thamHoiStatsHTML(nam) {
   const stats = thamHoiStats(nam);
