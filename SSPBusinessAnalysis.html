@@ -1336,31 +1336,32 @@ function parseStarMonthly(wb){
     for(const d of days){
       const r=findRow(dg,new RegExp('^'+d+'$','i')); if(r<0) continue;
       const row=dg[r]||[];
-      /* Columns run D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U — three blocks of
-         My/%chg/Comp/%chg/Index/%chg, in this order: Occ(D-I), ADR(J-O),
-         RevPAR(P-U). After filtering the label/period text out of columns
-         A-C, `vals` lines up 1:1 with that column order — verified against
-         the real Jun-2026 file (sheet "Day of Week", row for Sunday):
-         D=52.38(MyOcc) E=-16.06 F=57.90(CompOcc) G=-1.97 H=90.46(MPI) I=-14.37
-         J=3,670,581(MyADR) K=19.96 L=4,090,392(CompADR) M=6.81 N=89.74(ARI)
-         O=12.31 P=1,922,532(MyRevPAR) Q=0.70 R=2,368,276(CompRevPAR) S=4.71
+      /* Columns run D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U (0-indexed 3-20) —
+         three blocks of My/%chg/Comp/%chg/Index/%chg: Occ(D-I), ADR(J-O),
+         RevPAR(P-U). Verified against the real Jun-2026 file (sheet "Day of
+         Week", row for Sunday): D=52.38(MyOcc) E=-16.06 F=57.90(CompOcc)
+         G=-1.97 H=90.46(MPI) I=-14.37 J=3,670,581(MyADR) K=19.96
+         L=4,090,392(CompADR) M=6.81 N=89.74(ARI) O=12.31
+         P=1,922,532(MyRevPAR) Q=0.70 R=2,368,276(CompRevPAR) S=4.71
          T=81.18(RGI) U=-3.83.
-         BUG FIXED (found 2026-08-03 while adding ARI/RevPAR/RGI columns,
-         pre-existing and unnoticed until now): the previous mapping used
-         vals[3]/vals[4] for mpi/mpiChg and vals[5..7] for the ADR trio —
-         each one column short, since it forgot Comp-Occ's own %chg
-         (vals[3]) sits before MPI. That meant the "MPI" column actually
-         displayed Comp-Occ's %chg (e.g. Sunday showed "-2", when the real
-         MPI is 90) — Occupancy and Comp-Occ themselves were unaffected
-         (vals[0]/vals[2] were already correct). */
-      const vals=(row||[]).map((v,i)=>({i,v:num(v)})).filter(x=>x.v!==null).map(x=>x.v);
-      if(vals.length>=3) out.dow.push({day:d,
-        occMy:vals[0],occMyChg:vals[1],occComp:vals[2],occCompChg:vals[3],
-        mpi:vals[4],mpiChg:vals[5],
-        adrMy:vals[6],adrMyChg:vals[7],adrComp:vals[8],adrCompChg:vals[9],
-        ari:vals[10],ariChg:vals[11],
-        revparMy:vals[12],revparMyChg:vals[13],revparComp:vals[14],revparCompChg:vals[15],
-        rgi:vals[16],rgiChg:vals[17]});
+         Read by FIXED column position, not by filtering blanks out of the
+         row and then indexing into what's left. That "compact, then index"
+         approach (used until 2026-08-03) breaks the moment ANY cell before
+         the tail is blank/non-numeric — e.g. a %chg column with no year-ago
+         data to compare against for an early-history month — because every
+         field after the gap silently shifts down one slot. That is exactly
+         the failure mode a reviewer hit: ARI/My RevPAR/Comp RevPAR/RGI (the
+         LAST four fields, i.e. the ones that run off the end of a shortened
+         array first) showed N/A while Occ/ADR/MPI still looked fine. Fixed
+         column reads mean one blank cell only ever blanks its OWN field. */
+      const g=col=>num(row[col]);
+      if(g(3)!=null||g(5)!=null) out.dow.push({day:d,
+        occMy:g(3),occMyChg:g(4),occComp:g(5),occCompChg:g(6),
+        mpi:g(7),mpiChg:g(8),
+        adrMy:g(9),adrMyChg:g(10),adrComp:g(11),adrCompChg:g(12),
+        ari:g(13),ariChg:g(14),
+        revparMy:g(15),revparMyChg:g(16),revparComp:g(17),revparCompChg:g(18),
+        rgi:g(19),rgiChg:g(20)});
     }
   }
   /* Segmentation Indexes: Transient/Group/Contract usually not subscribed */
