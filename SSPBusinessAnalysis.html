@@ -138,6 +138,12 @@ tr.seggrp td{background:#eef2f8;font-weight:700;color:var(--navy)}
 tr.segsub td{font-weight:600;color:#374151;background:#f7f9fc}
 /* heatmap grids */
 .heatwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+/* Fixed 3-column row for the Patterns/Heatmaps tab — one entity's RevPAR/
+   Occupancy/ADR grids side by side. Deliberately NOT auto-fit like .heatwrap:
+   the owner wants entity rows guaranteed in a fixed order regardless of
+   viewport width, so on narrow screens this scrolls horizontally rather
+   than reflowing to fewer columns. */
+.heatrow{display:grid;grid-template-columns:repeat(3,minmax(260px,1fr));gap:14px;overflow-x:auto;margin-bottom:14px}
 table.heat td{text-align:center;padding:3px 4px;font-size:11px;border:1px solid #fff}
 table.heat th{text-align:center}
 table.heat td:first-child{text-align:left;font-weight:600;background:#f3f5f9}
@@ -3510,6 +3516,18 @@ const IDX_NAMES={occ:'MPI',adr:'ARI',revpar:'RGI'};
 /* Day-of-week pattern table — lives on the Patterns & Heatmaps tab (moved off
    Market · STR, where it sat beside the index trend). Built from the selected
    month's parsed STAR `dow` rows. */
+function dowTableHtml(){
+  const st=curMonth().star;
+  const idxCls=v=>v!=null&&v<100?'neg':'pos';
+  let rows='';
+  for(const r of st?.dow||[]) rows+=`<tr><td>${r.day}</td><td>${n1(r.occMy)}%</td><td>${n1(r.occComp)}%</td>
+    <td class="${idxCls(r.mpi)}">${idx(r.mpi)}</td><td>${starMoney(r.adrMy)}</td><td>${starMoney(r.adrComp)}</td>
+    <td class="${idxCls(r.ari)}">${idx(r.ari)}</td><td>${starMoney(r.revparMy)}</td><td>${starMoney(r.revparComp)}</td>
+    <td class="${idxCls(r.rgi)}">${idx(r.rgi)}</td></tr>`;
+  return `<div class="panel"><h3>Day-of-week pattern — ${st?.monthKey?fmtMonthKey(st.monthKey):'current month'}</h3>
+    <table><thead><tr><th>Day</th><th>My Occ</th><th>Comp Occ</th><th>MPI</th><th>My ADR</th><th>Comp ADR</th><th>ARI</th><th>My RevPAR</th><th>Comp RevPAR</th><th>RGI</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan=10>'+na('Day of Week sheet missing')+'</td></tr>'}</tbody></table></div>`;
+}
 function renderMarket(d){
   const el=$('#tab-market');
   /* every panel on this tab reads through starOf()/state.compset, so the top-right
@@ -4290,12 +4308,12 @@ function calMonthBuckets(monthKeys){
   return byCal.map((mks,i)=>({cal:i+1,mks:mks.sort()})).filter(b=>b.mks.length);
 }
 window.__setHeat=k=>{ state.heatMetric=k; renderHeat(derive()); };
-/* Fixed row order for the heatmap table, per the owner: row1 Sofitel, row2
-   Comp set, row3 Industry, row4 the relevant competitive index (RGI/MPI/ARI
-   depending on the selected metric) — always in this order, never reflowed
-   by viewport width (the old design used a `.heatwrap` auto-fit CSS grid of
-   separate per-entity mini-tables, which the owner explicitly asked to stop
-   doing: "I dont want 3 separate part"). */
+/* Heatmap section shows ALL THREE metrics (unlike Insights/Trend above it,
+   which react to the metric selector) — entity-major order, FIXED regardless
+   of viewport: row 1 Sofitel, row 2 Comp set, row 3 Industry, row 4 Index.
+   Each row is one entity's three metric grids (RevPAR/Occupancy/ADR) side by
+   side in a fixed 3-column grid (`.heatrow`, not auto-fit), so the entity
+   ordering can never be scrambled by screen width. */
 const HEAT_ENTS=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry / submarket'],['idx','Index']];
 function renderHeat(d){
   const el=$('#tab-heat');
@@ -4307,53 +4325,62 @@ function renderHeat(d){
   const met=METRICS.some(m=>m[0]===state.heatMetric)?state.heatMetric:'revpar';
   const [,label,idxName]=METRICS.find(m=>m[0]===met);
 
-  /* grids[entity][month] = [7 dow avgs, overall daily avg] — built for the
-     SELECTED metric only now (one metric on screen at a time, chosen above). */
-  const grids={my:{},comp:{},ind:{},idx:{}};
-  for(const mk of months){
-    const dl=state.store.months[mk].star.daily; const src=dl?.[met]; if(!src) continue;
-    for(const e of ['my','comp','ind','idx']){
-      const sums=new Array(7).fill(0),ns=new Array(7).fill(0); let ts=0,tn=0;
-      for(let day=1;day<=31;day++){
-        let v=null;
-        if(e==='idx'){ const a=src.my?.[day-1],b=src.comp?.[day-1]; v=(a!=null&&b)?a/b*100:null; }
-        else v=src[e]?.[day-1];
-        if(v==null) continue;
-        const w=dowOf(mk,day); sums[w]+=v; ns[w]++; ts+=v; tn++;
+  /* gridsByMet[metric][entity][month] = [7 dow avgs, overall daily avg] —
+     built for ALL THREE metrics: the heatmap needs every metric regardless
+     of the selector; Insights/Trend below read only the selected slice. */
+  const gridsByMet={};
+  for(const [m] of METRICS){
+    const grids={my:{},comp:{},ind:{},idx:{}};
+    for(const mk of months){
+      const dl=state.store.months[mk].star.daily; const src=dl?.[m]; if(!src) continue;
+      for(const e of ['my','comp','ind','idx']){
+        const sums=new Array(7).fill(0),ns=new Array(7).fill(0); let ts=0,tn=0;
+        for(let day=1;day<=31;day++){
+          let v=null;
+          if(e==='idx'){ const a=src.my?.[day-1],b=src.comp?.[day-1]; v=(a!=null&&b)?a/b*100:null; }
+          else v=src[e]?.[day-1];
+          if(v==null) continue;
+          const w=dowOf(mk,day); sums[w]+=v; ns[w]++; ts+=v; tn++;
+        }
+        if(tn) grids[e][mk]=[...sums.map((s,i)=>ns[i]?s/ns[i]:null), ts/tn];
       }
-      if(tn) grids[e][mk]=[...sums.map((s,i)=>ns[i]?s/ns[i]:null), ts/tn];
     }
+    gridsByMet[m]=grids;
   }
+  const grids=gridsByMet[met];   // slice used by Insights/Trend below
 
-  /* ---- Heatmap: 4 fixed rows (entities) × up to 12 columns (calendar
-     months present in the focus period, MONTH NAME ONLY — no year, per the
-     owner: multiple years of the same calendar month fold into one column
-     average rather than one column per year). */
-  const heatTableHtml=()=>{
-    const mrows=months.filter(mk=>grids.my[mk]||grids.comp[mk]||grids.ind[mk]||grids.idx[mk]);
-    if(!mrows.length) return `<div class="panel"><h3>Heatmap — ${label}</h3><div class="small">${na('No STAR daily data in focus for this metric')}</div></div>`;
+  /* Month × day-of-week mini-grid for one (entity, metric) pair. Row label
+     is the MONTH NAME ONLY — no year: multiple years of the same calendar
+     month fold into one row, averaged together (per the owner). */
+  const gridHtml=(gr,e,gmet,panelLabel)=>{
+    const mrows=months.filter(mk=>gr[e][mk]);
+    if(!mrows.length) return `<div class="panel"><h3>${panelLabel}</h3><div class="small">${na('Requires STAR "Daily by Month'+(e==='ind'?' Industry':'')+'" sheet — drop more Monthly STAR files')}</div></div>`;
     const buckets=calMonthBuckets(mrows);
-    const rowsData=HEAT_ENTS.map(([e,eLabel])=>{
-      const cells=buckets.map(b=>{
-        const vs=b.mks.map(mk=>grids[e][mk]?.[7]).filter(v=>v!=null);
-        return {v:vs.length?vs.reduce((x,y)=>x+y,0)/vs.length:null, repMk:b.mks[b.mks.length-1]};
-      });
-      return {e,label:e==='idx'?`Index (${idxName})`:eLabel,cells};
+    const rows=buckets.map(b=>{
+      const cells=[...Array(8)].map((_,i)=>{
+        const vs=b.mks.map(mk=>gr[e][mk][i]).filter(v=>v!=null);
+        return vs.length?vs.reduce((x,y)=>x+y,0)/vs.length:null; });
+      return {label:CALMONTHS[b.cal-1],repMk:b.mks[b.mks.length-1],cells};
     });
-    /* index cells hold unitless numbers (≈70–130) — never format as money.
-       Occupancy matches the figure's pre-existing convention elsewhere on
-       this tab (no explicit % glyph baked into the cell). */
-    const fmtV=(v,mk,e)=>v==null?'':(e==='idx'?idx(v):met==='occ'?n1(v,0):moneyM(v,mk,1));
-    let h=`<div class="panel"><h3>Heatmap — ${label}${(state.tsFrom||state.tsTo)?' <span class="tag a">focus period</span>':''}</h3>
-      <div style="overflow-x:auto"><table class="heat"><thead><tr><th>Entity</th>${buckets.map(b=>'<th>'+CALMONTHS[b.cal-1]+'</th>').join('')}</tr></thead><tbody>`;
-    for(const r of rowsData){
-      const vals=r.cells.map(c=>c.v).filter(v=>v!=null);
-      const mn=vals.length?Math.min(...vals):0, mx=vals.length?Math.max(...vals):0;
-      h+=`<tr><td>${r.label}</td>${r.cells.map(c=>`<td style="${heatColor(c.v,mn,mx,r.e==='idx')}" data-v="${c.v??''}">${fmtV(c.v,c.repMk,r.e)}</td>`).join('')}</tr>`;
-    }
-    h+='</tbody></table></div>';
-    if(!mrows.some(mk=>grids.ind[mk])) h+=`<div class="small" style="margin-top:6px">${na('Industry / submarket row requires the STAR "Daily by Month Industry" sheet — drop more Monthly STAR files')}</div>`;
-    return h+'</div>';
+    const vals=rows.flatMap(r=>r.cells.slice(0,7)).filter(v=>v!=null);
+    const mn=vals.length?Math.min(...vals):0, mx=vals.length?Math.max(...vals):0;
+    /* index cells hold unitless numbers (≈70–130) — never format as money */
+    const fmtV=(v,mk)=>v==null?'':(e==='idx'?idx(v):gmet==='occ'?n1(v,0):moneyM(v,mk,1));
+    let h=`<div class="panel"><h3>${panelLabel}</h3><div style="overflow-x:auto"><table class="heat"><thead><tr><th>Month</th>${DOWS.map(x=>'<th>'+x+'</th>').join('')}<th>Avg</th></tr></thead><tbody>`;
+    for(const r of rows){
+      h+=`<tr><td>${r.label}</td>${r.cells.slice(0,7).map(v=>`<td style="${heatColor(v,mn,mx,e==='idx')}" data-v="${v??''}">${fmtV(v,r.repMk)}</td>`).join('')}<td data-v="${r.cells[7]??''}"><b>${fmtV(r.cells[7],r.repMk)}</b></td></tr>`; }
+    return h+'</tbody></table></div></div>';
+  };
+
+  const heatmapSectionHtml=()=>{
+    const rows=HEAT_ENTS.map(([e,eLabel])=>{
+      const panels=METRICS.map(([gmet,mLabel,gIdxName])=>{
+        const lbl=e==='idx'?`${eLabel} — ${mLabel} (${gIdxName})`:`${eLabel} — ${mLabel}`;
+        return gridHtml(gridsByMet[gmet],e,gmet,lbl);
+      });
+      return `<div class="heatrow">${panels.join('')}</div>`;
+    });
+    return `<div style="font-size:15px;font-weight:700;color:var(--navy);margin:22px 0 6px;padding-bottom:5px;border-bottom:2px solid var(--gold)">Heatmap</div>${rows.join('')}`;
   };
 
   /* ---- Pattern insights, for the selected metric's competitive index ---- */
@@ -4379,7 +4406,7 @@ function renderHeat(d){
   const gran=state.trendGran||'monthly';
   const ts=trendSeries(met,gran);
 
-  /* Order requested: metric selector → highlight → trend → heatmap. */
+  /* Order: metric selector → highlight → trend → day-of-week pattern → heatmap. */
   el.innerHTML=`
     <div class="panel noprint"><h3>Metric</h3>
       <div class="small" style="margin-top:6px">
@@ -4397,8 +4424,8 @@ function renderHeat(d){
       ${ts.labels.length?`<div class="chartbox"><canvas id="chTsExp"></canvas></div>`
         :'<div class="small" style="padding:20px">No '+gran+' series could be built from the stored months — '+(gran==='daily'||gran==='weekly'?'the stored STAR files carry no "Daily by Month" grids':'no Comp-sheet history parsed')+'. Re-drop the Monthly STAR files in Settings &amp; Data.</div>'}
       <div class="small" style="margin-top:6px">${gran==='daily'||gran==='weekly'?'Aggregated from the STAR daily grids ('+months.length+' stored months); weekly = Monday-start weeks':'From the merged 18-month STAR histories ('+ts.labels.length+' '+(gran==='yearly'?'years':'months')+')'}${met==='adr'?'; ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc)':''}. “vs previous year” overlays the same ${gran==='yearly'?'year −1':gran==='monthly'?'month':gran==='weekly'?'week':'calendar day'} one year back (dashed grey) — gaps mean that period is not stored yet.${(state.tsDay||'all')!=='all'?' <b>Day filter ('+(state.tsDay==='wd'?'weekdays':'weekends')+') applies to the Daily/Weekly views only</b> — monthly and coarser use the official STAR monthly figures.':''}</div></div>
-    <div style="font-size:15px;font-weight:700;color:var(--navy);margin:22px 0 6px;padding-bottom:5px;border-bottom:2px solid var(--gold)">Heatmap</div>
-    ${heatTableHtml()}`;
+    ${dowTableHtml()}
+    ${heatmapSectionHtml()}`;
 
   if(ts.labels.length){
     const isMoney=met!=='occ';
