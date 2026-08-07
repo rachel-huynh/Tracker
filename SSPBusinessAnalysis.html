@@ -4463,9 +4463,23 @@ function olsNext(vals,steps){ // simple linear projection of a series
 function renderForecast(d){
   const el=$('#tab-forecast');
   const st=starOf(state.month), ch=st?.comp;   // starOf → works under either comp set
-  if(!ch?.revpar){ el.innerHTML=noData(); return; }
-  const M=ch.revpar.months, n=M.length;
-  const series={occ:ch.occ?.my||[], adr:ch.adr?.my||[], revpar:ch.revpar.my||[]};
+  /* Historically this tab bailed to noData() entirely unless the CURRENT month had the
+     official Monthly STAR's merged Comp-sheet history (ch.revpar) — the one thing a
+     provisional (Weekly-STAR-built) month never has (provisionalStarFromDaily hardcodes
+     comp:{}). That meant dropping a Weekly STAR + Rolling Forecast for the current month
+     (the exact mid-month workflow this app is built around) produced a totally blank
+     tab, reading as "the forecast upload doesn't work" — reported 2026-08 after the
+     owner re-uploaded Weekly/Daily STAR + a new RF file and still saw nothing. The RF
+     cascade / cashflow / rolling-forecast panels below never actually needed ch.revpar
+     at all (they key off state.store.rf/.cf and state.month directly) — only the STAR
+     trend model (same-month-LY × run-rate growth) genuinely needs it. Now: proceed if
+     EITHER exists, and every STAR-history variable degrades to an empty default instead
+     of throwing, so the RF-only sections still render while the STAR-only ones show an
+     explanatory placeholder instead of silently vanishing. */
+  const hasStarHist=!!ch?.revpar?.months?.length;
+  if(!hasStarHist && !state.store.rf && !state.store.cf){ el.innerHTML=noData(); return; }
+  const M=hasStarHist?ch.revpar.months:[], n=M.length;
+  const series={occ:ch?.occ?.my||[], adr:ch?.adr?.my||[], revpar:ch?.revpar?.my||[]};
   /* run-rate growth: median YoY of the last ≤6 months with a LY pair */
   const growth={},vol={};
   for(const k of Object.keys(series)){
@@ -4476,8 +4490,10 @@ function renderForecast(d){
      6 months — so the outlook table below is always a full 12-month year: e.g. last
      actual Nov -> 11 actual rows + 1 forecast row; last actual Jun -> 6 + 6. Guard with
      at least 1 month so December still projects the following January rather than
-     rendering an empty table. */
-  const hN=Math.max(1,12-(+M[n-1].slice(5,7)));
+     rendering an empty table. Empty when there is no STAR history for the current month
+     at all — the "Full-year outlook"/"RevPAR forecast" panels below check this and show
+     an explanatory placeholder instead of an empty table/chart. */
+  const hN=n?Math.max(1,12-(+M[n-1].slice(5,7))):0;
   const H=[...Array(hN)].map((_,i)=>addMonths(M[n-1],i+1));
   const fc=H.map((ym,h)=>{
     const li=n-12+(h+1);                     // index of same month LY in the series
@@ -4492,7 +4508,7 @@ function renderForecast(d){
     return o;
   });
   /* RGI projection: linear trend of last 12 index values */
-  const rgiProj=olsNext(ch.revpar.idx.slice(-12),[...Array(H.length)].map((_,i)=>i+1));
+  const rgiProj=olsNext((ch?.revpar?.idx||[]).slice(-12),[...Array(H.length)].map((_,i)=>i+1));
   /* convert RevPAR forecast into money using latest P&L structure */
   const p=pnlVND();
   const share=p?div(g(p,'rev.rooms','MTD','act'),g(p,'rev.totalIncl','MTD','act')):null;
@@ -4809,10 +4825,17 @@ function renderForecast(d){
     }
   }
 
+  /* The full-year table and the dashboard's own STAR-trend RevPAR chart both need the
+     CURRENT month's official Comp-sheet history (hasStarHist) — a provisional month
+     genuinely can't feed either, so show why rather than an empty table/chart. */
+  const noStarHistHtml=`<div class="panel"><h3>Full-year ${fcYear} outlook &amp; independent RevPAR forecast</h3>
+      <div class="small">${na('Needs the official Monthly STAR for '+fmtMonthKey(state.month)+' — a provisional (Weekly/Daily STAR) month has no Comp-sheet history to project from')}
+      The panels above (rolling forecast cascade, pace check, cashflow) don't depend on this and are unaffected. This section reactivates automatically once the official Monthly STAR is dropped for this month (usually ~day 20).</div></div>`;
   el.innerHTML=`
     ${rfHtml}
     ${next3Html}
     ${paceHtml}
+    ${hasStarHist?`
     <div class="panel"><h3>Full-year ${fcYear} outlook — ${actKeys.length} actual month(s) + ${H.length}-month projection</h3>
       <table><thead><tr><th>Month</th><th>Occ</th><th>ADR</th><th>RevPAR</th><th>RevPAR range</th><th>RGI proj</th><th>Rooms revenue</th><th>Total revenue</th><th>GOP est.</th></tr></thead>
       <tbody>${actRows}${rows}${subRow}</tbody></table>
@@ -4823,10 +4846,13 @@ function renderForecast(d){
       <div class="small">The two charts below are this dashboard's <b>own</b> statistical projection, built from STAR trend data (same-month-last-year × trailing run-rate). They are deliberately independent of the management rolling forecast above, so the two can be compared as a cross-check rather than one confirming the other.</div></div>
     ${adrPanelHtml}
     <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
-      <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>
+      <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>`:noStarHistHtml}
     ${modelHtml}
     ${otaHtml}`;
-  /* forecast chart — history window can be trimmed with the shared focus period (From) */
+  /* forecast chart — history window can be trimmed with the shared focus period (From).
+     Skipped entirely without STAR history: M/H/fc are all empty so this would just draw
+     an empty chart into a canvas that (per the placeholder branch above) doesn't exist. */
+  if(hasStarHist){
   let labels=[...M,...H].map(fmtMonthKey);
   let act=[...series.revpar.map((v,i)=>v==null?null:cvM(v,M[i])),...H.map(()=>null)];
   let fcl=[...M.map(()=>null),...fc.map(f=>f.revpar==null?null:cvM(f.revpar,f.ym))];
@@ -4841,6 +4867,7 @@ function renderForecast(d){
       {label:'Low',data:lo,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
       {label:'High',data:hi,borderColor:'rgba(201,162,39,.25)',pointRadius:0}]},
     options:{plugins:{legend:{labels:{filter:i=>!/Low|High/.test(i.text)}}},scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}}},maintainAspectRatio:false}});
+  }
   /* model lab charts */
   if(occFc){
     let histN=Math.min(18,um.length);
