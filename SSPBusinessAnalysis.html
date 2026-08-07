@@ -3763,6 +3763,10 @@ function renderMarket(d){
       <div class="small">Owner-side read of the STAR data — competitive position, index trend and daily envelopes. The comp-set switch above re-sources <b>every panel on this tab</b>.
         Now showing: <b>${COMPSET_LABEL[csKind]}</b> — ${compSet.join(' · ')}${st.inclSubject===false?' <span class="tag a">comp-set averages exclude Sofitel</span>':''}
         ${(state.compset==='new'&&csKind!=='new')?' <span class="tag r">No New-Compset file stored for this month — showing the current comp set instead</span>':''}</div></div>
+    ${paceHtml?`<div class="panel"><h3>Pace — interim reads ahead of the official Monthly STAR</h3>
+      <table><thead><tr><th></th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead>
+      <tbody>${paceHtml}</tbody></table>
+      <div class="small" style="margin-top:6px">From the Daily/Weekly STAR pace files dropped in Settings &amp; Data — a running read on the current month before the official Monthly STAR arrives (usually ~day 20). Once that file is dropped, the tab above switches from PROVISIONAL to the official figures and this panel becomes historical context only.</div></div>`:''}
     <div class="cols c2">
       <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
           <span class="noprint" style="float:right">${lyBtns} &nbsp;|&nbsp; ${spBtns}</span></h3>
