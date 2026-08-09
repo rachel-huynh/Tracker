@@ -3436,7 +3436,14 @@ function renderRooms(d){
         <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Cost line</th><th>Actual</th><th>% Rooms rev</th><th>Budget</th><th>LY</th><th>vs Bud %</th><th>vs LY %</th></tr></thead>
       <tbody>${expRows||'<tr><td colspan=7>'+na('Expense detail rows not found on Rooms sheet')+'</td></tr>'}</tbody></table></div></div>`;
-  const ch=curMonth().star?.comp?.revpar;
+  /* Merged history (not curMonth().star.comp, which a PROVISIONAL month leaves empty —
+     this chart rendered as a blank canvas whenever a Weekly-STAR month was selected,
+     same root cause as the Market/Forecast charts fixed earlier). FX still uses cv()
+     — the selected month's rate — exactly as before; switching to the month-aware
+     cvM() would shift long-standing USD figures, so it is left alone deliberately. */
+  const MHr=mergedStarHistory(state.month);
+  const ch=MHr.months.length&&MHr.my.revpar.some(v=>v!=null)?
+    {months:MHr.months,my:MHr.my.revpar,comp:MHr.comp.revpar,idx:MHr.idx.revpar}:null;
   if(ch){
     const gR=granGroup(ch.months,[{data:ch.my.map(cv),agg:'avg'},{data:ch.comp.map(cv),agg:'avg'},{data:ch.idx,agg:'avg'}]);
     mkChart('chRoomsTrend',{type:'line',data:{labels:gR.labels,datasets:[
@@ -6123,10 +6130,10 @@ window.__setPublicView=async on=>{
   if(myRole()!=='admin'){ toast('Only an admin can change this',true); return; }
   state.store.publicView=!!on; saveStore(); renderUsers();
   if(!sbUser){ toast(on?'✔ Public viewing ENABLED locally — sign in and this will publish automatically':'✔ Public viewing DISABLED locally'); return; }
-  const ok=await cloudPublish(true);
-  toast(ok
+  const err=await cloudPublish(true);
+  toast(!err
     ? (on?'✔ Public viewing ENABLED — reviewers can open the live link without an account (System tabs stay hidden for them)':'✔ Public viewing DISABLED — everyone must sign in')
-    : '⚠ Setting saved locally but publish FAILED — reviewers still see the OLD setting until this succeeds. Try again or use "⤴ Publish now".', !ok);
+    : '⚠ Saved locally but publish FAILED — reviewers still see the OLD setting. Reason: '+err, !!err);
 };
 /* debounced auto-publish: any local change while signed in syncs itself */
 let _pubT=null;
@@ -6153,16 +6160,36 @@ async function cloudSignInGo(){
     await cloudPull(true); cloudSubscribe(); cloudUi();
   }catch(e){ $('#loginErr').textContent='Sign-in failed: '+e.message; }
 }
+/* Returns NULL on success, or the error message as a STRING. Callers that just want the
+   toast handled leave quiet=false; __setPublicView passes quiet=true and surfaces the
+   reason itself. Earlier this returned a bare boolean and swallowed the message in quiet
+   mode, so a failed public-view toggle reported only "publish FAILED" with no cause —
+   useless for telling an RLS rejection apart from an oversized payload. */
 async function cloudPublish(quiet=false){
-  if(!sb||!sbUser) return false;
-  if(myRole()==='view'){ if(!quiet) toast('View-only account — publishing is disabled',true); return false; }
+  if(!sb) return 'cloud not initialised (no internet, or Supabase failed to load)';
+  if(!sbUser) return 'not signed in — sign in first, then publish';
+  if(myRole()==='view'){ if(!quiet) toast('View-only account — publishing is disabled',true); return 'view-only account'; }
+  let sizeMB=null;
   try{
+    const payload=JSON.stringify(state.store);
+    sizeMB=+(payload.length/1048576).toFixed(1);
     const {error}=await sb.from(CLOUD.table).upsert({id:CLOUD.rowId,data:state.store,
       updated_by:sbUser.email,client_id:CLIENT_ID,updated_at:new Date().toISOString()});
     if(error) throw error;
     if(!quiet) toast('⤴ Published — reviewers updated');
-    return true;
-  }catch(e){ if(!quiet) toast('Publish failed: '+e.message,true); return false; }
+    return null;
+  }catch(e){
+    /* Supabase surfaces RLS rejections and body-size limits very differently; include the
+       payload size either way, since a multi-MB store is the usual cause once a full STAR
+       daily history is loaded and it is not otherwise visible from the message. */
+    let msg=e?.message||e?.error_description||String(e);
+    if(e?.code) msg+=` [code ${e.code}]`;
+    if(e?.hint) msg+=` — ${e.hint}`;
+    if(sizeMB!=null) msg+=` (payload ${sizeMB} MB)`;
+    if(!quiet) toast('Publish failed: '+msg,true);
+    console.error('cloudPublish failed',e);
+    return msg;
+  }
 }
 async function cloudPull(notify=true){
   if(!sb) return false;                    // works for signed-in AND anonymous readers (RLS permitting)
