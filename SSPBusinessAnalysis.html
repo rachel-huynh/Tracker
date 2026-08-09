@@ -2059,6 +2059,64 @@ function starOf(mk){ const m=state.store.months[mk]||{};
   return (state.compset==='new') ? (m.starNew||m.star||null) : (m.star||m.starNew||null); }
 function compsetHasNew(){ return Object.values(state.store.months).some(m=>m&&m.starNew); }
 
+/* ---------- merged STAR history across every stored month ----------
+   Each OFFICIAL Monthly STAR carries an 18-month Comp-sheet history, so merging the
+   stored files yields one long union series (levels AND indices). A PROVISIONAL month
+   (built from a Weekly STAR before the official file lands ~day 20) has no Comp sheet
+   at all — `comp` is left {} — but its own `glance.cm` block does carry that month's
+   own levels and MPI/ARI/RGI, so it is filled in as a single point.
+
+   Why this exists: the Market tab's Index-trend + RevPAR-quadrant charts and the
+   Forecast tab's full-year outlook all used to read `st.comp` (the SELECTED month's own
+   file) directly. For a provisional month that is empty, so those charts rendered as
+   blank canvases and the outlook blanked out entirely — reported 2026-08.
+
+   `upto` caps the series at the selected month so every consumer keeps its existing
+   "as of the selected month" semantics (picking an earlier month still rolls the view
+   back) rather than always jumping to the newest stored file.
+   Comp-sheet values win over glance where both exist: they are the same figure for a
+   given month, but preferring one source keeps the series internally consistent. */
+function mergedStarHistory(upto){
+  const m={};
+  const slot=k=>(m[k]=m[k]||{my:{},comp:{},idx:{},prov:false});
+  const METS=['occ','adr','revpar'];
+  const keys=Object.keys(state.store.months).sort();
+  /* pass 1 — long Comp-sheet histories from the official files */
+  for(const mk of keys){
+    const c=starOf(mk)?.comp; if(!c?.occ?.months) continue;
+    c.occ.months.forEach((k,i)=>{
+      if(!k||(upto&&k>upto)) return;
+      const s=slot(k);
+      for(const met of METS){ const b=c[met]; if(!b) continue;
+        if(s.my[met]==null&&b.my?.[i]!=null) s.my[met]=b.my[i];
+        if(s.comp[met]==null&&b.comp?.[i]!=null) s.comp[met]=b.comp[i];
+        if(s.idx[met]==null&&b.idx?.[i]!=null) s.idx[met]=b.idx[i];
+      }
+    });
+  }
+  /* pass 2 — fill only what's still missing from each month's own glance block; this is
+     the ONLY source for a provisional month */
+  for(const mk of keys){
+    const st=starOf(mk); const g=st?.glance?.cm; if(!g) continue;
+    const k=st.monthKey||mk; if(upto&&k>upto) continue;
+    const s=slot(k);
+    if(st.provisional) s.prov=true;
+    for(const met of METS){ const b=g[met]; if(!b) continue;
+      if(s.my[met]==null&&b.my!=null) s.my[met]=b.my;
+      if(s.comp[met]==null&&b.comp!=null) s.comp[met]=b.comp;
+      if(s.idx[met]==null&&b.idx!=null) s.idx[met]=b.idx;
+    }
+  }
+  const months=Object.keys(m).sort();
+  const pull=(grp,met)=>months.map(k=>m[k][grp][met]??null);
+  const out={months,prov:months.map(k=>m[k].prov),my:{},comp:{},idx:{}};
+  for(const met of METS){ out.my[met]=pull('my',met); out.comp[met]=pull('comp',met); out.idx[met]=pull('idx',met); }
+  /* same calendar month one year earlier, matched BY KEY (not by shifting 12 array
+     positions) so a gap in the union can never silently misalign the LY comparison */
+  out.lyOf=arr=>months.map(k=>{ const i=months.indexOf((+k.slice(0,4)-1)+'-'+k.slice(5,7)); return i>=0?arr[i]:null; });
+  return out;
+}
+
 /* ---------- Room-category performance from "3. Booked vs. Stayed.xlsx" ----------
    Three long-format sheets keyed by Source.Name ("2024.01_Room_Type_Report.xlsx"):
      Booked vs Stayed_Nights   → Nights   (room nights sold)
@@ -3763,10 +3821,10 @@ function renderMarket(d){
       <div class="small">Owner-side read of the STAR data — competitive position, index trend and daily envelopes. The comp-set switch above re-sources <b>every panel on this tab</b>.
         Now showing: <b>${COMPSET_LABEL[csKind]}</b> — ${compSet.join(' · ')}${st.inclSubject===false?' <span class="tag a">comp-set averages exclude Sofitel</span>':''}
         ${(state.compset==='new'&&csKind!=='new')?' <span class="tag r">No New-Compset file stored for this month — showing the current comp set instead</span>':''}</div></div>
-    ${paceHtml?`<div class="panel"><h3>Pace — interim reads ahead of the official Monthly STAR</h3>
+    ${(paceHtml&&paceVisible())?`<div class="panel"><h3>Pace — interim reads ahead of the official Monthly STAR</h3>
       <table><thead><tr><th></th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead>
       <tbody>${paceHtml}</tbody></table>
-      <div class="small" style="margin-top:6px">From the Daily/Weekly STAR pace files dropped in Settings &amp; Data — a running read on the current month before the official Monthly STAR arrives (usually ~day 20). Once that file is dropped, the tab above switches from PROVISIONAL to the official figures and this panel becomes historical context only.</div></div>`:''}
+      <div class="small" style="margin-top:6px">From the Daily/Weekly STAR pace files dropped in Settings &amp; Data — a running read on the current month before the official Monthly STAR arrives (usually ~day 20). Once that file is dropped, the tab above switches from PROVISIONAL to the official figures and this panel becomes historical context only. Hide this panel any time from <b>Settings &amp; Data → Visible tabs &amp; panels</b>.</div></div>`:''}
     <div class="cols c2">
       <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
           <span class="noprint" style="float:right">${lyBtns} &nbsp;|&nbsp; ${spBtns}</span></h3>
@@ -3833,15 +3891,18 @@ function renderMarket(d){
       plugins:mg==='daily'?[weBandOf(bw.we)]:[]});
   }
 
-  /* quadrant: x=MPI, y=ARI, points = last 12 months */
-  const co=st.comp?.occ, ca=st.comp?.adr;
-  if(co&&ca){
-    const n=co.idx.length;
+  /* quadrant: x=MPI, y=ARI, points = last 12 months.
+     Reads the MERGED history (not st.comp) so a provisional month still plots — its own
+     glance block carries that month's MPI/ARI even though it has no Comp sheet. */
+  const MH=mergedStarHistory(state.month);
+  const co=MH.idx.occ, ca=MH.idx.adr, cmonths=MH.months;
+  if(cmonths.length){
+    const n=cmonths.length;
     const ptsArr=[];
-    for(let i=Math.max(0,n-12);i<n;i++){ if(co.idx[i]!=null&&ca.idx[i]!=null) ptsArr.push({x:co.idx[i],y:ca.idx[i],label:fmtMonthKey(co.months[i])}); }
+    for(let i=Math.max(0,n-12);i<n;i++){ if(co[i]!=null&&ca[i]!=null) ptsArr.push({x:co[i],y:ca[i],label:fmtMonthKey(cmonths[i])+(MH.prov[i]?' (provisional)':'')}); }
     const last=ptsArr[ptsArr.length-1];
-    const li=co.months.indexOf(lyKey);
-    const lyPt=(li>=0&&co.idx[li]!=null&&ca.idx[li]!=null)?{x:co.idx[li],y:ca.idx[li],label:fmtMonthKey(lyKey)+' (same month LY)'}:null;
+    const li=cmonths.indexOf(lyKey);
+    const lyPt=(li>=0&&co[li]!=null&&ca[li]!=null)?{x:co[li],y:ca[li],label:fmtMonthKey(lyKey)+' (same month LY)'}:null;
     mkChart('chQuad',{type:'scatter',
       data:{datasets:[
         {label:'Months',data:ptsArr.slice(0,-1),backgroundColor:'rgba(74,125,189,.7)',pointRadius:5},
@@ -3859,14 +3920,14 @@ function renderMarket(d){
         ctx.fillText('Volume strategy',x.getPixelForValue(101),y.getPixelForValue(72));
         ctx.fillText('Losing on both',x.getPixelForValue(81),y.getPixelForValue(72)); ctx.restore(); }}]});
   }
-  const cr=st.comp?.revpar;
-  /* LY series = the same index array shifted 12 months, so each x-position compares with
-     the same calendar month a year earlier. Shifting the SERIES (rather than averaging a
-     period) keeps it exact — an index is a ratio and must not be averaged across months. */
-  const shift12=a=>a?a.map((_,i)=>i>=12?(a[i-12]??null):null):[];
-  const gI=cr?granGroup(cr.months,[{data:st.comp.occ?.idx||[],agg:'avg'},{data:st.comp.adr?.idx||[],agg:'avg'},{data:cr.idx,agg:'avg'},
-      {data:shift12(st.comp.occ?.idx),agg:'avg'},{data:shift12(st.comp.adr?.idx),agg:'avg'},{data:shift12(cr.idx),agg:'avg'}]):null;
-  if(cr) mkChart('chIdxTrend',{type:'line',data:{labels:gI.labels,datasets:[
+  /* Index trend also reads the MERGED history, so it keeps drawing when the selected
+     month is provisional. LY series is matched BY MONTH KEY (see mergedStarHistory)
+     rather than by shifting 12 array slots — an index is a ratio and must never be
+     averaged across months, and key-matching also survives gaps in the union. */
+  const hasIdx=MH.months.length&&MH.idx.revpar.some(v=>v!=null);
+  const gI=hasIdx?granGroup(MH.months,[{data:MH.idx.occ,agg:'avg'},{data:MH.idx.adr,agg:'avg'},{data:MH.idx.revpar,agg:'avg'},
+      {data:MH.lyOf(MH.idx.occ),agg:'avg'},{data:MH.lyOf(MH.idx.adr),agg:'avg'},{data:MH.lyOf(MH.idx.revpar),agg:'avg'}]):null;
+  if(hasIdx) mkChart('chIdxTrend',{type:'line',data:{labels:gI.labels,datasets:[
       {label:'MPI',data:gI.out[0],borderColor:'#4a7dbd',tension:.3},
       {label:'ARI',data:gI.out[1],borderColor:'#d69e2e',tension:.3},
       {label:'RGI',data:gI.out[2],borderColor:'#1e7e4f',backgroundColor:'#1e7e4f',borderWidth:2.5,tension:.3},
@@ -4476,10 +4537,15 @@ function renderForecast(d){
      EITHER exists, and every STAR-history variable degrades to an empty default instead
      of throwing, so the RF-only sections still render while the STAR-only ones show an
      explanatory placeholder instead of silently vanishing. */
-  const hasStarHist=!!ch?.revpar?.months?.length;
+  /* Uses the MERGED STAR history (capped at the selected month) rather than the selected
+     month's own Comp sheet, so a PROVISIONAL month — Weekly-STAR-built, no Comp sheet —
+     still projects: its own glance block supplies that month's levels, and the earlier
+     official files supply the 12+ months of history the YoY model needs. */
+  const MH=mergedStarHistory(state.month);
+  const hasStarHist=MH.months.length&&MH.my.revpar.some(v=>v!=null);
   if(!hasStarHist && !state.store.rf && !state.store.cf){ el.innerHTML=noData(); return; }
-  const M=hasStarHist?ch.revpar.months:[], n=M.length;
-  const series={occ:ch?.occ?.my||[], adr:ch?.adr?.my||[], revpar:ch?.revpar?.my||[]};
+  const M=hasStarHist?MH.months:[], n=M.length;
+  const series={occ:MH.my.occ, adr:MH.my.adr, revpar:MH.my.revpar};
   /* run-rate growth: median YoY of the last ≤6 months with a LY pair */
   const growth={},vol={};
   for(const k of Object.keys(series)){
@@ -4508,7 +4574,7 @@ function renderForecast(d){
     return o;
   });
   /* RGI projection: linear trend of last 12 index values */
-  const rgiProj=olsNext((ch?.revpar?.idx||[]).slice(-12),[...Array(H.length)].map((_,i)=>i+1));
+  const rgiProj=olsNext(MH.idx.revpar.slice(-12),[...Array(H.length)].map((_,i)=>i+1));
   /* convert RevPAR forecast into money using latest P&L structure */
   const p=pnlVND();
   const share=p?div(g(p,'rev.rooms','MTD','act'),g(p,'rev.totalIncl','MTD','act')):null;
@@ -4538,13 +4604,20 @@ function renderForecast(d){
     }
   }
   /* OTA independent observation */
-  const ota=state.store.rev?.ota; let otaHtml='',otaChart=null;
+  /* hideable from Settings & Data → Visible tabs & panels (otaVisible) — skipping the
+     whole block also leaves otaChart null, so no chart is drawn into a canvas that the
+     template never rendered. Charts this pass will NOT recreate are destroyed explicitly:
+     innerHTML replacement only detaches the canvas, the Chart object would otherwise stay
+     in state.charts holding a dead reference (same reason renderHeat destroys chTsExp). */
+  if(!otaVisible()) destroyChart('chOta');
+  if(!hasStarHist){ destroyChart('chFc'); destroyChart('chOccFc'); destroyChart('chAdrOcc'); }
+  const ota=otaVisible()?state.store.rev?.ota:null; let otaHtml='',otaChart=null;
   if(ota){
     const sspH=ota.hotels.find(h=>/sofitel/i.test(h));
     const comps=ota.hotels.filter(h=>h!==sspH);
     const oM=((state.tsFrom||state.tsTo)?ota.months.filter(tsInRange):ota.months).slice(-18);
     const basket=oM.map(m=>{ const vs=comps.map(h=>ota.series[h][m]?.avg).filter(v=>v!=null); return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null; });
-    const strM=ch.adr?.months||[], strComp=ch.adr?.comp||[];
+    const strM=MH.months, strComp=MH.comp.adr;
     const strOnOta=oM.map(m=>{ const i=strM.indexOf(m); return i>=0?strComp[i]:null; });
     /* validation: OTA basket vs STR comp ADR on overlapping months */
     const pairs=oM.map((m,i)=>[basket[i],strOnOta[i]]).filter(x=>x[0]&&x[1]);
@@ -5522,11 +5595,19 @@ function renderSettings(){
   const el=$('#settingsDyn'); if(!el) return;
   const configured=!!(CLOUD.url&&CLOUD.anonKey);
   el.innerHTML=`
-    <div class="panel"><h3>Visible tabs</h3>
+    <div class="panel"><h3>Visible tabs &amp; panels</h3>
       <label class="small" style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" ${revAVisible()?'checked':''} onchange="__toggleRevA(this.checked)">
         <span>Show the <b>Revenue Analysis</b> tab</span></label>
-      <div class="small" style="margin-top:6px;color:var(--grey)">Hidden by default. It needs the Revenue-analysis workbooks (Key Account, Booked vs Stayed, Upgrades, Nor1, F&amp;B discount/summary) to be useful.</div></div>
+      <div class="small" style="margin-top:6px;margin-bottom:10px;color:var(--grey)">Hidden by default. It needs the Revenue-analysis workbooks (Key Account, Booked vs Stayed, Upgrades, Nor1, F&amp;B discount/summary) to be useful.</div>
+      <label class="small" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" ${paceVisible()?'checked':''} onchange="__togglePace(this.checked)">
+        <span>Show the <b>Pace</b> panel on the Market — STR tab</span></label>
+      <div class="small" style="margin-top:6px;margin-bottom:10px;color:var(--grey)">Shown by default whenever a Daily/Weekly STAR pace file is loaded. Turn off once the official Monthly STAR has landed for the month and the interim reads are no longer useful.</div>
+      <label class="small" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" ${otaVisible()?'checked':''} onchange="__toggleOta(this.checked)">
+        <span>Show the <b>OTA price observation</b> panels on the Forecast tab</span></label>
+      <div class="small" style="margin-top:6px;color:var(--grey)">The OTA-vs-STR validation chart and the OTA BAR position table. Shown by default when the Last-minute Booking workbook is loaded; the scrape covers BAR only, so it is directional rather than a like-for-like ADR comparison.</div></div>
     <div class="panel"><h3>Edited titles &amp; captions
         <button class="noprint" onclick="__resetTexts()" style="margin-left:8px">↩ Reset all to original</button></h3>
       <div class="small">${Object.keys(state.store.textOverrides||{}).length} panel title(s) / caption(s) have been reworded on this dashboard.
@@ -5765,6 +5846,16 @@ function renderAll(){
    need. Toggled from Settings & Data; the preference persists with the store. */
 function revAVisible(){ return !!state.store.showRevA; }
 window.__toggleRevA=v=>{ state.store.showRevA=!!v; saveStore(); renderAll(); };
+/* Pace panel (Market tab) defaults ON whenever a Daily/Weekly STAR pace file is loaded —
+   unlike Revenue Analysis this isn't a whole tab, so the flag is stored inverted
+   (showPace===false means explicitly hidden) so existing stores with no such key yet
+   keep showing the panel rather than silently losing it on first load post-upgrade. */
+function paceVisible(){ return state.store.showPace!==false; }
+window.__togglePace=v=>{ state.store.showPace=!!v; saveStore(); renderAll(); };
+/* OTA price-observation panels (Forecast tab) — same inverted-default convention as
+   paceVisible: absent key means VISIBLE, so existing stores don't silently lose them. */
+function otaVisible(){ return state.store.showOta!==false; }
+window.__toggleOta=v=>{ state.store.showOta=!!v; saveStore(); renderAll(); };
 
 /* Give every KPI scorecard equal-width cards spread evenly across rows: pick a column
    count so the cards fill balanced rows (12 → 6×2, not 10 wide + 2 huge). Only visible
