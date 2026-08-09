@@ -3189,52 +3189,57 @@ function pipelineSvg(stages){
   const COL={ok:'#1E7E4F',warn:'#C9A227',missing:'#C0392B'};
   const TINT={ok:'#e3f3ea',warn:'#faf0dc',missing:'#fbe4e1'};
   const worst=f=>f.some(x=>x.s==='missing')?'missing':(f.some(x=>x.s==='warn')?'warn':'ok');
-  const W=224,GAP=16,H=126,Y=8;
+  /* Compact geometry — roughly 30% smaller in every dimension than the original draft,
+     so the whole diagram reads as a quick strip rather than a half-screen graphic. */
+  const W=178,GAP=12,H=98,Y=6;
   /* the monthly cycle is the sequential row; `periodic` groups are drawn as a separate
      feeder band below, so they are never mistaken for a step in that sequence */
   const seq=stages.filter(s=>!s.periodic), ref=stages.filter(s=>s.periodic);
+  const CW=16+seq.length*W+Math.max(0,seq.length-1)*GAP; // canvas width, sized to the stage count
+  const cx0=CW/2;
   let out='';
   seq.forEach((st,i)=>{
     const x=8+i*(W+GAP), w2=worst(st.files);
-    out+=`<rect x="${x}" y="${Y}" width="${W}" height="${H}" rx="7" fill="${TINT[w2]}" stroke="${COL[w2]}" stroke-width="1.4"/>
-      <text x="${x+12}" y="${Y+22}" font-size="12" font-weight="700" fill="#0B1F3A">${st.stage}</text>
-      <text x="${x+12}" y="${Y+37}" font-size="9.5" fill="#6B7280">${st.when}</text>`;
-    st.files.forEach((f,j)=>{ const fy=Y+56+j*18;
-      out+=`<circle cx="${x+17}" cy="${fy-3.5}" r="4.2" fill="${COL[f.s]}"/>
-        <text x="${x+28}" y="${fy}" font-size="11" fill="#1f2937">${f.k}</text>`; });
+    out+=`<rect x="${x}" y="${Y}" width="${W}" height="${H}" rx="6" fill="${TINT[w2]}" stroke="${COL[w2]}" stroke-width="1.2"/>
+      <text x="${x+10}" y="${Y+16}" font-size="10.5" font-weight="700" fill="#0B1F3A">${st.stage}</text>
+      <text x="${x+10}" y="${Y+28}" font-size="8" fill="#6B7280">${st.when}</text>`;
+    st.files.forEach((f,j)=>{ const fy=Y+42+j*14.5;
+      out+=`<circle cx="${x+14}" cy="${fy-3}" r="3.4" fill="${COL[f.s]}"/>
+        <text x="${x+23}" y="${fy}" font-size="9.5" fill="#1f2937">${f.k}</text>`; });
     if(i<seq.length-1){ const ax=x+W, my=Y+H/2;
-      out+=`<line x1="${ax+2}" y1="${my}" x2="${ax+GAP-5}" y2="${my}" stroke="#9CA3AF" stroke-width="1.6"/>
-        <polygon points="${ax+GAP-5},${my-4} ${ax+GAP},${my} ${ax+GAP-5},${my+4}" fill="#9CA3AF"/>`; }
+      out+=`<line x1="${ax+2}" y1="${my}" x2="${ax+GAP-4}" y2="${my}" stroke="#9CA3AF" stroke-width="1.4"/>
+        <polygon points="${ax+GAP-4},${my-3.5} ${ax+GAP},${my} ${ax+GAP-4},${my+3.5}" fill="#9CA3AF"/>`; }
     /* every stage feeds the report bar below */
-    out+=`<line x1="${x+W/2}" y1="${Y+H}" x2="${x+W/2}" y2="156" stroke="#9CA3AF" stroke-width="1.4" stroke-dasharray="3,3"/>
-      <polygon points="${x+W/2-4},156 ${x+W/2+4},156 ${x+W/2},161" fill="#9CA3AF"/>`;
+    out+=`<line x1="${x+W/2}" y1="${Y+H}" x2="${x+W/2}" y2="${Y+H+12}" stroke="#9CA3AF" stroke-width="1.2" stroke-dasharray="3,3"/>
+      <polygon points="${x+W/2-3.5},${Y+H+12} ${x+W/2+3.5},${Y+H+12} ${x+W/2},${Y+H+16}" fill="#9CA3AF"/>`;
   });
-  out+=`<rect x="8" y="162" width="944" height="42" rx="7" fill="#0B1F3A"/>
-    <text x="480" y="180" font-size="12.5" font-weight="700" fill="#fff" text-anchor="middle">Executive summary → draft BOD email → Publish to reviewers</text>
-    <text x="480" y="196" font-size="10" fill="#C9A227" text-anchor="middle">Anything still red below is a gap the email will silently omit</text>`;
+  const OUT_Y=Y+H+18, OUT_H=30;
+  out+=`<rect x="8" y="${OUT_Y}" width="${CW-16}" height="${OUT_H}" rx="6" fill="#0B1F3A"/>
+    <text x="${cx0}" y="${OUT_Y+13}" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">Executive summary → draft BOD email → Publish to reviewers</text>
+    <text x="${cx0}" y="${OUT_Y+25}" font-size="8" fill="#C9A227" text-anchor="middle">Anything still red below is a gap the email will silently omit</text>`;
   /* reference-data feeder band: sits BELOW the output bar with an arrow pointing UP into
      it, so it reads as "these also feed the report" without implying a monthly sequence.
-     Chips are laid out with an estimated text width (≈5.35px/char at 9.5px) — that is why
-     each file carries a SHORT label; measuring properly would need a DOM pass. */
-  let H2=0;
+     Chips are laid out with an estimated text width — that is why each file carries a
+     SHORT label; measuring properly would need a DOM pass. */
+  let VH2=0;
   if(ref.length){
     const st=ref[0], w2=worst(st.files);
-    const BY=222, BH=48; H2=BY+BH;
-    out+=`<line x1="480" y1="${BY}" x2="480" y2="209" stroke="#9CA3AF" stroke-width="1.4" stroke-dasharray="3,3"/>
-      <polygon points="476,209 484,209 480,204" fill="#9CA3AF"/>
-      <rect x="8" y="${BY}" width="944" height="${BH}" rx="7" fill="${TINT[w2]}" stroke="${COL[w2]}" stroke-width="1.4" stroke-dasharray="5,3"/>
-      <text x="20" y="${BY+18}" font-size="11.5" font-weight="700" fill="#0B1F3A">${st.stage}</text>
-      <text x="${20+st.stage.length*6.6}" y="${BY+18}" font-size="9.5" fill="#6B7280">— ${st.when}</text>`;
-    let cx=20;
+    const barBot=OUT_Y+OUT_H, BY=barBot+13, BH=34; VH2=BY+BH;
+    out+=`<line x1="${cx0}" y1="${BY}" x2="${cx0}" y2="${barBot+5}" stroke="#9CA3AF" stroke-width="1.2" stroke-dasharray="3,3"/>
+      <polygon points="${cx0-3.5},${barBot+5} ${cx0+3.5},${barBot+5} ${cx0},${barBot+1}" fill="#9CA3AF"/>
+      <rect x="8" y="${BY}" width="${CW-16}" height="${BH}" rx="6" fill="${TINT[w2]}" stroke="${COL[w2]}" stroke-width="1.2" stroke-dasharray="5,3"/>
+      <text x="18" y="${BY+13}" font-size="9.5" font-weight="700" fill="#0B1F3A">${st.stage}</text>
+      <text x="${18+st.stage.length*5.4}" y="${BY+13}" font-size="8" fill="#6B7280">— ${st.when}</text>`;
+    let cx=18;
     st.files.forEach(f=>{ const lbl=f.short||f.k;
-      out+=`<circle cx="${cx+4}" cy="${BY+34}" r="4.2" fill="${COL[f.s]}"/>
-        <text x="${cx+14}" y="${BY+37.5}" font-size="9.5" fill="#1f2937">${lbl}</text>`;
-      cx+=14+lbl.length*5.35+16; });
+      out+=`<circle cx="${cx+3.4}" cy="${BY+25}" r="3.4" fill="${COL[f.s]}"/>
+        <text x="${cx+11.5}" y="${BY+28}" font-size="8" fill="#1f2937">${lbl}</text>`;
+      cx+=11.5+lbl.length*4.55+13; });
   }
-  const VH=H2||212;
+  const VH=VH2||(OUT_Y+OUT_H+8);
   /* sizing lives in the .pipesvg CSS class, NOT inline: an inline style would outrank
      the max-width:640px rule that hides this on phones */
-  return `<svg class="pipesvg" viewBox="0 0 960 ${VH}" role="img"
+  return `<svg class="pipesvg" viewBox="0 0 ${CW} ${VH}" role="img"
     aria-label="Monthly upload pipeline: mid-month pace, month-end close, day-20 benchmark, plan and report — all feeding the executive summary, plus a reference-data band refreshed on its own cadence">${out}</svg>
     <div class="pipesvg-alt small" style="color:var(--grey)">Flow: <b>1 Mid-month pace</b> → <b>2 Month-end close</b> → <b>3 ~Day 20 benchmark</b> → <b>4 Plan &amp; report</b> → executive summary / BOD email, plus <b>5 Reference data</b> (not monthly). The diagram is hidden on narrow screens — the checklist below carries the same status for every file.</div>`;
 }
@@ -3266,17 +3271,6 @@ function renderExec(d){
       <div class="notero${body?'':' empty'}">${body?escH(body):'— no note for this month —'}</div></div>`;
   };
   el.innerHTML=`
-    <div class="panel"><h3>Monthly reporting flow — ${fmtMonthKey(state.month)}
-        <span class="small" style="font-weight:400">
-          ${nMiss?`<span class="tag r">${nMiss} missing</span>`:'<span class="tag g">complete</span>'}
-          ${nWarn?` <span class="tag a">${nWarn} to check</span>`:''}
-          <span style="color:var(--grey)"> · ${nOk} of ${allFiles.length} loaded</span></span></h3>
-      ${pipelineSvg(stages)}
-      <div class="small" style="margin-top:6px">Each box is one stage of the monthly cycle and is tinted by its own worst item — green = every file in, amber = present but provisional or a stale vintage, red = something still missing. Drop files in <b>Settings &amp; Data</b> or <b>Data Quality</b> (both feed the same store). Status is for the <b>selected month</b>, so stepping back a month shows what that month is still missing.</div></div>
-    <div class="panel"><h3>Monthly upload checklist — ${fmtMonthKey(state.month)}</h3>
-      <table><thead><tr><th>File</th><th>Status</th><th>What it drives</th></tr></thead>
-      <tbody>${checklistRows}</tbody></table>
-      <div class="small" style="margin-top:6px">Stages 1–3 are per month; stage 4 is portfolio-level — the Rolling Forecast is re-issued monthly (flagged <b>check</b> if the stored vintage is older than the selected month), while the Budget is annual and only needs dropping once per year. <b>Stage 5 is not tied to a month at all</b>: each of those workbooks is a rolling multi-month extract (Booked vs Stayed, upsell, key accounts, OTA, F&amp;B) — re-drop whenever a fresh copy is issued, and the newest file simply replaces the stored one. Full per-month history and parse warnings are on the <b>Data Quality</b> tab.</div></div>
     <div class="cols c2">
       <div class="panel"><h3>Draft BOD email — ${fmtMonthKey(state.month)} <button class="noprint" onclick="__execCopy()" style="margin-left:8px">📋 Copy email</button></h3>
         <div id="execDraft" contenteditable="${canEdit?'true':'false'}" spellcheck="false"
@@ -3287,7 +3281,18 @@ function renderExec(d){
         <div class="small">${canEdit
           ? 'Tip: one line per bullet — each line becomes its own bullet in the draft. The bold title above each box is editable too. Notes sync to reviewers when you Publish.'
           : `🔒 Read-only. Click <b>${t('edLocked')}</b> in the header to switch on <b>${t('edEditing')}</b>, then you can change both the note text and its title.`}</div></div>
-    </div>`;
+    </div>
+    <div class="panel"><h3>Monthly reporting flow — ${fmtMonthKey(state.month)}
+        <span class="small" style="font-weight:400">
+          ${nMiss?`<span class="tag r">${nMiss} missing</span>`:'<span class="tag g">complete</span>'}
+          ${nWarn?` <span class="tag a">${nWarn} to check</span>`:''}
+          <span style="color:var(--grey)"> · ${nOk} of ${allFiles.length} loaded</span></span></h3>
+      ${pipelineSvg(stages)}
+      <div class="small" style="margin-top:6px">Each box is one stage of the monthly cycle and is tinted by its own worst item — green = every file in, amber = present but provisional or a stale vintage, red = something still missing. Drop files in <b>Settings &amp; Data</b> or <b>Data Quality</b> (both feed the same store). Status is for the <b>selected month</b>, so stepping back a month shows what that month is still missing.</div></div>
+    <div class="panel"><h3>Monthly upload checklist — ${fmtMonthKey(state.month)}</h3>
+      <table><thead><tr><th>File</th><th>Status</th><th>What it drives</th></tr></thead>
+      <tbody>${checklistRows}</tbody></table>
+      <div class="small" style="margin-top:6px">Stages 1–3 are per month; stage 4 is portfolio-level — the Rolling Forecast is re-issued monthly (flagged <b>check</b> if the stored vintage is older than the selected month), while the Budget is annual and only needs dropping once per year. <b>Stage 5 is not tied to a month at all</b>: each of those workbooks is a rolling multi-month extract (Booked vs Stayed, upsell, key accounts, OTA, F&amp;B) — re-drop whenever a fresh copy is issued, and the newest file simply replaces the stored one. Full per-month history and parse warnings are on the <b>Data Quality</b> tab.</div></div>`;
 }
 
 /* ---------------- ROOMS ---------------- */
