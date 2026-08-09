@@ -146,7 +146,13 @@ tr.segsub td{font-weight:600;color:#374151;background:#f7f9fc}
 .heatrow{display:grid;grid-template-columns:repeat(3,minmax(260px,1fr));gap:14px;overflow-x:auto;margin-bottom:14px}
 /* Exec-summary pipeline flowchart. Sizing MUST live here rather than inline, or the
    max-width:640px override below can't hide it (inline styles win on specificity). */
-.pipesvg{width:100%;height:auto;display:block}
+/* max-width caps how far the viewBox stretches: an SVG's on-screen text size is
+   (font-size-in-viewBox-units / viewBox-width) * rendered-CSS-width, so on a full-width
+   panel "width:100%" alone renders it far larger than the surrounding 12-13px body text —
+   shrinking the viewBox units alone (as a first attempt did) doesn't help, since that ratio
+   stays constant. Capping the rendered width is what actually shrinks it. 920px puts the
+   stage titles at ~13px and file labels at ~12px, matching .panel h3 / table body text. */
+.pipesvg{width:100%;max-width:920px;height:auto;display:block}
 .pipesvg-alt{display:none}
 /* Phone override MUST sit after the two rules above — the main max-width:640px block
    is earlier in this stylesheet, and at equal specificity the later rule wins. */
