@@ -144,6 +144,18 @@ tr.segsub td{font-weight:600;color:#374151;background:#f7f9fc}
    viewport width, so on narrow screens this scrolls horizontally rather
    than reflowing to fewer columns. */
 .heatrow{display:grid;grid-template-columns:repeat(3,minmax(260px,1fr));gap:14px;overflow-x:auto;margin-bottom:14px}
+/* Exec-summary pipeline flowchart. Sizing MUST live here rather than inline, or the
+   max-width:640px override below can't hide it (inline styles win on specificity). */
+.pipesvg{width:100%;height:auto;display:block}
+.pipesvg-alt{display:none}
+/* Phone override MUST sit after the two rules above — the main max-width:640px block
+   is earlier in this stylesheet, and at equal specificity the later rule wins. */
+@media(max-width:640px){
+  /* the flowchart scales to ~70px tall on a phone — illegible; the checklist table
+     right below carries exactly the same statuses in readable form */
+  .pipesvg{display:none}
+  .pipesvg-alt{display:block}
+}
 table.heat td{text-align:center;padding:3px 4px;font-size:11px;border:1px solid #fff}
 table.heat th{text-align:center}
 table.heat td:first-child{text-align:left;font-weight:600;background:#f3f5f9}
@@ -3114,10 +3126,95 @@ function buildExecDraft(d){
   L.push('','Please let us know if you require further assistance. We look forward to your feedback.','','Best regards,','PHCL team');
   return L.join('\n');
 }
+/* ---------------- MONTHLY UPLOAD PIPELINE (Exec Summary) ----------------
+   One source of truth for "what has to be dropped each month, and is it in yet?" —
+   drives BOTH the flowchart and the checklist below it, so the two can never disagree.
+   Status per file: ok (green) · warn (amber — present but provisional/stale) · missing.
+   Deliberately scoped to the SELECTED month, so stepping back a month shows what that
+   month is still missing rather than today's state. */
+function monthlyPipeline(){
+  const m=curMonth()||{}, mk=state.month||'';
+  const P=state.store.pace||{};
+  const star=m.star||m.starNew;
+  /* Rolling-forecast freshness: the title carries "(07A+05F)" = 7 ACTUAL months, i.e.
+     current through July. If that is behind the selected month the stored RF is a stale
+     vintage — the cascade would silently show last month's plan. */
+  const rf=state.store.rf;
+  const am=/\((\d+)\s*A\s*\+/i.exec(rf?.title||'');
+  const rfThrough=am?+am[1]:null, selNo=mk?+mk.slice(5,7):null;
+  const rfStale=!!(rf&&rfThrough!=null&&selNo!=null&&rfThrough<selNo);
+  const S=(ok,warn)=>ok?(warn?'warn':'ok'):'missing';
+  return [
+    {stage:'1 · Mid-month pace', when:'any time before the official STAR', files:[
+      {k:'Weekly STAR',      s:S(!!P.weekly), note:P.weekly?.label||'builds the provisional month for Market/Forecast'},
+      {k:'Daily STAR',       s:S(!!P.daily),  note:P.daily?.label||'running-MTD pace read'},
+    ]},
+    {stage:'2 · Month-end close', when:'when Finance issues the pack', files:[
+      {k:'P&L — VND',        s:S(!!m.pnlVND), note:'drives every financial tab'},
+      {k:'P&L — USD',        s:S(!!m.pnlUSD), note:'enables the FX cross-check'},
+      {k:'Consolidated FS',  s:S(!!m.fs),     note:'Central Plaza + consolidated cascade'},
+      {k:'Engineering PDF',  s:S(!!m.eng),    note:'Engineering tab'},
+    ]},
+    {stage:'3 · ~Day 20 benchmark', when:'when STR / HotStats publish', files:[
+      {k:'Monthly STAR',     s:S(!!star,!!star?.provisional),
+        note:star?.provisional?'PROVISIONAL — official Monthly STAR still pending':'official comp-set history'},
+      {k:'HotStats',         s:S(!!m.hotstats), note:'Benchmark tab'},
+    ]},
+    {stage:'4 · Plan & report', when:'monthly reforecast', files:[
+      {k:'Rolling Forecast', s:S(!!rf,rfStale),
+        note:rf?(escH(rf.title||'')+(rfStale?` — stale, only through month ${rfThrough}`:'')):'Forecast cascade + next-3-months'},
+      {k:'Cashflow forecast',s:S(!!state.store.cf), note:'cash runway / buffer alert'},
+      {k:'2026 Budget',      s:S(!!state.store.budget2026), note:'annual — one drop covers all 12 months'},
+    ]},
+  ];
+}
+/* Live flowchart: inline SVG (no external lib — the app is a single offline file).
+   Each stage is tinted by its own worst status, so the picture doubles as the tracker. */
+function pipelineSvg(stages){
+  const COL={ok:'#1E7E4F',warn:'#C9A227',missing:'#C0392B'};
+  const TINT={ok:'#e3f3ea',warn:'#faf0dc',missing:'#fbe4e1'};
+  const worst=f=>f.some(x=>x.s==='missing')?'missing':(f.some(x=>x.s==='warn')?'warn':'ok');
+  const W=224,GAP=16,H=126,Y=8;
+  let out='';
+  stages.forEach((st,i)=>{
+    const x=8+i*(W+GAP), w2=worst(st.files);
+    out+=`<rect x="${x}" y="${Y}" width="${W}" height="${H}" rx="7" fill="${TINT[w2]}" stroke="${COL[w2]}" stroke-width="1.4"/>
+      <text x="${x+12}" y="${Y+22}" font-size="12" font-weight="700" fill="#0B1F3A">${st.stage}</text>
+      <text x="${x+12}" y="${Y+37}" font-size="9.5" fill="#6B7280">${st.when}</text>`;
+    st.files.forEach((f,j)=>{ const fy=Y+56+j*18;
+      out+=`<circle cx="${x+17}" cy="${fy-3.5}" r="4.2" fill="${COL[f.s]}"/>
+        <text x="${x+28}" y="${fy}" font-size="11" fill="#1f2937">${f.k}</text>`; });
+    if(i<stages.length-1){ const ax=x+W, my=Y+H/2;
+      out+=`<line x1="${ax+2}" y1="${my}" x2="${ax+GAP-5}" y2="${my}" stroke="#9CA3AF" stroke-width="1.6"/>
+        <polygon points="${ax+GAP-5},${my-4} ${ax+GAP},${my} ${ax+GAP-5},${my+4}" fill="#9CA3AF"/>`; }
+    /* every stage feeds the report bar below */
+    out+=`<line x1="${x+W/2}" y1="${Y+H}" x2="${x+W/2}" y2="156" stroke="#9CA3AF" stroke-width="1.4" stroke-dasharray="3,3"/>
+      <polygon points="${x+W/2-4},156 ${x+W/2+4},156 ${x+W/2},161" fill="#9CA3AF"/>`;
+  });
+  out+=`<rect x="8" y="162" width="944" height="42" rx="7" fill="#0B1F3A"/>
+    <text x="480" y="180" font-size="12.5" font-weight="700" fill="#fff" text-anchor="middle">Executive summary → draft BOD email → Publish to reviewers</text>
+    <text x="480" y="196" font-size="10" fill="#C9A227" text-anchor="middle">Anything still red below is a gap the email will silently omit</text>`;
+  /* sizing lives in the .pipesvg CSS class, NOT inline: an inline style would outrank
+     the max-width:640px rule that hides this on phones */
+  return `<svg class="pipesvg" viewBox="0 0 960 212" role="img"
+    aria-label="Monthly upload pipeline: mid-month pace, month-end close, day-20 benchmark, plan and report, feeding the executive summary">${out}</svg>
+    <div class="pipesvg-alt small" style="color:var(--grey)">Flow: <b>1 Mid-month pace</b> → <b>2 Month-end close</b> → <b>3 ~Day 20 benchmark</b> → <b>4 Plan &amp; report</b> → executive summary / BOD email. The diagram is hidden on narrow screens — the checklist below carries the same status for every file.</div>`;
+}
 function renderExec(d){
   const el=$('#tab-exec');
   const notes=execNotes();
   const canEdit=canEditNotes();
+  const stages=monthlyPipeline();
+  const allFiles=stages.flatMap(s=>s.files);
+  const nOk=allFiles.filter(f=>f.s==='ok').length, nWarn=allFiles.filter(f=>f.s==='warn').length,
+        nMiss=allFiles.filter(f=>f.s==='missing').length;
+  const TAG={ok:'<span class="tag g">loaded</span>',warn:'<span class="tag a">check</span>',missing:'<span class="tag r">missing</span>'};
+  const checklistRows=stages.map(st=>
+    `<tr><td colspan="3" style="background:#f3f5f9;font-weight:700;color:var(--navy)">${st.stage}
+      <span class="small" style="font-weight:400;color:var(--grey)"> — ${st.when}</span></td></tr>`+
+    st.files.map(f=>`<tr><td style="padding-left:18px">${f.k}</td><td>${TAG[f.s]}</td>
+      <td class="small">${f.note}</td></tr>`).join('')
+  ).join('');
   /* Two renderings of the same section: unlocked → editable title input + textarea;
      locked → plain heading + read-only text, so the panel reads like a finished report. */
   const ta=(sec,ph)=>{
@@ -3131,6 +3228,17 @@ function renderExec(d){
       <div class="notero${body?'':' empty'}">${body?escH(body):'— no note for this month —'}</div></div>`;
   };
   el.innerHTML=`
+    <div class="panel"><h3>Monthly reporting flow — ${fmtMonthKey(state.month)}
+        <span class="small" style="font-weight:400">
+          ${nMiss?`<span class="tag r">${nMiss} missing</span>`:'<span class="tag g">complete</span>'}
+          ${nWarn?` <span class="tag a">${nWarn} to check</span>`:''}
+          <span style="color:var(--grey)"> · ${nOk} of ${allFiles.length} loaded</span></span></h3>
+      ${pipelineSvg(stages)}
+      <div class="small" style="margin-top:6px">Each box is one stage of the monthly cycle and is tinted by its own worst item — green = every file in, amber = present but provisional or a stale vintage, red = something still missing. Drop files in <b>Settings &amp; Data</b> or <b>Data Quality</b> (both feed the same store). Status is for the <b>selected month</b>, so stepping back a month shows what that month is still missing.</div></div>
+    <div class="panel"><h3>Monthly upload checklist — ${fmtMonthKey(state.month)}</h3>
+      <table><thead><tr><th>File</th><th>Status</th><th>What it drives</th></tr></thead>
+      <tbody>${checklistRows}</tbody></table>
+      <div class="small" style="margin-top:6px">Stages 1–3 are per month; stage 4 is portfolio-level — the Rolling Forecast is re-issued monthly (flagged <b>check</b> if the stored vintage is older than the selected month), while the Budget is annual and only needs dropping once per year. Full per-month history and parse warnings are on the <b>Data Quality</b> tab.</div></div>
     <div class="cols c2">
       <div class="panel"><h3>Draft BOD email — ${fmtMonthKey(state.month)} <button class="noprint" onclick="__execCopy()" style="margin-left:8px">📋 Copy email</button></h3>
         <div id="execDraft" contenteditable="${canEdit?'true':'false'}" spellcheck="false"
