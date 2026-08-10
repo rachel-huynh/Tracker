@@ -2210,8 +2210,9 @@ const App={
    const rows=((state.payments||{}).rows)||[];
    const row=rows.find(r=>payKey(r)===key); if(!row) return;
    const sameV=rows.filter(r=>r.voucher===row.voucher&&!payRemoved()[payKey(r)]);
-   const one=`App.payRemove(${JSON.stringify(b64)},false)`;
-   const all=`App.payRemove(${JSON.stringify(b64)},true)`;
+   /* dùng nháy ĐƠN: onclick nằm trong thuộc tính bọc bằng nháy kép, lồng nháy kép sẽ cắt đứt lệnh */
+   const one="App.payRemove('"+b64+"',false)";
+   const all="App.payRemove('"+b64+"',true)";
    modal(`<h3>🗑 ${t('payRmTitle')}</h3>
      <div class="help" style="margin-bottom:10px">${esc(row.date)} · <b>${esc(row.voucher)}</b> · ${money(row.amt)}<br>${esc(row.desc.slice(0,220))}</div>
      <div class="warnbox">${t('payRemovedNote')}</div>
