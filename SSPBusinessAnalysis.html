@@ -4168,7 +4168,21 @@ function renderBench(d){
      driven by ONE control bar (line selector + monthly/quarterly + focus period)
      instead of a duplicate set per panel — they read the same state.gran / focus
      period anyway, so two copies only invited them to look independent. */
+  /* HotStats publishes a month's benchmark only after that month closes, so the newest
+     HotStats month normally trails the month selector. EVERYTHING on this tab (both charts
+     and the cascade) is pinned to `hsMonth`, not state.month — so the lag is called out up
+     front here, not just as a tag on the cascade panel: the two charts otherwise just end a
+     month early with nothing to explain why. */
+  const hsLag=hsMonth!==state.month;
+  const hsNote=hsLag
+    ? `<div class="panel" style="padding:10px 12px"><div class="alert warn" style="margin:0">
+        <div class="h">Showing ${fmtMonthKey(hsMonth)} — the ${fmtMonthKey(state.month)} HotStats is not published yet</div>
+        <div class="d">HotStats releases each month's benchmark only after the month closes, so this tab runs behind the month selector.
+          <b>Every figure and both charts below are ${fmtMonthKey(hsMonth)}</b>, not ${fmtMonthKey(state.month)} — they catch up on their own
+          once the ${fmtMonthKey(state.month)} HotStats file is dropped in <b>Settings &amp; Data</b>.</div></div></div>`
+    : `<div class="panel" style="padding:8px 12px"><div class="small">HotStats releases each month's benchmark only after the month closes, so this tab can run behind the month selector — it is currently showing <b>${fmtMonthKey(hsMonth)}</b>, matching the selected month.</div></div>`;
   el.innerHTML=`
+    ${hsNote}
     <div class="panel" style="padding:8px 12px"><div class="small" style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
       <span><b>Trend controls</b> — applies to both charts below:</span>
       <span>Line: ${selHtml}</span>
