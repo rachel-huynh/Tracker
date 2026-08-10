@@ -259,6 +259,13 @@ en:{
  sortBy:'Sort', srtNew:'Newest first', srtSave:'Biggest saving first', srtOver:'Biggest increase first', srtTitle:'Title A–Z', srtTotal:'Largest total first',
  stAll:'All statuses', stSaving:'Saving', stOverrun:'Overrun', stIncluded:'Included in forecast', allStudies:'All studies', noStudy:'(no study)', ofN:'of',
  allMonths:'All months', sortHint:'Click a column header to sort',
+ payRemove:'Remove this payment', payRemovedN:'removed', payRemovedT:'Removed payments', payRestore:'Restore', payRestoreAll:'Restore all',
+ payRemovedNote:'Removed payments are excluded from every figure on this tab and stay removed when you import the ledger again. They are never deleted from the accounting file itself.',
+ payRmOne:'Remove only this line', payRmVoucher:'Remove all $N lines of voucher $V', payRmTitle:'Remove payment',
+ impTitle:'Import ledger', impSame:'already in the system', impNew:'new', impMerge:'Merge — add only the new lines', impReplace:'Replace everything',
+ impMergeHint:'Keeps what you already have (including your manual classifications and removals) and adds only lines that are not there yet. Use this for a ledger covering another period, or when re-importing the same export.',
+ impReplaceHint:'Throws away the current payment dataset and keeps only this file. Use this when the new export is the complete, corrected book.',
+ impResult:'Ledger updated', impNothingNew:'no new lines',
  sbT:'Automatic sync (Supabase realtime)', sbOnLbl:'Sync automatically', sbUrl:'Project URL', sbKey:'API key (publishable)',
  sbHelp:'When on, everything you change is sent to the shared database within a second, and changes made by other members appear here by themselves — no Push/Pull, no import/export. Data still lives in this browser first, so the app keeps working offline and re-sends when the connection returns.',
  sbSetup:'One-time setup for the whole team: in Supabase open SQL Editor and run the file <b>budget-tracker-supabase.sql</b> (kept in this folder). Each computer then only needs the switch above.',
@@ -352,6 +359,13 @@ vi:{
  sortBy:'Sắp xếp', srtNew:'Mới nhất trước', srtSave:'Tiết kiệm nhiều nhất', srtOver:'Tăng nhiều nhất', srtTitle:'Tên A–Z', srtTotal:'Tổng lớn nhất trước',
  stAll:'Tất cả trạng thái', stSaving:'Tiết kiệm', stOverrun:'Vượt', stIncluded:'Đã đưa vào dự báo', allStudies:'Tất cả nhóm', noStudy:'(chưa có nhóm)', ofN:'trên',
  allMonths:'Tất cả các tháng', sortHint:'Bấm tiêu đề cột để sắp xếp',
+ payRemove:'Xóa khoản chi này', payRemovedN:'đã xóa', payRemovedT:'Các khoản đã xóa', payRestore:'Khôi phục', payRestoreAll:'Khôi phục tất cả',
+ payRemovedNote:'Khoản đã xóa không được tính vào bất kỳ số liệu nào trên thẻ này và vẫn bị loại khi bạn nhập lại sổ. Không hề xóa gì trong file kế toán gốc.',
+ payRmOne:'Chỉ xóa dòng này', payRmVoucher:'Xóa cả $N dòng của chứng từ $V', payRmTitle:'Xóa khoản chi',
+ impTitle:'Nhập sổ kế toán', impSame:'đã có trong hệ thống', impNew:'dòng mới', impMerge:'Gộp — chỉ thêm dòng mới', impReplace:'Thay thế toàn bộ',
+ impMergeHint:'Giữ nguyên dữ liệu hiện có (kể cả phân loại thủ công và các dòng đã xóa) và chỉ thêm những dòng chưa có. Dùng khi nhập sổ của kỳ khác, hoặc nhập lại đúng file cũ.',
+ impReplaceHint:'Bỏ toàn bộ dữ liệu thanh toán hiện tại, chỉ giữ file này. Dùng khi file mới là sổ đầy đủ, đã chỉnh sửa lại.',
+ impResult:'Đã cập nhật sổ', impNothingNew:'không có dòng mới',
  sbT:'Đồng bộ tự động (Supabase realtime)', sbOnLbl:'Tự động đồng bộ', sbUrl:'Project URL', sbKey:'API key (publishable)',
  sbHelp:'Khi bật, mọi thay đổi của bạn được gửi lên cơ sở dữ liệu chung trong khoảng một giây, và thay đổi của thành viên khác tự hiện ở đây — không cần bấm Đẩy/Tải, không cần xuất/nhập file. Dữ liệu vẫn nằm trong trình duyệt này trước, nên mất mạng vẫn dùng được và sẽ tự gửi lại khi có mạng.',
  sbSetup:'Cài đặt một lần cho cả nhóm: vào Supabase → SQL Editor, chạy file <b>budget-tracker-supabase.sql</b> (để sẵn trong thư mục này). Sau đó mỗi máy chỉ cần bật công tắc ở trên.',
@@ -411,7 +425,7 @@ const PAY_KW_DEFAULT='airfare, air ticket, sidecheck, side check, dinner, lunch,
 let state = { lang:'en', currency:'VND', fx:26450, prelimsPct:7, contPct:0, budgetTarget:null,
   versions:[], activeId:null, baseId:null, options:[], manualAreas:[], attDir:'Attachments',
   cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null}, cloudEnabled:true, roomLabel:'code', compRef:'auto',
-  payments:null, contracts:[], payKeywords:PAY_KW_DEFAULT, payOverrides:{}, showInternal:false,
+  payments:null, contracts:[], payKeywords:PAY_KW_DEFAULT, payOverrides:{}, payRemoved:{}, showInternal:false,
   quotes:[], rateLinks:{}, sb:{enabled:false,url:'',key:'',lastPush:null,lastPull:null}, tab:'dash' };
 let attCache=[]; // metadata cache of files store
 let saveT=null;
@@ -737,6 +751,11 @@ function parseLedger(wb,fileName){
     if(!desc||credit<=0) continue;
     out.push({date:xlDate(r[0]),voucher:s(r[1]),desc,code:s(r[5]),flag:s(r[6]),contra:s(r[7]),amt:credit,acc});
   }
+  /* Sổ có những dòng trùng hệt nhau (cùng phiếu, cùng diễn giải, cùng số tiền) nhưng là 2 khoản chi
+     riêng biệt → đánh số lần xuất hiện để mỗi dòng có khóa riêng, xóa/phân loại không ảnh hưởng nhau.
+     Lần xuất hiện đầu KHÔNG thêm hậu tố, để các phân loại đã gán trước đây vẫn giữ nguyên. */
+  const seen={};
+  for(const r of out){ const b=r.voucher+'|'+r.amt+'|'+norm(r.desc).slice(0,30); seen[b]=(seen[b]||0)+1; r.dup=seen[b]; }
   return {rows:out,period,accounts:leafCash,file:fileName||'',importedAt:new Date().toISOString()};
 }
 function kwSuggest(c){
@@ -772,7 +791,7 @@ function parseContracts(wb){
   }
   return out;
 }
-function payKey(r){ return r.voucher+'|'+r.amt+'|'+norm(r.desc).slice(0,30); }
+function payKey(r){ return r.voucher+'|'+r.amt+'|'+norm(r.desc).slice(0,30)+((r.dup>1)?'#'+r.dup:''); }
 /* classification: override → VAT (contra 133x) → 642x admin accounts → internal keywords → contract keyword match → other */
 function payCat(r){
   const ov=(state.payOverrides||{})[payKey(r)]; if(ov) return ov;
@@ -785,8 +804,10 @@ function payCat(r){
     for(const k of s(c.kw).split(',')){ const kk=norm(k); if(kk.length>=3&&d.includes(kk)&&kk.length>len){ best=c.id; len=kk.length; } } }
   return best||'other';
 }
+function payRemoved(){ return state.payRemoved||{}; }
 function payData(){ // classified rows honouring the internal-visibility toggle
-  const all=((state.payments||{}).rows||[]).map(r=>({...r,cat:payCat(r)}));
+  const rm=payRemoved();
+  const all=((state.payments||{}).rows||[]).filter(r=>!rm[payKey(r)]).map(r=>({...r,cat:payCat(r)}));
   const visible=state.showInternal?all:all.filter(r=>r.cat!=='internal');
   const sum=list=>list.reduce((x,r)=>x+r.amt,0);
   const vat=visible.filter(r=>r.cat==='vat');
@@ -853,6 +874,7 @@ function sbDocs(){
   if(state.payments) d['payments']={kind:'payments',label:'Ledger '+((state.payments||{}).period||''),obj:state.payments};
   d['ratelinks']={kind:'map',label:'Rate links',obj:state.rateLinks||{}};
   d['payoverrides']={kind:'map',label:'Payment overrides',obj:state.payOverrides||{}};
+  d['payremoved']={kind:'map',label:'Removed payments',obj:state.payRemoved||{}};
   for(const f of attCache){ if(f.rel||(f.dataUrl&&(f.size||0)<=SB_ATT_MAX)) d['att:'+f.id]={kind:'att',label:f.name,obj:f}; }
   return d;
 }
@@ -864,6 +886,7 @@ function sbApplyDoc(key,obj){
   if(key==='payments'){ state.payments=obj; return t('pay'); }
   if(key==='ratelinks'){ state.rateLinks=obj||{}; return ''; }
   if(key==='payoverrides'){ state.payOverrides=obj||{}; return ''; }
+  if(key==='payremoved'){ state.payRemoved=obj||{}; return ''; }
   const p=key.indexOf(':'); if(p<0) return '';
   const pre=key.slice(0,p);
   if(pre==='ver'){ state.versions=state.versions||[]; sbPutById(state.versions,obj); if(!state.activeId) state.activeId=obj.id; return t('versions')+': '+obj.name; }
@@ -1875,12 +1898,14 @@ function renderPay(){
     <td style="font-size:11.5px;white-space:nowrap">${accName(r.contra)}</td>
     <td><span class="chip ${r.cat==='vat'?'n':r.cat==='internal'?'a':r.cat==='other'?'r':'b'}">${esc(catLabel(r.cat))}</span></td>
     <td class="noprint"><select style="font-size:11px;max-width:140px" onchange="App.payAssign('${btoa(encodeURIComponent(payKey(r)))}',this.value)">${assignOpts(r)}</select></td>
-    <td class="num"><b>${money(r.amt)}</b></td></tr>`).join('');
+    <td class="num"><b>${money(r.amt)}</b></td>
+    <td class="noprint"><button class="btn sm danger" title="${t('payRemove')}" onclick="App.payRemoveAsk('${btoa(encodeURIComponent(payKey(r)))}')">✕</button></td></tr>`).join('');
   const detH=`<div class="panel"><h3>🧾 ${t('payDetailT')} <span class="chip n">${list.length}</span> <span class="chip b">${money(listSum)}</span></h3>
     <div class="toolbar"><select onchange="App.paySet('cat',this.value)">${cats.map(([v2,l])=>`<option value="${v2}" ${payState.cat===v2?'selected':''}>${esc(l)}</option>`).join('')}</select>
       <select onchange="App.paySet('month',this.value)"><option value="__all">${t('allMonths')}</option>${months.map(m=>`<option value="${m}" ${payState.month===m?'selected':''}>${m}</option>`).join('')}</select>
-      <input id="payQ" placeholder="${t('search')}" value="${esc(payState.q)}" oninput="App.paySet('q',this.value)" style="width:230px"></div>
-    <div class="tblwrap" style="max-height:58vh"><table><thead><tr>${sth('date',t('vDate'))}${sth('voucher',t('voucher'))}${sth('desc',t('desc'))}${sth('contra',t('contraAcc'))}${sth('cat',t('catCol'))}<th class="noprint"></th>${sth('amt',t('amount'),'num')}</tr></thead><tbody>${detRows}</tbody></table></div></div>`;
+      <input id="payQ" placeholder="${t('search')}" value="${esc(payState.q)}" oninput="App.paySet('q',this.value)" style="width:230px">
+      ${Object.keys(payRemoved()).length?`<span class="sp"></span><button class="btn sm ghost" onclick="App.payRemovedList()">🗑 ${Object.keys(payRemoved()).length} ${t('payRemovedN')}</button>`:''}</div>
+    <div class="tblwrap" style="max-height:58vh"><table><thead><tr>${sth('date',t('vDate'))}${sth('voucher',t('voucher'))}${sth('desc',t('desc'))}${sth('contra',t('contraAcc'))}${sth('cat',t('catCol'))}<th class="noprint"></th>${sth('amt',t('amount'),'num')}<th class="noprint"></th></tr></thead><tbody>${detRows}</tbody></table></div></div>`;
   const chartH=`<div class="panel"><h3>📅 ${t('monthChart')}</h3><div class="chartbox" style="height:240px"><canvas id="chPayMonth"></canvas></div></div>`;
   el.innerHTML=head+cards+conH+chartH+detH;
   // month chart
@@ -2180,6 +2205,43 @@ const App={
  paySet(k,v2){ payState[k]=v2; if(k==='q'){ debounceRender(renderPay); } else renderPay(); },
  paySort(f){ if(payState.sort===f) payState.dir*=-1; else { payState.sort=f; payState.dir=f==='amt'?-1:1; } renderPay(); },
  togglePayInternal(){ state.showInternal=!state.showInternal; save(); renderPay(); },
+ /* --- xóa / khôi phục khoản chi --- */
+ payRemoveAsk(b64){ const key=decodeURIComponent(atob(b64));
+   const rows=((state.payments||{}).rows)||[];
+   const row=rows.find(r=>payKey(r)===key); if(!row) return;
+   const sameV=rows.filter(r=>r.voucher===row.voucher&&!payRemoved()[payKey(r)]);
+   const one=`App.payRemove(${JSON.stringify(b64)},false)`;
+   const all=`App.payRemove(${JSON.stringify(b64)},true)`;
+   modal(`<h3>🗑 ${t('payRmTitle')}</h3>
+     <div class="help" style="margin-bottom:10px">${esc(row.date)} · <b>${esc(row.voucher)}</b> · ${money(row.amt)}<br>${esc(row.desc.slice(0,220))}</div>
+     <div class="warnbox">${t('payRemovedNote')}</div>
+     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px">
+       <button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>
+       ${sameV.length>1?`<button class="btn" onclick="${all}">${t('payRmVoucher').replace('$N',sameV.length).replace('$V',esc(row.voucher))}</button>`:''}
+       <button class="btn danger" onclick="${one}">${t('payRmOne')}</button></div>`); },
+ payRemove(b64,wholeVoucher){ const key=decodeURIComponent(atob(b64));
+   const rows=((state.payments||{}).rows)||[];
+   const row=rows.find(r=>payKey(r)===key); if(!row) return;
+   state.payRemoved=state.payRemoved||{};
+   const targets=wholeVoucher?rows.filter(r=>r.voucher===row.voucher):[row];
+   targets.forEach(r=>{ state.payRemoved[payKey(r)]={date:r.date,voucher:r.voucher,desc:r.desc,amt:r.amt,at:new Date().toISOString()}; });
+   closeModal(); save(); renderPay(); toast('🗑 '+targets.length); },
+ payRestore(b64){ const key=decodeURIComponent(atob(b64));
+   if(state.payRemoved) delete state.payRemoved[key];
+   save(); renderPay(); App.payRemovedList(); },
+ payRestoreAll(){ state.payRemoved={}; save(); closeModal(); renderPay(); },
+ payRemovedList(){ const rm=payRemoved(); const keys=Object.keys(rm);
+   if(!keys.length){ closeModal(); return; }
+   modal(`<h3>🗑 ${t('payRemovedT')} (${keys.length})</h3>
+     <div class="help" style="margin-bottom:8px">${t('payRemovedNote')}</div>
+     <div class="tblwrap" style="max-height:50vh"><table><thead><tr><th>${t('vDate')}</th><th>${t('voucher')}</th><th>${t('desc')}</th><th class="num">${t('amount')}</th><th></th></tr></thead><tbody>
+     ${keys.map(k=>{ const x=rm[k]||{}; return `<tr><td style="white-space:nowrap">${esc(x.date||'')}</td><td>${esc(x.voucher||'')}</td>
+       <td style="font-size:12px">${esc(String(x.desc||'').slice(0,110))}</td><td class="num">${money(x.amt)}</td>
+       <td><button class="btn sm ghost" onclick="App.payRestore('${btoa(encodeURIComponent(k))}')">${t('payRestore')}</button></td></tr>`; }).join('')}
+     </tbody></table></div>
+     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+       <button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>
+       <button class="btn gold" onclick="App.payRestoreAll()">${t('payRestoreAll')}</button></div>`); },
  payAssign(b64,val){ const key=decodeURIComponent(atob(b64)); state.payOverrides=state.payOverrides||{};
    if(val) state.payOverrides[key]=val; else delete state.payOverrides[key];
    save(); renderPay(); },
@@ -2190,10 +2252,45 @@ const App={
    rd.onload=e=>{ try{ const wb=XLSX.read(e.target.result,{type:'array'});
      const P=parseLedger(wb,file.name);
      if(!P||!P.rows.length){ toast('✗ Ledger layout not recognised'); return; }
-     state.payments=P; save(); renderPay();
-     toast('✓ '+P.rows.length+' '+t('payRows')+' ('+P.period+')');
+     const cur=state.payments;
+     if(!cur||!(cur.rows||[]).length){ App.ledgerApply(P,'replace'); return; }   // lần đầu: khỏi hỏi
+     const have=new Set((cur.rows||[]).map(payKey));
+     const fresh=P.rows.filter(r=>!have.has(payKey(r)));
+     window.__pendingLedger=P;
+     modal(`<h3>📒 ${t('impTitle')}</h3>
+       <div class="kv" style="margin-bottom:12px">
+         <span>${t('vFile')}</span><b>${esc(P.file)}</b>
+         <span>${t('asOf')}</span><b>${esc(P.period)}</b>
+         <span>${t('payRows')}</span><b>${P.rows.length}</b>
+         <span>${t('impSame')}</span><b>${P.rows.length-fresh.length}</b>
+         <span>${t('impNew')}</span><b class="${fresh.length?'neg':''}">${fresh.length}</b>
+         <span>${t('paidTotal')}</span><b>${money(fresh.reduce((x,r)=>x+r.amt,0))}</b></div>
+       <div class="okbox"><b>${t('impMerge')}</b><br>${t('impMergeHint')}</div>
+       <div class="warnbox"><b>${t('impReplace')}</b><br>${t('impReplaceHint')}</div>
+       <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px">
+         <button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>
+         <button class="btn danger" onclick="App.ledgerApply(null,'replace')">${t('impReplace')}</button>
+         <button class="btn gold" onclick="App.ledgerApply(null,'merge')">${t('impMerge')} (${fresh.length})</button></div>`);
    }catch(err){ toast('✗ '+err.message); } };
    rd.readAsArrayBuffer(file); },
+ ledgerApply(P,mode){
+   P=P||window.__pendingLedger; if(!P) return;
+   window.__pendingLedger=null; closeModal();
+   if(mode==='merge'&&state.payments&&(state.payments.rows||[]).length){
+     const cur=state.payments;
+     const have=new Set((cur.rows||[]).map(payKey));
+     const fresh=P.rows.filter(r=>!have.has(payKey(r)));
+     cur.rows=(cur.rows||[]).concat(fresh);
+     const ds=cur.rows.map(r=>r.date).filter(Boolean).sort();
+     cur.period=ds.length?(ds[0]+' → '+ds[ds.length-1]):cur.period;   // kỳ sổ = khoảng thực tế của dữ liệu
+     cur.file=P.file; cur.importedAt=new Date().toISOString();
+     cur.merged=true;
+     save(); renderPay();
+     toast(fresh.length?('✓ '+t('impResult')+': +'+fresh.length+' '+t('payRows')):('✓ '+t('impNothingNew')));
+   } else {
+     state.payments=P; save(); renderPay();
+     toast('✓ '+P.rows.length+' '+t('payRows')+' ('+P.period+')');
+   } },
  readContractsFile(file){ if(typeof XLSX==='undefined'){ toast(t('libFail')); return; }
    const rd=new FileReader();
    rd.onload=e=>{ try{ const wb=XLSX.read(e.target.result,{type:'array'});
@@ -2346,7 +2443,7 @@ const App={
    if(!confirm(t('confirmImport'))) return;
    if(sbOn()&&!confirm(t('sbImportWarn'))) return;
    const keepSb=state.sb, keepCloud=state.cloud;
-   state=Object.assign({lang:'en',currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},showInternal:false,quotes:[],rateLinks:{},tab:'dash'},p.state);
+   state=Object.assign({lang:'en',currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},payRemoved:{},showInternal:false,quotes:[],rateLinks:{},tab:'dash'},p.state);
    if((!state.cloud||!state.cloud.apiKey)&&keepCloud&&keepCloud.apiKey) state.cloud=keepCloud;
    state.sb=keepSb||state.sb;   // cấu hình đồng bộ là của từng máy, không lấy từ file sao lưu
    await fClear(); attCache=[];
@@ -2354,7 +2451,7 @@ const App={
    save(); renderAll(); toast('✓ '+t('importBtn')); },
  async wipe(){ if(!confirm(t('confirmWipe'))) return;
    const keepSb2=state.sb; SB_SNAP=null;   // xóa cục bộ KHÔNG được xóa dữ liệu chung của mọi người
-   state={lang:state.lang,currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},showInternal:false,quotes:[],rateLinks:{},sb:keepSb2,tab:'dash'};
+   state={lang:state.lang,currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},payRemoved:{},showInternal:false,quotes:[],rateLinks:{},sb:keepSb2,tab:'dash'};
    await fClear(); attCache=[]; save(); renderAll();
    if(sbOn()){ SB_PULLED_OK=false; sbStart(); }   // xóa máy này = tải lại bản chung
  }
