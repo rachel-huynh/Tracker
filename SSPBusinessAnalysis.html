@@ -690,11 +690,20 @@ function fmtMonthKey(k){ if(!k) return '—'; const [y,m]=k.split('-'); return M
 /* compact MMM-YY for dropdowns / axes (e.g. 2026-06 -> "Jun-26") */
 function fmtMMMYY(k){ if(!k) return '—'; const [y,m]=k.split('-'); return MONTHS[+m-1].slice(0,3)+'-'+String(y).slice(2); }
 
+/* Opening month of the shared focus period on every fresh load. Change this one line to
+   move the default window; "start" in the Focus dropdowns always overrides it per session. */
+const TS_FROM_DEFAULT='2025-01';
 let state = {
   month:null, period:'MTD', cur:'VND', lang:'en', heatMetric:'revpar', benchMetric:'gop',
   snapPer:'cm', dailyBench:'comp',   // Market — STR: snapshot period + daily-table benchmark
   trendGran:'monthly', trendCmp:true, // Patterns tab: trend-explorer granularity + compare-to-previous-year
   tsDay:'all', mktGran:'daily',       // shared day-type filter (all/wd/we) + Market chart granularity
+  /* Shared focus period. Defaults to TS_FROM_DEFAULT rather than "start" because the
+     oldest stretch of the merged STAR history carries My-RevPAR only — no comp set and
+     no indexes — so a full-history view opens with the comp/RGI lines visibly broken.
+     Only a DEFAULT: picking "start" in any Focus dropdown still shows everything, and
+     applyDefaultFocus() drops it entirely if the stored history doesn't reach that far. */
+  tsFrom:TS_FROM_DEFAULT, tsTo:'',
   editMode:false,                     // "✎ Editing" header toggle — off every load, so notes
                                       // and their titles cannot be changed by accident
 
@@ -5857,6 +5866,21 @@ window.__setFxRate=(mk,v)=>{
 };
 
 /* ---------------- top-level render ---------------- */
+/* Safety net for the TS_FROM_DEFAULT focus window: if the loaded store has nothing at or
+   after that month, the default would filter every series down to nothing and the app would
+   open with blank charts. In that case drop the focus and show the full history instead.
+   Checks the MERGED history (each STAR file carries 18 months of comp data), not just the
+   stored month keys, so a single recent STAR file is enough to keep the default. */
+function applyDefaultFocus(){
+  if(state.tsFrom!==TS_FROM_DEFAULT||state.tsTo) return;   // user already changed it
+  const mks=Object.keys(state.store.months);
+  if(!mks.length) return;   // nothing loaded yet (e.g. a reviewer before cloudPull lands) —
+                            // keep the default so it still applies once the data arrives
+  const keys=new Set(mks);
+  for(const k of mks){
+    (state.store.months[k].star?.comp?.occ?.months||[]).forEach(m2=>{ if(m2) keys.add(m2); }); }
+  if(![...keys].some(k=>k>=TS_FROM_DEFAULT)) state.tsFrom='';
+}
 function refreshMonths(){
   const sel=$('#selMonth'); const keys=Object.keys(state.store.months).sort().reverse();
   sel.innerHTML=monthOptGroups(keys,state.month)||'<option>— no data —</option>';
@@ -6243,6 +6267,9 @@ async function cloudPull(notify=true){
     if(data?.data?.months&&Object.keys(data.data.months).length){
       state.store=data.data; state.store.fx=state.store.fx||{};
       if(!state.viewOnly) saveStore();       // viewers don't persist the published copy locally
+      /* re-check the default focus window against the store that just arrived — for a
+         reviewer this is the FIRST store with any months in it, so boot's call was a no-op */
+      applyDefaultFocus();
       state.month=null; refreshMonths(); renderAll();
       if(notify) toast('⤵ Loaded data published by '+(data.updated_by||'?')+' ('+String(data.updated_at).slice(0,16).replace('T',' ')+')');
       return true;
@@ -6316,7 +6343,7 @@ window.__odLoad=async()=>{
 /* =====================================================================
  *  WIRING
  * ===================================================================== */
-(async()=>{ await loadStore(); refreshMonths(); renderAll(); cloudInit(); })();
+(async()=>{ await loadStore(); applyDefaultFocus(); refreshMonths(); renderAll(); cloudInit(); })();
 $('#btnCloud').addEventListener('click',()=>{
   if(!CLOUD.url||!CLOUD.anonKey){ toast('Cloud not configured — see Settings & Data',true); return; }
   if(sbUser){ $$('#tabs button').find(b=>b.dataset.tab==='settings')?.click(); }
