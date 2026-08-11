@@ -5609,11 +5609,15 @@ function renderOffice(d){
     const cc=fsAll[last].centralGop||{}, hh=fsAll[last].hotelGop||{};
     const gg=(cc.yact??0)+(hh.yact??0);
     const isFY=last.slice(5,7)==='12';
+    /* YTD last year: the FS cascade has no yly column, so take the same month one year
+       earlier and use ITS running yact — the statement's own figure, not a re-sum */
+    const pyl=fsAll[(+last.slice(0,4)-1)+'-'+last.slice(5,7)]?.centralGop?.yact??null;
     return `<tfoot><tr class="tot"><td>${isFY?'FY':'YTD'} ${yr}
         <span class="small" style="font-weight:400;color:var(--grey)">through ${fmtMonthKey(last)}${inYr.length<12?' · '+inYr.length+' mth stored':''}</span></td>
       <td data-v="${cc.yact??''}">${money(cc.yact)}</td><td data-v="${cc.ybud??''}">${money(cc.ybud)}</td>
       <td class="${cls(varPct(cc.yact,cc.ybud))}">${pct(varPct(cc.yact,cc.ybud))}</td>
-      <td>${na()}</td><td>${na()}</td>
+      <td data-v="${pyl??''}">${money(pyl)}</td>
+      <td class="${cls(varPct(cc.yact,pyl))}">${pct(varPct(cc.yact,pyl))}</td>
       <td data-v="${gg?cc.yact/gg:''}">${gg?pct(cc.yact/gg):na()}</td></tr></tfoot>`;
   })();
   const top5Html=(()=>{ /* top 5 things to look at — Central Plaza */
@@ -5688,7 +5692,7 @@ function renderOffice(d){
       <div class="panel"><h3>GOP detail by month <span class="small">(newest first)</span></h3>
         <div class="scrollbox"><table><thead><tr><th>Month</th><th>GOP</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>% of consolidated</th></tr></thead>
         <tbody>${rows}</tbody>${ytdFoot}</table></div>
-        <div class="small" style="margin-top:6px">Central Plaza GOP = NET OPERATING INCOME of the building. Newest month at the top; the ${(state.month||'').slice(0,4)} total stays pinned at the bottom while the list scrolls. That total is the FS's own running year-to-date figure, not a sum of the rows above, so it stays right even if a month hasn't been dropped yet — and it carries no vs LY because the FS cascade has no year-to-date last-year column. (Leasing notes are edited on the Exec Summary tab.)</div></div>
+        <div class="small" style="margin-top:6px">Central Plaza GOP = NET OPERATING INCOME of the building. Newest month at the top; the ${(state.month||'').slice(0,4)} total stays pinned at the bottom while the list scrolls. That total is the FS's own running year-to-date figure, not a sum of the rows above, so it stays right even if a month hasn't been dropped yet; its <b>LY</b> is the same running figure from the FS of the same month a year earlier (blank if that month isn't stored). (Leasing notes are edited on the Exec Summary tab.)</div></div>
       ${keys.filter(k=>fsAll[k].centralPL).length>1?`<div class="panel"><h3>NOI trend — ${P} <span class="small">(leasing revenue vs operating cost)</span></h3>
         <div class="chartbox tall" style="margin-top:14px"><canvas id="chCpCost"></canvas></div>
         <div class="small" style="margin-top:6px">${P==='YTD'?'Year-to-date running totals, restarting each January.':'Single-month figures. Switch the header to <b>YTD</b> for year-to-date running totals.'} NOI margin (green, right axis) = NET OPERATING INCOME ÷ total leasing revenue.</div></div>`:''}
@@ -5699,11 +5703,23 @@ function renderOffice(d){
      month's year-to-date running total (so it climbs through the year and resets each
      January) — the same reading as every other YTD figure in the app, not a re-based series. */
   const gF=P==='YTD'?'yact':'act', gB=P==='YTD'?'ybud':'bud', pTag=P==='YTD'?' (YTD)':'';
+  /* Last-year share of consolidated GOP, as a benchmark for the green % line.
+     MTD reads the FS's own `ly` columns; YTD has no such column, so it comes from the
+     running `yact` of the same month one year earlier (blank when that FS isn't stored). */
+  const prevKey=k=>(+k.slice(0,4)-1)+'-'+k.slice(5,7);
+  const lyShare=k=>{
+    let cc,hh;
+    if(P==='YTD'){ const p=fsAll[prevKey(k)]; cc=p?.centralGop?.yact; hh=p?.hotelGop?.yact; }
+    else { cc=fsAll[k].centralGop?.ly; hh=fsAll[k].hotelGop?.ly; }
+    return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;
+  };
   mkChart('chOffice',{type:'bar',data:{labels:fkeys.map(fmtMonthKey),datasets:[
       {type:'bar',label:'Central Plaza GOP'+pTag,data:fkeys.map(k=>cvM(fsAll[k].centralGop?.[gF],k)),backgroundColor:'#2e5f9e'},
       {type:'bar',label:'Budget'+pTag,data:fkeys.map(k=>cvM(fsAll[k].centralGop?.[gB],k)),backgroundColor:'rgba(201,162,39,.55)'},
       {type:'line',label:'% of consolidated GOP (right)',yAxisID:'y1',tension:.3,borderColor:'#1e7e4f',
-        data:fkeys.map(k=>{const cc=fsAll[k].centralGop?.[gF],hh=fsAll[k].hotelGop?.[gF]; return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;})}]},
+        data:fkeys.map(k=>{const cc=fsAll[k].centralGop?.[gF],hh=fsAll[k].hotelGop?.[gF]; return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;})},
+      {type:'line',label:'% of consolidated GOP — LY (right)',yAxisID:'y1',tension:.3,borderColor:'#9CA3AF',
+        borderDash:[5,4],pointRadius:2,spanGaps:true,data:fkeys.map(lyShare)}]},
     options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   /* Central Plaza leasing revenue vs operating cost vs NOI margin across stored FS months */
   if(document.getElementById('chCpCost')){
@@ -5715,7 +5731,15 @@ function renderOffice(d){
         {type:'bar',label:'Leasing revenue'+pTag,data:ms2.map(k=>cvM(cpV(fsAll[k].centralPL.totalRev),k)),backgroundColor:'#2e5f9e'},
         {type:'bar',label:'Operating expenses'+pTag,data:ms2.map(k=>cvM(cpV(fsAll[k].centralPL.totalExp),k)),backgroundColor:'rgba(192,57,43,.6)'},
         {type:'line',label:'NOI margin % (right)',yAxisID:'y1',tension:.3,borderColor:'#1e7e4f',
-          data:ms2.map(k=>{const p2=fsAll[k].centralPL, r2=cpV(p2.totalRev), n2=cpV(p2.noi); return n2!=null&&r2?n2/r2*100:null;})}]},
+          data:ms2.map(k=>{const p2=fsAll[k].centralPL, r2=cpV(p2.totalRev), n2=cpV(p2.noi); return n2!=null&&r2?n2/r2*100:null;})},
+        /* LY margin benchmark: MTD from the FS's own `ly` columns; YTD from the same month
+           one year earlier, since the block publishes no year-to-date last-year column */
+        {type:'line',label:'NOI margin % — LY (right)',yAxisID:'y1',tension:.3,borderColor:'#9CA3AF',
+          borderDash:[5,4],pointRadius:2,spanGaps:true,
+          data:ms2.map(k=>{ let r2,n2;
+            if(P==='YTD'){ const p3=fsAll[prevKey(k)]?.centralPL; r2=p3?.totalRev?.ytd; n2=p3?.noi?.ytd; }
+            else { const p2=fsAll[k].centralPL; r2=p2.totalRev?.ly; n2=p2.noi?.ly; }
+            return n2!=null&&r2?n2/r2*100:null; })}]},
       options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   }
 }
