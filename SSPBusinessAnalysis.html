@@ -1024,8 +1024,10 @@ const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','s
    hotel budget sheet's own "EBITDA" row instead of deriving netIncomeHotel−MarketingFees. */
 /* Central Plaza P&L parse version. Bumped when a NEW field is read from the FS block, so
    months ingested by an older build can be spotted and flagged for a re-drop instead of
-   silently showing blanks. v2 = added `ybud` (YTD budget, Excel col 11). */
-const CP_SCHEMA=2;
+   silently showing blanks. v2 = added `ybud` (YTD budget, Excel col 11).
+   v3 = "B. OPERATING EXPENSES" recognised as a section header (its YTD cells hold a
+   literal 0, so it used to be stored as a data row full of N/A). */
+const CP_SCHEMA=3;
 function cpStale(cp){ return !!cp && (cp.__v||1)<CP_SCHEMA; }
 const B26_SCHEMA=6;
 function budget2026Stale(){ const b=state.store.budget2026; return !!b && b.__v!==B26_SCHEMA; }
@@ -1668,7 +1670,15 @@ function parseFS(wb){
                    ly:cL!=null?num(row[cL]):null, ytd:cY!=null?num(row[cY]):null,
                    ybud:cYB!=null?num(row[cYB]):null,
                    pctRev:num(row[cA+1])};
-          if(v.act==null&&v.bud==null&&v.ly==null&&v.ytd==null&&v.ybud==null){
+          /* Section titles ("A. REVENUE", "B. OPERATING EXPENSES"). Verified in FS26.04:
+             the A row is entirely blank, but the B row carries a literal 0 in the YTD
+             actual and YTD budget cells — so an all-null test alone let "B. OPERATING
+             EXPENSES" fall through into the body as a data row of N/A. A lettered section
+             title counts as a header whenever every figure is null OR zero; a genuine
+             line always has a non-zero figure somewhere. */
+          const figs=[v.act,v.bud,v.ly,v.ytd,v.ybud];
+          const isSection=/^[A-Z][.)]\s/.test(lbl)&&/REVENUE|EXPENSE/i.test(lbl)&&figs.every(x=>x==null||x===0);
+          if(figs.every(x=>x==null)||isSection){
             if(/REVENUE|EXPENSES/i.test(lbl)){ cp.lines.push({label:lbl,header:true}); inPL=true; }
             continue;
           }
@@ -5656,8 +5666,8 @@ function renderOffice(d){
           <button class="heatbtn ${full?'':'on'}" data-full="0" onclick="__setCpDetail(false)">Summary</button>
           <button class="heatbtn ${full?'on':''}" data-full="1" onclick="__setCpDetail(true)">Full detail</button></span></h3>
         <div class="small" style="margin-bottom:6px">Area: <b>${n1(st2.totalArea?.act,0)} m²</b> total · <b>${n1(st2.leased?.act,0)} m²</b> leased · <b>${n1(st2.vacant?.act,0)} m²</b> vacant · occupancy <b>${pct(st2.occ?.act)}</b> · avg rent <b>${money(st2.avgRent?.act)}/m²</b> (bud ${money(st2.avgRent?.bud)}, LY ${money(st2.avgRent?.ly)})</div>
-        ${cpStale(cp)?`<div class="alert warn" style="margin-bottom:8px"><div class="h">YTD budget missing for this month</div>
-          <div class="d">This month's FS was parsed by an earlier build that didn't read the YTD budget column. Re-drop the consolidated FS workbook in <b>Settings &amp; Data</b> to fill the <b>YTD vs Bud</b> columns.</div></div>`:''}
+        ${cpStale(cp)?`<div class="alert warn" style="margin-bottom:8px"><div class="h">This month's FS needs re-dropping</div>
+          <div class="d">It was parsed by an earlier build, so the <b>YTD budget</b> columns are empty and <b>B. Operating expenses</b> shows as a data row of N/A instead of a section heading. Re-drop the consolidated FS workbook in <b>Settings &amp; Data</b> to fix both.</div></div>`:''}
         <div style="overflow-x:auto"><table class="uol"><thead>
           <tr><th rowspan="2">Line</th><th colspan="6">MTD — ${fmtMonthKey(state.month)}</th>
               <th colspan="6" style="${CP_SEP}">YTD — ${fmtMonthKey(state.month)}</th></tr>
