@@ -5576,7 +5576,9 @@ function renderOffice(d){
         <div style="overflow-x:auto"><table><thead><tr><th>Line</th><th>Actual</th><th>% of rev</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>YTD</th></tr></thead>
         <tbody id="cpCostBody">${cpCostRowsHtml(cp)}</tbody></table></div>
         <div class="small" style="margin-top:6px">${full?'Full line-by-line P&L. ':'Summary — top-level revenue categories & totals. Switch to Full detail for every line. '}${cp.totalRev&&cp.totalExp&&cp.noi?`Operating cost ratio <b>${pct(cp.totalExp.act/rev)}</b> (budget ${pct((cp.totalExp.bud??0)/(cp.totalRev.bud||1))}, LY ${pct((cp.totalExp.ly??0)/(cp.totalRev.ly||1))}) — NOI margin <b>${pct(cp.noi.act/rev)}</b>. NOI ties to the CENTRAL GOP line of the consolidated cascade.`:''}</div>
-        ${keys.filter(k=>fsAll[k].centralPL).length>1?'<div class="chartbox" style="margin-top:8px"><canvas id="chCpCost"></canvas></div>':''}</div>`;
+        ${keys.filter(k=>fsAll[k].centralPL).length>1?`<div class="small" style="margin-top:10px;font-weight:700;color:var(--navy)">Trend — ${P}
+          <span style="font-weight:400;color:var(--grey)">${P==='YTD'?'· year-to-date running totals, restarting each January':'· single-month figures'}</span></div>
+          <div class="chartbox" style="margin-top:4px"><canvas id="chCpCost"></canvas></div>`:''}</div>`;
     })();
   el.innerHTML=`
     <div class="kgrid">
@@ -5591,8 +5593,11 @@ function renderOffice(d){
     </div>
     ${!cp?`<div class="panel" style="padding:8px 12px"><div class="small">⚠ The <b>office scorecard & cost detail</b> below (occupancy, rent/m², leased area, expense lines) come from the <b>Central Plaza P&amp;L block of the PHCL consolidated FS</b>. This month's stored FS predates that parser — re-drop the <b>“PHCL (VIET NAM) financial statements for ${String(+state.month.slice(5)).padStart(2,'0')}.${state.month.slice(0,4)}”</b> workbook in Settings &amp; Data to populate it.</div></div>`:''}
     <div class="cols c2">
-      <div class="panel"><h3>Central Plaza GOP by month <span class="small">(from stored Consolidated FS)</span><span class="noprint" style="float:right;font-weight:400">${tsRangeSel()}</span></h3>
-        <div class="chartbox"><canvas id="chOffice"></canvas></div></div>
+      <div class="panel"><h3>Central Plaza GOP by month — ${P} <span class="small">(from stored Consolidated FS)</span><span class="noprint" style="float:right;font-weight:400">${tsRangeSel()}</span></h3>
+        <div class="chartbox"><canvas id="chOffice"></canvas></div>
+        <div class="small" style="margin-top:6px">${P==='YTD'
+          ? 'Each bar is the <b>year-to-date running total</b> as at that month, so it climbs through the year and restarts each January.'
+          : 'Each bar is that <b>single month</b>. Switch the header to <b>YTD</b> for year-to-date running totals.'}</div></div>
       ${top5Html}
     </div>
     <div class="cols c2">
@@ -5603,20 +5608,27 @@ function renderOffice(d){
       ${costHtml}
     </div>
 `;
+  /* Both charts on this tab follow the MTD/YTD header toggle. In YTD each bar is that
+     month's year-to-date running total (so it climbs through the year and resets each
+     January) — the same reading as every other YTD figure in the app, not a re-based series. */
+  const gF=P==='YTD'?'yact':'act', gB=P==='YTD'?'ybud':'bud', pTag=P==='YTD'?' (YTD)':'';
   mkChart('chOffice',{type:'bar',data:{labels:fkeys.map(fmtMonthKey),datasets:[
-      {type:'bar',label:'Central Plaza GOP',data:fkeys.map(k=>cvM(fsAll[k].centralGop?.act,k)),backgroundColor:'#2e5f9e'},
-      {type:'bar',label:'Budget',data:fkeys.map(k=>cvM(fsAll[k].centralGop?.bud,k)),backgroundColor:'rgba(201,162,39,.55)'},
+      {type:'bar',label:'Central Plaza GOP'+pTag,data:fkeys.map(k=>cvM(fsAll[k].centralGop?.[gF],k)),backgroundColor:'#2e5f9e'},
+      {type:'bar',label:'Budget'+pTag,data:fkeys.map(k=>cvM(fsAll[k].centralGop?.[gB],k)),backgroundColor:'rgba(201,162,39,.55)'},
       {type:'line',label:'% of consolidated GOP (right)',yAxisID:'y1',tension:.3,borderColor:'#1e7e4f',
-        data:fkeys.map(k=>{const cc=fsAll[k].centralGop?.act,hh=fsAll[k].hotelGop?.act; return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;})}]},
+        data:fkeys.map(k=>{const cc=fsAll[k].centralGop?.[gF],hh=fsAll[k].hotelGop?.[gF]; return cc!=null&&hh!=null&&(cc+hh)?cc/(cc+hh)*100:null;})}]},
     options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   /* Central Plaza leasing revenue vs operating cost vs NOI margin across stored FS months */
   if(document.getElementById('chCpCost')){
     const ms2=fkeys.filter(k=>fsAll[k].centralPL);
+    /* the Central Plaza P&L block carries ONE ytd column (actual only) — hence no YTD
+       budget series here; this chart never plotted budget anyway, so nothing is lost */
+    const cpV=o=>o?(P==='YTD'?o.ytd:o.act):null;
     mkChart('chCpCost',{type:'bar',data:{labels:ms2.map(fmtMonthKey),datasets:[
-        {type:'bar',label:'Leasing revenue',data:ms2.map(k=>cvM(fsAll[k].centralPL.totalRev?.act,k)),backgroundColor:'#2e5f9e'},
-        {type:'bar',label:'Operating expenses',data:ms2.map(k=>cvM(fsAll[k].centralPL.totalExp?.act,k)),backgroundColor:'rgba(192,57,43,.6)'},
+        {type:'bar',label:'Leasing revenue'+pTag,data:ms2.map(k=>cvM(cpV(fsAll[k].centralPL.totalRev),k)),backgroundColor:'#2e5f9e'},
+        {type:'bar',label:'Operating expenses'+pTag,data:ms2.map(k=>cvM(cpV(fsAll[k].centralPL.totalExp),k)),backgroundColor:'rgba(192,57,43,.6)'},
         {type:'line',label:'NOI margin % (right)',yAxisID:'y1',tension:.3,borderColor:'#1e7e4f',
-          data:ms2.map(k=>{const p2=fsAll[k].centralPL; return p2.noi?.act!=null&&p2.totalRev?.act?p2.noi.act/p2.totalRev.act*100:null;})}]},
+          data:ms2.map(k=>{const p2=fsAll[k].centralPL, r2=cpV(p2.totalRev), n2=cpV(p2.noi); return n2!=null&&r2?n2/r2*100:null;})}]},
       options:{scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   }
 }
