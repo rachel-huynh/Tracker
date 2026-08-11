@@ -162,6 +162,12 @@ tr.segsub td{font-weight:600;color:#374151;background:#f7f9fc}
   .pipesvg{display:none}
   .pipesvg-alt{display:block}
 }
+/* Scrollable table body with the header pinned at the top and a summary row pinned at the
+   bottom. Sticky cells need their own background or the scrolled rows show through them. */
+.scrollbox{max-height:430px;overflow-y:auto;overflow-x:auto}
+.scrollbox table{border-collapse:separate;border-spacing:0}
+.scrollbox thead th{position:sticky;top:0;z-index:2;background:#f3f5f9}
+.scrollbox tfoot td{position:sticky;bottom:0;z-index:2;background:#fff;border-top:2px solid var(--navy)}
 table.heat td{text-align:center;padding:3px 4px;font-size:11px;border:1px solid #fff}
 table.heat th{text-align:center}
 table.heat td:first-child{text-align:left;font-weight:600;background:#f3f5f9}
@@ -1016,6 +1022,11 @@ const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','s
    `conso` group cascade so the Consolidated tab's Budget column comes from this
    workbook instead of the FS's own (older) budget column; v6 took sum.ebitda from the
    hotel budget sheet's own "EBITDA" row instead of deriving netIncomeHotel−MarketingFees. */
+/* Central Plaza P&L parse version. Bumped when a NEW field is read from the FS block, so
+   months ingested by an older build can be spotted and flagged for a re-drop instead of
+   silently showing blanks. v2 = added `ybud` (YTD budget, Excel col 11). */
+const CP_SCHEMA=2;
+function cpStale(cp){ return !!cp && (cp.__v||1)<CP_SCHEMA; }
 const B26_SCHEMA=6;
 function budget2026Stale(){ const b=state.store.budget2026; return !!b && b.__v!==B26_SCHEMA; }
 function b26StaleBanner(){ return budget2026Stale()
@@ -1631,7 +1642,13 @@ function parseFS(wb){
        BELOW the hotel VND+USD cascade in the same FSyy.mm sheet — area statistics,
        leasing revenue lines (base rent / BOC / parking / other), itemised operating
        expenses and NET OPERATING INCOME (= CENTRAL GOP in the cascade).
-       Columns: label | Actual(VND) | % | Budget(VND) | % | LY Actual | % | YTD Actual | % */
+       Verified column map (Excel cols, checked against FS25.12 and FS26.04):
+         2 label | 3 MTD Actual | 4 % | 5 MTD Budget | 6 % | 7 LY Actual (same period LY) | 8 %
+         | 9 YTD Actual | 10 % | 11 YTD Budget | 12 % | 13 Note
+       So there are TWO "Budget (VND)" headers — [0] is MTD, [1] is YTD (an earlier version of
+       this comment claimed only one existed, and ybud went unparsed as a result).
+       There is NO YTD LY column anywhere in this block, which is why the side-by-side table
+       can show vs-LY for MTD only. */
     const cpA=findRow(gd,/CENTRAL PLAZA - PROFIT AND LOSS/i);
     if(cpA>=0){
       let h2=-1; for(let r=cpA;r<Math.min(cpA+12,gd.length);r++){ if(rowCols(gd[r]||[],/^Actual \(VND\)/i).length){ h2=r; break; } }
@@ -1639,8 +1656,9 @@ function parseFS(wb){
         const hr=gd[h2]||[];
         const acts=rowCols(hr,/^Actual \(VND\)/i);
         const cA=acts[0], cL=acts[1], cY=acts[2];
-        const cB=rowCols(hr,/^Budget \(VND\)/i)[0];
-        const cp={lines:[],stats:{}}; let inPL=false;
+        const buds=rowCols(hr,/^Budget \(VND\)/i);
+        const cB=buds[0], cYB=buds[1];          // [1] = YTD budget (see column map above)
+        const cp={lines:[],stats:{},__v:CP_SCHEMA}; let inPL=false;
         for(let r=h2+1;r<Math.min(gd.length,cpA+75);r++){
           const row=gd[r]||[];
           const lbl=(cellStr(row[1])||cellStr(row[0])).replace(/\s+/g,' ').trim();
@@ -1648,8 +1666,9 @@ function parseFS(wb){
           if(/Prepared by|^Notes:|General\s*Manager|Reference average/i.test(lbl)) break;
           const v={label:lbl, act:num(row[cA]), bud:cB!=null?num(row[cB]):null,
                    ly:cL!=null?num(row[cL]):null, ytd:cY!=null?num(row[cY]):null,
+                   ybud:cYB!=null?num(row[cYB]):null,
                    pctRev:num(row[cA+1])};
-          if(v.act==null&&v.bud==null&&v.ly==null&&v.ytd==null){
+          if(v.act==null&&v.bud==null&&v.ly==null&&v.ytd==null&&v.ybud==null){
             if(/REVENUE|EXPENSES/i.test(lbl)){ cp.lines.push({label:lbl,header:true}); inPL=true; }
             continue;
           }
@@ -5484,12 +5503,19 @@ function renderRevA(d){
 /* Cost-line rows for the Central Plaza P&L. Kept as its own function so the
    Summary/Full-detail toggle can rebuild JUST this table body — it must not
    re-render the tab or its charts (the GOP chart above stays put). */
+/* Central Plaza cost table in the same MTD | YTD side-by-side shape as the hotel's UOL
+   "P&L detail". Asymmetry is deliberate and unavoidable: the FS Central Plaza block
+   publishes YTD Actual and YTD Budget but NO YTD last-year column (verified against
+   FS25.12 and FS26.04), so vs-LY exists on the MTD side only. Rendering two permanently
+   N/A columns just to look symmetrical would be noise, so they are omitted and the
+   caption says why. */
+const CP_SEP='border-left:2px solid var(--navy)';
 function cpCostRowsHtml(cp){
-  const rev=cp.totalRev?.act, full=!!state.cpFull;
+  const rev=cp.totalRev?.act, yrev=cp.totalRev?.ytd, full=!!state.cpFull;
   const isSummary=l=>l.header||/^\d\.\s|^TOTAL|^NET OPERATING/i.test(l.label);
   const shown=full?cp.lines:cp.lines.filter(isSummary);
   return shown.map(l=>{
-    if(l.header) return `<tr><td colspan="8" style="color:var(--gold);font-weight:700;border-top:1px solid var(--line)">${l.label}</td></tr>`;
+    if(l.header) return `<tr><td colspan="11" style="color:var(--gold);font-weight:700;border-top:1px solid var(--line)">${l.label}</td></tr>`;
     const big=/^TOTAL|^NET OPERATING/i.test(l.label), sub=/^\d\.\s/.test(l.label);
     return `<tr class="${big?'tot':''}"><td style="${sub?'':'padding-left:18px'}">${l.label}</td>
       <td data-v="${l.act??''}">${money(l.act)}</td>
@@ -5498,7 +5524,10 @@ function cpCostRowsHtml(cp){
       <td class="${cls(varPct(l.act,l.bud))}">${pct(varPct(l.act,l.bud))}</td>
       <td data-v="${l.ly??''}">${money(l.ly)}</td>
       <td class="${cls(varPct(l.act,l.ly))}">${pct(varPct(l.act,l.ly))}</td>
-      <td data-v="${l.ytd??''}">${money(l.ytd)}</td></tr>`; }).join('');
+      <td data-v="${l.ytd??''}" style="${CP_SEP}">${money(l.ytd)}</td>
+      <td>${yrev?pct((l.ytd??0)/yrev):na()}</td>
+      <td data-v="${l.ybud??''}">${money(l.ybud)}</td>
+      <td class="${cls(varPct(l.ytd,l.ybud))}">${pct(varPct(l.ytd,l.ybud))}</td></tr>`; }).join('');
 }
 /* toggle updates only the cost table body + the two buttons — no chart rebuild */
 window.__setCpDetail=v=>{ state.cpFull=v;
@@ -5529,7 +5558,9 @@ function renderOffice(d){
   const noiV=cp?.noi?pick(cp.noi):c[f], revV=pick(cp?.totalRev), expV=pick(cp?.totalExp);
   /* simple KPI card with a free-text subtitle (for the area metrics) */
   const statCard=(title,val,sub,cls2='')=>`<div class="kpi ${cls2}"><div class="t">${title}</div><div class="v">${val}</div><div class="s">${sub||''}</div></div>`;
-  const rows=keys.map(k=>{ const cc=fsAll[k].centralGop||{}, hh=fsAll[k].hotelGop||{};
+  /* Newest month FIRST: the current month is the one you actually read, so it should not
+     sit at the bottom of a 20+ row scroller. */
+  const rows=[...keys].reverse().map(k=>{ const cc=fsAll[k].centralGop||{}, hh=fsAll[k].hotelGop||{};
     const gg=(cc.act??0)+(hh.act??0);
     return `<tr class="${k===state.month?'tot':''}"><td>${fmtMonthKey(k)}</td>
       <td data-v="${cc.act??''}">${money(cc.act)}</td><td data-v="${cc.bud??''}">${money(cc.bud)}</td>
@@ -5537,6 +5568,28 @@ function renderOffice(d){
       <td data-v="${cc.ly??''}">${money(cc.ly)}</td>
       <td data-v="${varPct(cc.act,cc.ly)??''}" class="${cls(varPct(cc.act,cc.ly))}">${pct(varPct(cc.act,cc.ly))}</td>
       <td data-v="${gg?cc.act/gg:''}">${gg?pct(cc.act/gg):na()}</td></tr>`; }).join('');
+  /* Pinned YTD / FY summary for the selected month's year. Read straight off the FS running
+     yact/ybud of that year's LAST stored month rather than summing the rows above — summing
+     would silently under-report whenever a month of that year hasn't been dropped yet.
+     Labelled FY only when December is actually stored, otherwise YTD "through <month>".
+     centralGop carries no yly (the FS cascade has no YTD last-year column), so vs LY is N/A. */
+  const ytdFoot=(()=>{
+    const yr=(state.month||'').slice(0,4);
+    /* as at the SELECTED month, not the newest stored one — otherwise stepping back to
+       April would still show a year-to-date that already included May and June */
+    const inYr=keys.filter(k=>k.slice(0,4)===yr&&k<=state.month);
+    if(!inYr.length) return '';
+    const last=inYr[inYr.length-1];
+    const cc=fsAll[last].centralGop||{}, hh=fsAll[last].hotelGop||{};
+    const gg=(cc.yact??0)+(hh.yact??0);
+    const isFY=last.slice(5,7)==='12';
+    return `<tfoot><tr class="tot"><td>${isFY?'FY':'YTD'} ${yr}
+        <span class="small" style="font-weight:400;color:var(--grey)">through ${fmtMonthKey(last)}${inYr.length<12?' · '+inYr.length+' mth stored':''}</span></td>
+      <td data-v="${cc.yact??''}">${money(cc.yact)}</td><td data-v="${cc.ybud??''}">${money(cc.ybud)}</td>
+      <td class="${cls(varPct(cc.yact,cc.ybud))}">${pct(varPct(cc.yact,cc.ybud))}</td>
+      <td>${na()}</td><td>${na()}</td>
+      <td data-v="${gg?cc.yact/gg:''}">${gg?pct(cc.yact/gg):na()}</td></tr></tfoot>`;
+  })();
   const top5Html=(()=>{ /* top 5 things to look at — Central Plaza */
       const al=[];
       const gopVar=varPct(c.act,c.bud);
@@ -5573,12 +5626,15 @@ function renderOffice(d){
           <button class="heatbtn ${full?'':'on'}" data-full="0" onclick="__setCpDetail(false)">Summary</button>
           <button class="heatbtn ${full?'on':''}" data-full="1" onclick="__setCpDetail(true)">Full detail</button></span></h3>
         <div class="small" style="margin-bottom:6px">Area: <b>${n1(st2.totalArea?.act,0)} m²</b> total · <b>${n1(st2.leased?.act,0)} m²</b> leased · <b>${n1(st2.vacant?.act,0)} m²</b> vacant · occupancy <b>${pct(st2.occ?.act)}</b> · avg rent <b>${money(st2.avgRent?.act)}/m²</b> (bud ${money(st2.avgRent?.bud)}, LY ${money(st2.avgRent?.ly)})</div>
-        <div style="overflow-x:auto"><table><thead><tr><th>Line</th><th>Actual</th><th>% of rev</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>YTD</th></tr></thead>
+        ${cpStale(cp)?`<div class="alert warn" style="margin-bottom:8px"><div class="h">YTD budget missing for this month</div>
+          <div class="d">This month's FS was parsed by an earlier build that didn't read the YTD budget column. Re-drop the consolidated FS workbook in <b>Settings &amp; Data</b> to fill the <b>YTD vs Bud</b> columns.</div></div>`:''}
+        <div style="overflow-x:auto"><table class="uol"><thead>
+          <tr><th rowspan="2">Line</th><th colspan="6">MTD — ${fmtMonthKey(state.month)}</th>
+              <th colspan="4" style="${CP_SEP}">YTD — ${fmtMonthKey(state.month)}</th></tr>
+          <tr><th>Actual</th><th>% of rev</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th>
+              <th style="${CP_SEP}">Actual</th><th>% of rev</th><th>Budget</th><th>vs Bud</th></tr></thead>
         <tbody id="cpCostBody">${cpCostRowsHtml(cp)}</tbody></table></div>
-        <div class="small" style="margin-top:6px">${full?'Full line-by-line P&L. ':'Summary — top-level revenue categories & totals. Switch to Full detail for every line. '}${cp.totalRev&&cp.totalExp&&cp.noi?`Operating cost ratio <b>${pct(cp.totalExp.act/rev)}</b> (budget ${pct((cp.totalExp.bud??0)/(cp.totalRev.bud||1))}, LY ${pct((cp.totalExp.ly??0)/(cp.totalRev.ly||1))}) — NOI margin <b>${pct(cp.noi.act/rev)}</b>. NOI ties to the CENTRAL GOP line of the consolidated cascade.`:''}</div>
-        ${keys.filter(k=>fsAll[k].centralPL).length>1?`<div class="small" style="margin-top:10px;font-weight:700;color:var(--navy)">Trend — ${P}
-          <span style="font-weight:400;color:var(--grey)">${P==='YTD'?'· year-to-date running totals, restarting each January':'· single-month figures'}</span></div>
-          <div class="chartbox" style="margin-top:4px"><canvas id="chCpCost"></canvas></div>`:''}</div>`;
+        <div class="small" style="margin-top:6px">${full?'Full line-by-line P&L. ':'Summary — top-level revenue categories & totals. Switch to Full detail for every line. '}MTD on the left, YTD on the right; % of rev divides each block by <b>its own</b> total leasing revenue. <b>The FS publishes no year-to-date last-year column for this block</b>, so vs LY is shown for MTD only. ${cp.totalRev&&cp.totalExp&&cp.noi?`Operating cost ratio <b>${pct(cp.totalExp.act/rev)}</b> (budget ${pct((cp.totalExp.bud??0)/(cp.totalRev.bud||1))}, LY ${pct((cp.totalExp.ly??0)/(cp.totalRev.ly||1))}) — NOI margin <b>${pct(cp.noi.act/rev)}</b>. NOI ties to the CENTRAL GOP line of the consolidated cascade.`:''}</div></div>`;
     })();
   el.innerHTML=`
     <div class="kgrid">
@@ -5601,12 +5657,15 @@ function renderOffice(d){
       ${top5Html}
     </div>
     <div class="cols c2">
-      <div class="panel"><h3>Monthly detail</h3>
-        <table><thead><tr><th>Month</th><th>GOP</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>% of consolidated</th></tr></thead>
-        <tbody>${rows}</tbody></table>
-        <div class="small" style="margin-top:6px">Central Plaza GOP = NET OPERATING INCOME of the building. Occupancy, rent/m² and cost detail are on the scorecard above and in the cost analysis at right. (Leasing notes are edited on the Exec Summary tab.)</div></div>
-      ${costHtml}
+      <div class="panel"><h3>GOP detail by month <span class="small">(newest first)</span></h3>
+        <div class="scrollbox"><table><thead><tr><th>Month</th><th>GOP</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th><th>% of consolidated</th></tr></thead>
+        <tbody>${rows}</tbody>${ytdFoot}</table></div>
+        <div class="small" style="margin-top:6px">Central Plaza GOP = NET OPERATING INCOME of the building. Newest month at the top; the ${(state.month||'').slice(0,4)} total stays pinned at the bottom while the list scrolls. That total is the FS's own running year-to-date figure, not a sum of the rows above, so it stays right even if a month hasn't been dropped yet — and it carries no vs LY because the FS cascade has no year-to-date last-year column. (Leasing notes are edited on the Exec Summary tab.)</div></div>
+      ${keys.filter(k=>fsAll[k].centralPL).length>1?`<div class="panel"><h3>NOI trend — ${P} <span class="small">(leasing revenue vs operating cost)</span></h3>
+        <div class="chartbox tall" style="margin-top:14px"><canvas id="chCpCost"></canvas></div>
+        <div class="small" style="margin-top:6px">${P==='YTD'?'Year-to-date running totals, restarting each January.':'Single-month figures. Switch the header to <b>YTD</b> for year-to-date running totals.'} NOI margin (green, right axis) = NET OPERATING INCOME ÷ total leasing revenue.</div></div>`:''}
     </div>
+    ${costHtml}
 `;
   /* Both charts on this tab follow the MTD/YTD header toggle. In YTD each bar is that
      month's year-to-date running total (so it climbs through the year and resets each
