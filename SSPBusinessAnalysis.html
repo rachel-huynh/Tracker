@@ -4412,23 +4412,37 @@ function renderConso(d){
   const budM=(k,key)=>{ const b=budget2026For(k); const v=b?.conso?b26Path(b,'conso.'+key):null;
     return v!=null?v:(fsAll[k]?.[key]?.bud??null); };
   const hotel=V('hotelGop',f), central=V('centralGop',f), group=hotel+central;
+  /* LAST YEAR, both periods. MTD uses the FS's own `ly` column. The FS cascade has no
+     year-to-date last-year column at all, so for YTD the figure comes from the SAME MONTH
+     ONE YEAR EARLIER and its running `yact` — the statement's own total, not a re-sum
+     (identical approach to the Central Plaza table). Blank when that FS isn't stored. */
+  const pyFs=fsAll[(+String(state.month).slice(0,4)-1)+'-'+String(state.month).slice(5,7)]||null;
+  const LYof=key=>P==='MTD'?V(key,'ly'):(pyFs?.[key]?.yact??null);
+  /* Deduction lines: coming in ABOVE budget/LY reduces profit, so the colour is inverted.
+     Without this, an 18% overspend on fixed charges renders green and CIT coming in under
+     budget renders red — both backwards. */
   const rows=[
-    ['Total revenue (Sofitel)',V('totalRev',f),B('totalRev'),P==='MTD'?V('totalRev','ly'):null],
-    ['Sofitel GOP',hotel,B('hotelGop'),P==='MTD'?V('hotelGop','ly'):null],
-    ['Central Plaza GOP',central,B('centralGop'),P==='MTD'?V('centralGop','ly'):null],
-    ['Profit before fixed charges (Consolidated)',V('pbfc',f),B('pbfc'),P==='MTD'?V('pbfc','ly'):null],
-    ['Fixed charges',V('fixed',f),B('fixed'),P==='MTD'?V('fixed','ly'):null],
-    /* financial result is shown as income-positive, so negate budget the same way as actual */
-    ['Financial income/(exp) net',-(V('finNet',f)??0),B('finNet')==null?null:-B('finNet'),P==='MTD'?-(V('finNet','ly')??0):null],
-    ['Depreciation & amortisation',V('dep',f),B('dep'),P==='MTD'?V('dep','ly'):null],
-    ['Profit before tax',V('pbt',f),B('pbt'),P==='MTD'?V('pbt','ly'):null],
-    ['CIT',V('tax',f),B('tax'),P==='MTD'?V('tax','ly'):null],
-    ['Net profit after tax',V('npat',f),B('npat'),P==='MTD'?V('npat','ly'):null],
+    ['Total revenue (Sofitel)',V('totalRev',f),B('totalRev'),LYof('totalRev')],
+    ['Sofitel GOP',hotel,B('hotelGop'),LYof('hotelGop')],
+    ['Central Plaza GOP',central,B('centralGop'),LYof('centralGop')],
+    ['Profit before fixed charges (Consolidated)',V('pbfc',f),B('pbfc'),LYof('pbfc')],
+    ['Fixed charges',V('fixed',f),B('fixed'),LYof('fixed'),1],
+    /* financial result is shown as income-positive, so negate budget and LY the same way as actual */
+    ['Financial income/(exp) net',-(V('finNet',f)??0),B('finNet')==null?null:-B('finNet'),
+      LYof('finNet')==null?null:-LYof('finNet')],
+    ['Depreciation & amortisation',V('dep',f),B('dep'),LYof('dep'),1],
+    ['Profit before tax',V('pbt',f),B('pbt'),LYof('pbt')],
+    ['CIT',V('tax',f),B('tax'),LYof('tax'),1],
+    ['Net profit after tax',V('npat',f),B('npat'),LYof('npat')],
     /* blank (not N/A, not 0%) wherever the FS carries no budget or no LY for that line —
        e.g. financial income/(expense) has no budget at all */
-  ].map(r=>`<tr class="${/Net profit/.test(r[0])?'tot':''}"><td>${r[0]}</td><td>${money(r[1])}</td>
-      <td>${r[2]==null?'':money(r[2])}</td><td>${r[3]==null?'':money(r[3])}</td>
-      <td class="${cls(varPct(r[1],r[2]))}">${r[2]==null?'':pct(varPct(r[1],r[2]))}</td></tr>`).join('');
+  ].map(r=>{
+    const vc=(a,b)=>{ if(b==null) return '<td></td>'; const v=varPct(a,b);
+      return `<td data-v="${v??''}" class="${v==null?'':(r[4]?(v>0?'neg':v<0?'pos':''):cls(v))}">${pct(v)}</td>`; };
+    return `<tr class="${/Net profit/.test(r[0])?'tot':''}"><td>${r[0]}</td>
+      <td data-v="${r[1]??''}">${money(r[1])}</td>
+      <td data-v="${r[2]??''}">${r[2]==null?'':money(r[2])}</td>${vc(r[1],r[2])}
+      <td data-v="${r[3]??''}">${r[3]==null?'':money(r[3])}</td>${vc(r[1],r[3])}</tr>`; }).join('');
 
   /* MoM bridge: previous FS month */
   const keys=Object.keys(fsAll).sort(); const iCur=keys.indexOf(state.month);
@@ -4480,8 +4494,8 @@ function renderConso(d){
     </div>
     <div class="cols c2">
       <div class="panel"><h3>Consolidated cascade — ${P}</h3>
-        <table><thead><tr><th>Line</th><th>Actual</th><th>Budget</th><th>LY</th><th>Var %</th></tr></thead><tbody>${rows}</tbody></table>
-        <div class="small" style="margin-top:6px">Budget is read from the <b>${b26Conso?'2026 Consolidated Budget workbook ("Consolidated P&amp;L Monthly" sheet)':'FS workbook\'s own budget column'}</b>${b26Conso?'':' — drop the 2026 Consolidated Budget to use it instead'}. Central Plaza occupancy/yield is not disclosed in the FS workbook — only its GOP. Reconciliation: Sofitel GOP per FS ${money(hotel)} vs P&L GOP ${d.ok?money(state.period==='YTD'?g(d.p,'sum.gop','YTD','act'):d.gop.act):'—'} (FS is after mgmt/incentive fees — see cascade).</div></div>
+        <table><thead><tr><th>Line</th><th>Actual</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="small" style="margin-top:6px">On the deduction lines (<b>fixed charges, depreciation, CIT</b>) the colour is inverted — coming in <i>above</i> budget or LY reduces profit, so it shows red. ${P==='YTD'?(pyFs?`<b>YTD LY</b> is the running year-to-date figure from the <b>${fmtMonthKey((+String(state.month).slice(0,4)-1)+'-'+String(state.month).slice(5,7))}</b> FS — the cascade has no year-to-date last-year column of its own.`:`<b>YTD LY is blank</b> — the cascade has no year-to-date last-year column, and the ${fmtMonthKey((+String(state.month).slice(0,4)-1)+'-'+String(state.month).slice(5,7))} FS isn't stored to supply it.`):''} Budget is read from the <b>${b26Conso?'2026 Consolidated Budget workbook ("Consolidated P&amp;L Monthly" sheet)':'FS workbook\'s own budget column'}</b>${b26Conso?'':' — drop the 2026 Consolidated Budget to use it instead'}. Central Plaza occupancy/yield is not disclosed in the FS workbook — only its GOP. Reconciliation: Sofitel GOP per FS ${money(hotel)} vs P&L GOP ${d.ok?money(state.period==='YTD'?g(d.p,'sum.gop','YTD','act'):d.gop.act):'—'} (FS is after mgmt/incentive fees — see cascade).</div></div>
       <div class="panel"><h3>Net profit after tax — trend ${granCtl()}</h3>
         <div class="chartbox" style="margin-top:14px"><canvas id="chNpat"></canvas></div>
         <div class="small" style="margin-top:6px">Consolidated NPAT from the stored FS months — actual vs budget vs last year.</div>
