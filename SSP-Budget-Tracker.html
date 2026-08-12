@@ -276,7 +276,9 @@ en:{
  anByTrade:'By work category', anTradeTip:'Same two versions, split the way the QS book is structured. Write the reason for each movement — it is carried into the Excel and PDF report.',
  anNoData:'Upload at least two versions to build the comparison.', anSaving:'saving', anIncrease:'increase',
  anNote1:'Room and suite figures exclude MEP; MEP for those areas is inside the “MEP systems” line.',
- anUnalloc:'Not broken down by area in the file',
+ anUnalloc:'Not broken down by area in the file', anPhysKeys:'physical rooms',
+ renamedChip:'renamed / re-coded', renamedTo:'now:', renamedNote:'Items that were only renamed or re-coded between the two versions are shown as one line with the real difference, instead of a “removed” line and an “added” line.',
+ anCrNote:'A connecting room (CR) is two regular rooms combined and twice the size, so it counts as <b>2 keys</b> — otherwise the cost per key looks inflated. Cost per m² is shown next to each figure and is not affected by this rule.',
  sbT:'Automatic sync (Supabase realtime)', sbOnLbl:'Sync automatically', sbUrl:'Project URL', sbKey:'API key (publishable)',
  sbHelp:'When on, everything you change is sent to the shared database within a second, and changes made by other members appear here by themselves — no Push/Pull, no import/export. Data still lives in this browser first, so the app keeps working offline and re-sends when the connection returns.',
  sbSetup:'One-time setup for the whole team: in Supabase open SQL Editor and run the file <b>budget-tracker-supabase.sql</b> (kept in this folder). Each computer then only needs the switch above.',
@@ -385,7 +387,9 @@ vi:{
  anByTrade:'Theo hạng mục thi công', anTradeTip:'Vẫn hai phiên bản đó, chia theo đúng cấu trúc sổ QS. Ghi lý do cho từng thay đổi — nội dung này được đưa vào cả file Excel và PDF.',
  anNoData:'Cần ít nhất hai phiên bản để lập bảng so sánh.', anSaving:'tiết kiệm', anIncrease:'tăng',
  anNote1:'Số liệu phòng và suite không bao gồm MEP; phần MEP của các khu vực đó nằm trong dòng “Hệ thống MEP”.',
- anUnalloc:'Chưa chia theo khu vực trong file',
+ anUnalloc:'Chưa chia theo khu vực trong file', anPhysKeys:'phòng thực tế',
+ renamedChip:'đổi tên / đổi mã', renamedTo:'nay là:', renamedNote:'Hạng mục chỉ đổi tên hoặc đổi mã giữa hai phiên bản được gộp thành MỘT dòng với chênh lệch thật, thay vì một dòng “bị bỏ” và một dòng “thêm mới”.',
+ anCrNote:'Phòng thông nhau (CR) là 2 phòng thường ghép lại, diện tích gấp đôi, nên được tính là <b>2 keys</b> — nếu không chi phí/phòng sẽ bị thổi lên gây hiểu nhầm. Chi phí/m² hiển thị kèm bên cạnh và không bị ảnh hưởng bởi quy tắc này.',
  sbT:'Đồng bộ tự động (Supabase realtime)', sbOnLbl:'Tự động đồng bộ', sbUrl:'Project URL', sbKey:'API key (publishable)',
  sbHelp:'Khi bật, mọi thay đổi của bạn được gửi lên cơ sở dữ liệu chung trong khoảng một giây, và thay đổi của thành viên khác tự hiện ở đây — không cần bấm Đẩy/Tải, không cần xuất/nhập file. Dữ liệu vẫn nằm trong trình duyệt này trước, nên mất mạng vẫn dùng được và sẽ tự gửi lại khi có mạng.',
  sbSetup:'Cài đặt một lần cho cả nhóm: vào Supabase → SQL Editor, chạy file <b>budget-tracker-supabase.sql</b> (để sẵn trong thư mục này). Sau đó mỗi máy chỉ cần bật công tắc ở trên.',
@@ -671,11 +675,14 @@ function areaBreakdown(v){
   for(const m of (state.manualAreas||[])){ if(res[m.area]) res[m.area].manual+=n(m.amount)||0; }
   return res;
 }
+/* Phòng thông nhau (CR) được ghép từ 2 phòng thường và có diện tích gấp đôi → khi tính
+   chi phí/phòng phải đếm 1 CR = 2 keys, nếu không con số /phòng sẽ bị thổi lên gây hiểu nhầm. */
+function keyFactor(code){ return /^cr/i.test(s(code).trim())?2:1; }
 function roomKeys(v,code){ if(!v||!v.rooms) return null;
   const base=code.split(/[\s(]/)[0];
   const blk=(v.summary&&v.summary.roomBlocks||[]).find(b=>b.code===code);
   const room=v.rooms.find(r=>r.code===base)||v.rooms.find(r=>r.code&&code.startsWith(r.code));
-  if(room&&room.gfa&&blk&&blk.gfa) return Math.round(blk.gfa/room.gfa);
+  if(room&&room.gfa&&blk&&blk.gfa) return Math.round(blk.gfa/room.gfa)*keyFactor(code);
   return null; }
 
 /* ============================== rate studio (contractor quotations) ============================== */
@@ -1480,8 +1487,42 @@ function renderCompare(){
   <div id="cmpBody"></div>`;
   renderCompareBody();
 }
+/* Trong sổ QS, một hạng mục hay bị đổi mã bản vẽ / sửa câu chữ giữa 2 phiên bản. Nếu để nguyên
+   sẽ thành 1 dòng "bỏ đi −100%" + 1 dòng "thêm mới", làm người đọc tưởng bị cắt hạng mục rồi mua lại.
+   Hàm này ghép các cặp đó lại thành MỘT dòng với chênh lệch thật. Chỉ ghép khi cùng sheet + cùng
+   nhóm + cùng đơn vị và mô tả đủ giống (hoặc trùng khối lượng), nên không gộp nhầm 2 hạng mục khác nhau. */
+function descSim(a,b){
+  const w=x=>new Set(norm(x).replace(/[^a-z0-9à-ỹ ]/gi,' ').split(/\s+/).filter(y=>y.length>2));
+  const A2=w(a),B2=w(b); if(!A2.size||!B2.size) return 0;
+  let inter=0; A2.forEach(x=>{ if(B2.has(x)) inter++; });
+  return inter/Math.max(A2.size,B2.size);
+}
+function cmpMergeRenamed(rows){
+  const rem=rows.filter(r=>r.status==='removed'), add=rows.filter(r=>r.status==='added');
+  if(!rem.length||!add.length) return rows;
+  const used=new Set(), merged=new Set(), out=[];
+  for(const r of rem){
+    let best=null,bestScore=0;
+    for(const a of add){
+      if(used.has(a.k)) continue;
+      if(norm(a.sheet)!==norm(r.sheet)||norm(a.sub)!==norm(r.sub)) continue;
+      const sameQty=(r.aQty!=null&&a.bQty!=null&&Math.abs(r.aQty-a.bQty)<0.01);
+      const sim=descSim(r.desc!==undefined?r.desc:r.name, a.desc!==undefined?a.desc:a.name);
+      if(sim<0.55&&!(sameQty&&sim>=0.3)) continue;
+      const score=sim+(sameQty?0.5:0);
+      if(score>bestScore){ bestScore=score; best=a; }
+    }
+    if(!best) continue;
+    used.add(best.k); merged.add(r.k);
+    r.b=best.b; r.bQty=best.bQty; r.bRate=best.bRate;
+    r.status='renamed'; r.newName=best.name; r.newDesc=best.desc;
+    r.k=r.k+'~'+best.k;
+  }
+  for(const r of rows){ if(used.has(r.k)) continue; out.push(r); }
+  return out;
+}
 function cmpRows(){
-  const A=ver(cmpState.a),B=ver(cmpState.b); const rows=[];
+  const A=ver(cmpState.a),B=ver(cmpState.b); let rows=[];
   if(cmpState.level==='item'){
     // occurrence-indexed key: survives QS renumbering, disambiguates repeated descriptions.
     // Tên món (subject) chỉ đưa vào khóa khi CẢ HAI phiên bản đều có — để không phá việc
@@ -1513,6 +1554,7 @@ function cmpRows(){
     for(const k2 of new Set([...mA.keys(),...mB.keys()])){ const a=mA.get(k2),b=mB.get(k2); const src=b||a;
       rows.push({k:'s'+k2,name:src.name,sub:src.sec||'',sheet:'',a:a?a.val:null,b:b?b.val:null,isSec:src.isSec,isGrand:src.isGrand,status:''}); }
   }
+  if(cmpState.level==='item') rows=cmpMergeRenamed(rows);
   for(const r of rows){ r.d=(r.b||0)-(r.a||0); r.dp=(r.a&&r.a!==0)?r.d/Math.abs(r.a):null; }
   let out=rows;
   if(cmpState.q) out=out.filter(r=>norm(r.name+' '+r.sub).includes(norm(cmpState.q)));
@@ -1530,7 +1572,8 @@ function renderCompareBody(){
    <tr class="${r.isSec?'sect':''}${r.isGrand?'total':''}">
     <td><input type="checkbox" ${cmpSel.has(r.k)?'checked':''} onchange="App.cmpTick('${esc(r.k).replace(/'/g,"\\'")}',this.checked)"></td>
     <td>${esc(r.name)}${r.sub?`<div style="font-size:11px;color:var(--mut)">${esc(r.sub)}${r.sheet?' · '+esc(r.sheet):''}</div>`:''}
-      ${r.status==='added'?` <span class="chip b">${t('addedItems')}</span>`:''}${r.status==='removed'?` <span class="chip r">${t('removedItems')}</span>`:''}</td>
+      ${r.status==='added'?` <span class="chip b">${t('addedItems')}</span>`:''}${r.status==='removed'?` <span class="chip r">${t('removedItems')}</span>`:''}
+      ${r.status==='renamed'?` <span class="chip a">${t('renamedChip')}</span><div style="font-size:11px;color:var(--blue)">${t('renamedTo')} ${esc(r.newName||'')}</div>`:''}</td>
     ${isItem?`<td class="num">${r.aQty==null?'—':(+r.aQty).toLocaleString()}${r.bQty!=null&&r.bQty!==r.aQty?' → <b>'+(+r.bQty).toLocaleString()+'</b>':''}</td>
     <td class="num">${r.aRate==null?'—':money(r.aRate)}${r.bRate!=null&&r.bRate!==r.aRate?' → <b>'+money(r.bRate)+'</b>':''}</td>`:''}
     <td class="num">${r.a==null?'—':money(r.a)}</td><td class="num">${r.b==null?'—':money(r.b)}</td>
@@ -1789,26 +1832,29 @@ function anData(v){
     for(const it of sc.items) for(const code in (it.perRoom||{})) m[code]=(m[code]||0)+((it.perRoom[code]||{}).t||0);
     secByCode[sc.name]=m; }
   const isMep=nm=>/mep/i.test(nm);
-  const g={rooms:{nonMep:0,mep:0,keys:0},suites:{nonMep:0,mep:0,keys:0},corridor:{nonMep:0,mep:0,keys:0},other:{nonMep:0,mep:0,keys:0}};
+  const mk=()=>({nonMep:0,mep:0,keys:0,gfa:0,phys:0});
+  const g={rooms:mk(),suites:mk(),corridor:mk(),other:mk()};
   for(const b of (su.roomBlocks||[])){
     const id=anGroupOf(b.code); const keys=roomKeys(v,b.code);
-    if(keys>0) g[id].keys+=keys;
+    if(keys>0){ g[id].keys+=keys; g[id].phys+=keys/keyFactor(b.code); }
+    if(b.gfa>0) g[id].gfa+=b.gfa;
     for(const nm in secByCode){ const amt=secByCode[nm][b.code]||0;
       if(isMep(nm)) g[id].mep+=amt; else g[id].nonMep+=amt; } }
   const mepAll=g.rooms.mep+g.suites.mep+g.corridor.mep+g.other.mep;
+  const gfaAll=g.rooms.gfa+g.suites.gfa+g.corridor.gfa+g.other.gfa;
   const add=re=>(su.addOns||[]).filter(a=>re.test(norm(a.name))).reduce((x,a)=>x+(a.total||0),0);
   const rows=[
-    {id:'rooms',   label:t('agRooms'),   total:g.rooms.nonMep,   keys:g.rooms.keys},
-    {id:'suites',  label:t('agSuites'),  total:g.suites.nonMep,  keys:g.suites.keys},
-    {id:'corridor',label:t('agCorridor'),total:g.corridor.nonMep,keys:null}];
-  if(g.other.nonMep>0.5) rows.push({id:'other',label:t('agOther'),total:g.other.nonMep,keys:null});
-  rows.push({id:'mep',label:t('anMep'),total:mepAll,keys:null});
+    {id:'rooms',   label:t('agRooms'),   total:g.rooms.nonMep,   keys:g.rooms.keys, phys:g.rooms.phys, gfa:g.rooms.gfa},
+    {id:'suites',  label:t('agSuites'),  total:g.suites.nonMep,  keys:g.suites.keys, phys:g.suites.phys, gfa:g.suites.gfa},
+    {id:'corridor',label:t('agCorridor'),total:g.corridor.nonMep,keys:null, gfa:g.corridor.gfa}];
+  if(g.other.nonMep>0.5) rows.push({id:'other',label:t('agOther'),total:g.other.nonMep,keys:null,gfa:g.other.gfa});
+  rows.push({id:'mep',label:t('anMep'),total:mepAll,keys:null,gfa:gfaAll});
   /* Dòng đối chiếu: phần chi phí trong sổ nhưng không được chia về cột khu vực nào,
      để các dòng trên LUÔN cộng đúng bằng Subtotal (không bao giờ báo cáo thiếu tiền). */
   const alloc=rows.reduce((x,r)=>x+r.total,0);
   const gapv=(su.nett||0)-alloc;
   if(Math.abs(gapv)>1000) rows.push({id:'unalloc',label:t('anUnalloc'),total:gapv,keys:null});
-  rows.push({id:'sub',label:t('anSubtotal'),total:su.nett,keys:null,strong:true});
+  rows.push({id:'sub',label:t('anSubtotal'),total:su.nett,keys:null,gfa:gfaAll,strong:true});
   rows.push({id:'prelims',label:t('anPrelims'),total:add(/preliminar/),keys:null});
   rows.push({id:'fees',label:t('anFees'),total:add(/fee/),keys:null});
   rows.push({id:'lobby',label:t('anLobby'),total:add(/lobby|club/),keys:null});
@@ -1842,22 +1888,27 @@ function renderAnalysis(){
   const fxA=dA.fx, fxB=dB.fx;
   const perKey=(tot,keys,fx)=>keys>0?('$'+Math.round(tot/keys/fx).toLocaleString('en-US')):'';
   const paired=anPair(dA.rows,dB.rows);
+  /* $/phòng luôn theo USD (đúng thông lệ báo cáo BOD và cột "Per Key (USD)" của sổ QS);
+     còn /m² theo đơn vị tiền đang chọn. */
+  const unit=(tot,keys,gfa,fx)=>{ const bits=[];
+    if(keys>0) bits.push(moneyU(tot/keys/(fx||state.fx))+' '+t('anPerKey'));
+    if(gfa>0) bits.push(money(tot/gfa)+' /m²');
+    return bits.length?`<div style="font-size:10.5px;color:var(--mut)">${bits.join(' · ')}</div>`:''; };
   const line=r=>{
     const cls2=r.grand?'total':(r.strong?'sect':'');
     const note=(state.anNotes||{})[r.id]||'';
     return `<tr class="${cls2}">
-      <td>${esc(r.label)}${r.keys?` <span class="chip n">${r.keys} ${t('anKeys')}</span>`:''}</td>
-      <td class="num" style="color:var(--mut)">${perKey(r.a,r.aKeys,fxA)}</td>
-      <td class="num">${r.a==null?'—':money(r.a)}</td>
-      <td class="num" style="color:var(--mut)">${perKey(r.b,r.keys,fxB)}</td>
-      <td class="num"><b>${money(r.b)}</b></td>
+      <td>${esc(r.label)}${r.keys?` <span class="chip n">${r.keys} ${t('anKeys')}</span>`:''}
+        ${r.phys&&r.keys!==r.phys?`<div style="font-size:10.5px;color:var(--mut)">${r.phys} ${t('anPhysKeys')}</div>`:''}</td>
+      <td class="num">${r.a==null?'—':money(r.a)}${r.a==null?'':unit(r.a,r.aKeys,r.gfa,fxA)}</td>
+      <td class="num"><b>${money(r.b)}</b>${unit(r.b,r.keys,r.gfa,fxB)}</td>
       <td class="num ${r.d==null?'':cls(r.d)}">${r.d==null?'—':sign(r.d)+money(r.d)}</td>
       <td class="num ${r.d==null?'':cls(r.d)}">${r.dp==null?'—':sign(r.d)+pct(r.dp)}</td>
       <td class="noprint"><input value="${esc(note)}" placeholder="${t('anReason')}…" style="width:100%;font-size:11.5px" onchange="App.anNote('${r.id}',this.value)"></td>
       <td class="onlyprint" style="display:none">${esc(note)}</td></tr>`; };
   const tradePaired=anPair(anTradeRows(A),anTradeRows(B));
-  const head=`<tr><th>${t('category')}</th><th class="num">${t('anPerKey')}</th><th class="num">${t('anOrig')}</th>
-    <th class="num">${t('anPerKey')}</th><th class="num">${t('anRev')}</th><th class="num">${t('anChange')}</th><th class="num">%</th>
+  const head=`<tr><th>${t('category')}</th><th class="num">${t('anOrig')}</th><th class="num">${t('anRev')}</th>
+    <th class="num">${t('anChange')}</th><th class="num">%</th>
     <th style="min-width:180px">${t('anReason')}</th></tr>`;
   const gr=paired.find(r=>r.id==='grand')||{};
   el.innerHTML=`
@@ -1881,7 +1932,8 @@ function renderAnalysis(){
   </div>
   <div class="panel"><h3>🏨 ${t('areasT')}</h3>
     <div class="tblwrap" style="max-height:none;overflow:auto"><table><thead>${head}</thead><tbody>${paired.map(line).join('')}</tbody></table></div>
-    <div class="help" style="margin-top:8px">${t('anNote1')}</div></div>
+    <div class="help" style="margin-top:8px">${t('anNote1')}</div>
+    <div class="okbox" style="margin-top:6px">🔑 ${t('anCrNote')}</div></div>
   <div class="panel"><h3>🔧 ${t('anByTrade')}</h3><div class="help" style="margin-bottom:8px">${t('anTradeTip')}</div>
     <div class="tblwrap" style="max-height:none;overflow:auto"><table><thead>${head}</thead><tbody>${tradePaired.map(line).join('')}</tbody></table></div></div>`;
 }
@@ -2476,7 +2528,7 @@ const App={
          const dq=(r.aQty!=null&&r.bQty!=null)?r.bQty-r.aQty:'';
          const dr=(r.aRate!=null&&r.bRate!=null)?r.bRate-r.aRate:'';
          const drp=(r.aRate&&r.bRate!=null)?r.bRate/r.aRate-1:'';
-         aoa.push([r.subject||'',r.desc!==undefined?r.desc:r.name,r.sub||'',r.sheet||'',
+         aoa.push([r.subject||'',(r.desc!==undefined?r.desc:r.name)+(r.status==='renamed'?'  →  '+(r.newDesc||r.newName||''):''),r.sub||'',r.sheet||'',
            r.aQty,r.bQty,dq, r.aRate,r.bRate,dr,drp, r.a,r.b,r.d,r.dp,r.status||'']);
        } else aoa.push([r.name,r.sub||'',r.sheet||'',r.a,r.b,r.d,r.dp,r.status||'']);
      }
@@ -2502,18 +2554,21 @@ const App={
      if(!dA||!dB){ toast(t('anNoData')); return; }
      const notes=state.anNotes||{};
      const mk=(title,pairs,fxA,fxB)=>{ const aoa=[[title],
-       [t('category'),t('anKeys'),t('anOrig')+' '+t('anPerKey')+' (USD)',t('anOrig')+' (VND)',
-        t('anRev')+' '+t('anPerKey')+' (USD)',t('anRev')+' (VND)',t('anChange')+' (VND)','%',t('anReason')]];
-       for(const r of pairs) aoa.push([r.label, r.keys||'',
-         (r.aKeys>0&&r.a!=null)?Math.round(r.a/r.aKeys/fxA):'', r.a,
-         (r.keys>0)?Math.round(r.b/r.keys/fxB):'', r.b, r.d, r.dp, notes[r.id]||'']);
+       [t('category'),t('anKeys'),'GFA m²',
+        t('anOrig')+' (VND)',t('anOrig')+' '+t('anPerKey')+' (USD)',t('anOrig')+' /m² (VND)',
+        t('anRev')+' (VND)',t('anRev')+' '+t('anPerKey')+' (USD)',t('anRev')+' /m² (VND)',
+        t('anChange')+' (VND)','%',t('anReason')]];
+       for(const r of pairs) aoa.push([r.label, r.keys||'', r.gfa?Math.round(r.gfa*10)/10:'',
+         r.a, (r.aKeys>0&&r.a!=null)?Math.round(r.a/r.aKeys/fxA):'', (r.gfa>0&&r.a!=null)?Math.round(r.a/r.gfa):'',
+         r.b, (r.keys>0)?Math.round(r.b/r.keys/fxB):'', (r.gfa>0)?Math.round(r.b/r.gfa):'',
+         r.d, r.dp, notes[r.id]||'']);
        return aoa; };
      const head=[['SOFITEL SAIGON PLAZA RENOVATION — '+t('anT')],
        [t('anOrig'),A.name,A.date,'',t('anRev'),B.name,B.date],
-       ['FX (VND/USD)',dA.fx,'',dB.fx],[t('anNote1')],[]];
+       ['FX (VND/USD)',dA.fx,'',dB.fx],[t('anNote1')],[String(t('anCrNote')).replace(/<[^>]+>/g,'')],[]];
      const a1=head.concat(mk(t('areasT'),anPair(dA.rows,dB.rows),dA.fx,dB.fx))
        .concat([[]]).concat(mk(t('anByTrade'),anPair(anTradeRows(A),anTradeRows(B)),dA.fx,dB.fx));
-     add('Analysis',a1,[{wch:42},{wch:8},{wch:16},{wch:18},{wch:16},{wch:18},{wch:18},{wch:9},{wch:56}]);
+     add('Analysis',a1,[{wch:42},{wch:8},{wch:10},{wch:18},{wch:16},{wch:15},{wch:18},{wch:16},{wch:15},{wch:18},{wch:9},{wch:56}]);
    } else if(state.tab==='rates'&&state.quotes.length){ const rows=rateRows();
      const aoa=[[t('ratesT')+' — '+t('repVersion')+': '+(v?v.name:'—')],
        [t('category'),t('desc'),t('unit'),t('qsRate')+' (VND)','QS '+t('qty')].concat(state.quotes.map(q=>q.name.slice(0,28))).concat([t('bestVs')])];
