@@ -4479,36 +4479,25 @@ function renderConso(d){
       <td data-v="${r[3]??''}">${r[3]==null?'':money(r[3])}</td>${vc(r[1],r[3])}</tr>`; }).join('');
 
   /* MoM bridge: previous FS month */
-  const keys=Object.keys(fsAll).sort(); const iCur=keys.indexOf(state.month);
-  const prevKey=iCur>0?keys[iCur-1]:null; const prev=prevKey?fsAll[prevKey]:null;
+  const keys=Object.keys(fsAll).sort();
+  /* BUDGET → ACTUAL bridge (owner change 2026-08-09; was month-on-month). Same shape as the
+     Sofitel tab's GOP waterfall, which also runs Budget → Actual, so the two tabs answer the
+     same question. Unlike the old MoM version this follows the MTD/YTD toggle, because both
+     ends now come from the selected period rather than from two different months.
+     The previous-month gap warning is gone with it: budget and actual are both the selected
+     month, so there is no month-span to misread. */
+  const bNpat=B('npat'), aNpat=V('npat',f);
   let bridgeHtml='', bridgeWf=null;
-  if(prev){
-    const dHotel=(fs.hotelGop?.act??0)-(prev.hotelGop?.act??0);
-    const dCentral=(fs.centralGop?.act??0)-(prev.centralGop?.act??0);
-    const dOther=((fs.npat?.act??0)-(prev.npat?.act??0))-dHotel-dCentral;
-    /* "Previous" is the previous STORED FS month, which is not always the previous CALENDAR
-       month — with a month missing this would quietly present a two-month jump as a
-       month-on-month move. Detect the gap and say so in red rather than let the title imply
-       a normal step. */
-    const expPrev=(()=>{ const y=+state.month.slice(0,4), m=+state.month.slice(5,7);
-      const d2=new Date(y,m-2,1); return d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0'); })();
-    const gap=prevKey!==expPrev;
-    const gapMonths=(()=>{ const a=+prevKey.slice(0,4)*12+ +prevKey.slice(5,7), b=+state.month.slice(0,4)*12+ +state.month.slice(5,7);
-      return b-a; })();
-    bridgeWf={start:prev.npat?.act??0,end:fs.npat?.act??0,
-      steps:[['Δ Sofitel GOP',dHotel],['Δ Central Plaza GOP',dCentral],['Δ Fixed / fin / tax / other',dOther]],
-      startLabel:'NPAT '+fmtMonthKey(prevKey),endLabel:'NPAT '+fmtMonthKey(state.month)};
-    bridgeHtml=`<div class="panel"><h3${gap?' style="color:var(--red)"':''}>${gap?'⚠ ':''}Bridge ${fmtMonthKey(prevKey)} → ${fmtMonthKey(state.month)} (net profit after tax)</h3>
-      ${gap?`<div class="alert crit" style="margin-bottom:8px"><div class="h">Not a month-on-month step — this spans ${gapMonths} months</div>
-        <div class="d">${fmtMonthKey(expPrev)} has no stored consolidated FS, so the bridge jumps from ${fmtMonthKey(prevKey)} straight to ${fmtMonthKey(state.month)}. Every Δ below therefore covers ${gapMonths} months, not one. Drop the ${fmtMonthKey(expPrev)} FS in <b>Settings &amp; Data</b> to get a true month-on-month bridge.</div></div>`:''}
-      <div class="chartbox"><canvas id="chNpatBridge"></canvas></div>
-      <table style="margin-top:8px"><thead><tr><th>Driver</th><th>Δ</th></tr></thead><tbody>
-      <tr><td>NPAT ${fmtMonthKey(prevKey)}</td><td data-v="${prev.npat?.act??''}">${money(prev.npat?.act)}</td></tr>
-      <tr><td>Δ Sofitel GOP</td><td data-v="${dHotel}" class="${cls(dHotel)}">${money(dHotel)}</td></tr>
-      <tr><td>Δ Central Plaza GOP</td><td data-v="${dCentral}" class="${cls(dCentral)}">${money(dCentral)}</td></tr>
-      <tr><td>Δ Fixed / financial / tax / other</td><td data-v="${dOther}" class="${cls(dOther)}">${money(dOther)}</td></tr>
-      <tr class="tot"><td>NPAT ${fmtMonthKey(state.month)}</td><td data-v="${fs.npat?.act??''}">${money(fs.npat?.act)}</td></tr></tbody></table>
-      <div class="small" style="margin-top:6px">Single-month figures (not the ${P} toggle). Green bars add to profit, red take away; "Fixed / financial / tax / other" is the residual that reconciles the two GOP moves to the change in NPAT.</div></div>`;
+  if(bNpat!=null&&aNpat!=null){
+    const dHotel=(hotel??0)-(B('hotelGop')??0);
+    const dCentral=(central??0)-(B('centralGop')??0);
+    const dOther=(aNpat-bNpat)-dHotel-dCentral;
+    bridgeWf={start:bNpat,end:aNpat,
+      steps:[['Sofitel GOP',dHotel],['Central Plaza GOP',dCentral],['Fixed / fin / tax / other',dOther]],
+      startLabel:'Budget NPAT',endLabel:'Actual NPAT'};
+    bridgeHtml=`<div class="panel"><h3>Bridge — budget → actual NPAT <span class="small" style="font-weight:400">(${P} ${fmtMonthKey(state.month)})</span></h3>
+      <div class="chartbox tall"><canvas id="chNpatBridge"></canvas></div>
+      <div class="small" style="margin-top:6px">Why actual NPAT landed where it did versus budget: green bars added profit, red took it away. <b>Fixed / fin / tax / other</b> is the residual that reconciles the two GOP variances to the total NPAT variance — fixed charges, financial result, depreciation and tax combined. Hover any bar for its exact value.</div></div>`;
   }
   const contrib= group? `${pct(hotel/group)} Sofitel / ${pct(central/group)} Central Plaza` : '—';
   /* top 5 things to look at — consolidated */
@@ -4539,7 +4528,7 @@ function renderConso(d){
       ${kpiCard('FX ref rate',fs.fxRate?n1(fs.fxRate,0)+' ₫/$':na('FS note not found'),null,null)}
     </div>
     <div class="cols c2">
-      ${bridgeHtml||'<div class="panel"><h3>Bridge — net profit after tax</h3><div class="small">Store a prior month\'s FS to see the NPAT bridge.</div></div>'}
+      ${bridgeHtml||`<div class="panel"><h3>Bridge — budget → actual NPAT</h3><div class="small">${na('Needs both a budgeted and an actual NPAT for '+fmtMonthKey(state.month)+' — drop the consolidated FS, and the 2026 Consolidated Budget workbook for 2026 months')}</div></div>`}
       ${topCHtml}
     </div>
     <div class="cols c2">
