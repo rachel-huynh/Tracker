@@ -164,9 +164,17 @@ tr.segsub td{font-weight:600;color:#374151;background:#f7f9fc}
 }
 /* Scrollable table body with the header pinned at the top and a summary row pinned at the
    bottom. Sticky cells need their own background or the scrolled rows show through them. */
+/* Table headers freeze in BOTH scrolling contexts:
+   - inside a .scrollbox (long tables) they stick to the box (top:0, set below);
+   - everywhere else they stick to the PAGE, parked just under the app header, so short
+     tables like the day-of-week pattern keep their header while you scroll the tab.
+   A table sitting in an `overflow-x:auto` wrapper is its own scroll container, so the
+   page-level rule cannot reach it — those are the ones applyStickyHeaders() promotes to a
+   real .scrollbox once they are long enough to need it. */
+section.tab table thead th{position:sticky;top:var(--hdrh,48px);z-index:3;background:#f3f5f9}
 .scrollbox{max-height:430px;overflow-y:auto;overflow-x:auto}
 .scrollbox table{border-collapse:separate;border-spacing:0}
-.scrollbox thead th{position:sticky;top:0;z-index:2;background:#f3f5f9}
+.scrollbox thead th{position:sticky;top:0;z-index:2;background:#f3f5f9}   /* box, not page */
 .scrollbox tfoot td{position:sticky;bottom:0;z-index:2;background:#fff;border-top:2px solid var(--navy)}
 table.heat td{text-align:center;padding:3px 4px;font-size:11px;border:1px solid #fff}
 table.heat th{text-align:center}
@@ -208,7 +216,7 @@ tr.bad td{background:#fdeeec}
      would silently cut every row past the fold, so release the cap and un-stick the
      header — the board pack must carry the whole table. */
   .scrollbox{max-height:none!important;overflow:visible!important}
-  .scrollbox thead th,.scrollbox tfoot td{position:static!important}
+  section.tab table thead th,.scrollbox tfoot td{position:static!important}
 }
 </style>
 </head>
@@ -708,7 +716,10 @@ let state = {
   month:null, period:'MTD', cur:'VND', lang:'en', heatMetric:'revpar', benchMetric:'gop',
   snapPer:'cm', dailyBench:'comp',   // Market — STR: snapshot period + daily-table benchmark
   trendGran:'monthly', trendCmp:true, // Patterns tab: trend-explorer granularity + compare-to-previous-year
-  tsDay:'all', mktGran:'daily',       // shared day-type filter (all/wd/we) + Market chart granularity
+  /* Market time-series opens MONTHLY: at the default focus width the daily view packs ~575
+     points into the plot and reads as noise (owner request 2026-08-09). Daily is still one
+     click away and is where the day-level detail belongs. */
+  tsDay:'all', mktGran:'monthly',     // shared day-type filter (all/wd/we) + Market chart granularity
   /* Shared focus period. Defaults to TS_FROM_DEFAULT rather than "start" because the
      oldest stretch of the merged STAR history carries My-RevPAR only — no comp set and
      no indexes — so a full-history view opens with the comp/RGI lines visibly broken.
@@ -2406,6 +2417,46 @@ function g(pnl,path,per,fld){
   const o=path.split('.').reduce((a,k)=>a?.[k],pnl);
   return o?.[per]?.[fld]??null;
 }
+/* ---------- which budget answered a figure? ----------
+   Two budgets are in play and they disagree:
+     OWNER    = the consolidated 2026 Budget workbook. The authoritative one, but it stops at
+                the consolidated cascade — it has no departmental / line-level detail.
+     OPERATOR = the budget column inside the monthly P&L (Accor's). Carries the detail the
+                owner's book lacks, but is an older vintage, so its totals are superseded.
+   g() prefers OWNER and silently falls back to OPERATOR per PATH, so a single table can be
+   fed by both. budgetSrcOf mirrors g()'s resolution EXACTLY (any divergence would make the
+   tag lie); budgetSrcMix summarises a set of paths for a panel-level tag. */
+function budgetSrcOf(pnl,path,per){
+  if(!pnl) return null;
+  const b26=budget2026For(pnl.monthKey);
+  if(b26){
+    const v = per==='MTD' ? b26Path(b26,path)
+            : per==='YTD' ? budget2026YTD(parseInt(pnl.monthKey.slice(5,7),10),path)
+            : undefined;
+    if(v!=null) return 'owner';
+  }
+  const o=path.split('.').reduce((a,k)=>a?.[k],pnl);
+  return o?.[per]?.bud==null ? null : 'operator';
+}
+function budgetSrcMix(pnl,paths,per){
+  const s=new Set(paths.map(p=>budgetSrcOf(pnl,p,per)).filter(Boolean));
+  return s.size===0?null:s.size>1?'mixed':[...s][0];
+}
+function budgetTagVisible(){ return state.store.showBudgetTag!==false; }   // absent = shown
+window.__toggleBudgetTag=v=>{ state.store.showBudgetTag=!!v; saveStore(); renderAll(); };
+/* `force` renders the tag even when the toggle is off — used by the Settings legend, which
+   has to show what the tags look like in order to explain the switch that hides them. */
+function budgetTag(src,force){
+  if(!src||(!budgetTagVisible()&&!force)) return '';
+  const M={owner:['g','Owner budget','Consolidated 2026 Budget workbook — the authoritative figures'],
+           operator:['a','Operator budget','Budget column inside the monthly P&L (Accor). Carries line detail the owner\'s book lacks, but is an older vintage'],
+           mixed:['a','Owner + operator','Some lines come from the consolidated 2026 Budget, the rest fall back to the P&L\'s own budget column where the owner\'s book carries no such line'],
+           /* NOT the operator's book: the consolidated FS carries its own budget column,
+              which is the owner's figures at an older vintage than the Budget workbook */
+           fs:['a','FS budget','The consolidated FS workbook\'s own budget column — owner figures, but an older vintage than the 2026 Budget workbook']};
+  const [c,label,tip]=M[src];
+  return ` <span class="tag ${c}" style="font-weight:600" title="${escA(tip)}">${label}</span>`;
+}
 function curMonth(){ return state.store.months[state.month]||{}; }
 function pnlSel(){ const m=curMonth(); return m['pnl'+ (state.cur==='USD'&&m.pnlUSD?'USD':'VND')] || m.pnlVND || m.pnlUSD || null; }
 function pnlVND(){ const m=curMonth(); return m.pnlVND||null; }
@@ -2839,7 +2890,12 @@ function uolTable(d){
   const sub=first=>`<th style="${first?SEP:''}">Value</th><th>% of TR</th><th>Value</th><th>% of TR</th>
       <th>$</th><th>%</th><th>Value</th><th>% of TR</th><th>$</th><th>%</th>`;
   const mLbl=stMk?fmtMonthKey(stMk):fmtMonthKey(state.month);
-  return `<div class="panel"><h3>P&amp;L detail</h3>
+  /* Tag the budget actually feeding this table. It genuinely is mixed for 2026: the owner's
+     book covers the headline lines but has no F&B / OOD / overhead detail, so those fall
+     back to the operator column — exactly the asymmetry the owner asked to be able to see. */
+  const uolPaths=rows.filter(r=>r&&!r.gap&&r.paths).flatMap(r=>r.paths);
+  const uolSrc=budgetSrcMix(p,uolPaths.length?uolPaths:['sum.gop'],'MTD');
+  return `<div class="panel"><h3>P&amp;L detail${budgetTag(uolSrc)}</h3>
     <div style="overflow-x:auto"><table class="uol"><thead>
       <tr><th rowspan="3">Line</th><th colspan="10">MTD — ${mLbl}</th>
           <th colspan="10" style="${SEP}">YTD — ${mLbl}</th></tr>
@@ -3498,7 +3554,8 @@ function renderRooms(d){
 
   el.innerHTML=`
     <div class="cols c2">
-      <div class="panel"><h3>Rooms KPIs — ${P}</h3>
+      <div class="panel"><h3>Rooms KPIs — ${P}${budgetTag(budgetSrcMix(p,
+        ['stats.occ','stats.adr','stats.revpar','rev.rooms','stats.roomsSold','dp.rooms'],P==='YTD'?'YTD':'MTD'))}</h3>
         <table><thead><tr><th>Metric</th><th>Actual</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table>
         <div class="small" style="margin-top:6px">On cost lines (CPOR, payroll, expenses POR) a variance above budget or LY is shown red — coming in <i>under</i> is the good outcome. Comp-set benchmarking is on the <b>Market — STR</b> tab and in the RevPAR chart beside this table.</div>
       </div>
@@ -3942,7 +3999,15 @@ function dowTableHtml(){
   const st=curMonth().star;
   const idxCls=v=>v!=null&&v<100?'neg':'pos';
   let rows='';
-  for(const r of st?.dow||[]) rows+=`<tr><td>${r.day}</td><td>${n1(r.occMy)}%</td><td>${n1(r.occComp)}%</td>
+  /* STR exports the week Sunday-first; the business reads it Monday→Sunday (and every other
+     day-of-week view in this app — heatmaps, weekday/weekend filters — is already Mon-first
+     via DOWS), so re-order here rather than leave one table out of step. Unknown day names
+     sort to the end instead of being dropped. */
+  const dowOrder=['mon','tue','wed','thu','fri','sat','sun'];
+  const dowRank=d2=>{ const i=dowOrder.indexOf(String(d2||'').trim().slice(0,3).toLowerCase());
+    return i<0?99:i; };
+  const dowRows=[...(st?.dow||[])].sort((a,b)=>dowRank(a.day)-dowRank(b.day));
+  for(const r of dowRows) rows+=`<tr><td>${r.day}</td><td>${n1(r.occMy)}%</td><td>${n1(r.occComp)}%</td>
     <td class="${idxCls(r.mpi)}">${idx(r.mpi)}</td><td>${starMoney(r.adrMy)}</td><td>${starMoney(r.adrComp)}</td>
     <td class="${idxCls(r.ari)}">${idx(r.ari)}</td><td>${starMoney(r.revparMy)}</td><td>${starMoney(r.revparComp)}</td>
     <td class="${idxCls(r.rgi)}">${idx(r.rgi)}</td></tr>`;
@@ -4532,7 +4597,7 @@ function renderConso(d){
       ${topCHtml}
     </div>
     <div class="cols c2">
-      <div class="panel"><h3>Consolidated cascade — ${P}</h3>
+      <div class="panel"><h3>Consolidated cascade — ${P}${budgetTag(b26Conso?'owner':'fs')}</h3>
         <table><thead><tr><th>Line</th><th>Actual</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table>
         <div class="small" style="margin-top:6px">On the deduction lines (<b>fixed charges, depreciation, CIT</b>) the colour is inverted — coming in <i>above</i> budget or LY reduces profit, so it shows red. ${P==='YTD'?(pyFs?`<b>YTD LY</b> is the running year-to-date figure from the <b>${fmtMonthKey((+String(state.month).slice(0,4)-1)+'-'+String(state.month).slice(5,7))}</b> FS — the cascade has no year-to-date last-year column of its own.`:`<b>YTD LY is blank</b> — the cascade has no year-to-date last-year column, and the ${fmtMonthKey((+String(state.month).slice(0,4)-1)+'-'+String(state.month).slice(5,7))} FS isn't stored to supply it.`):''} Budget is read from the <b>${b26Conso?'2026 Consolidated Budget workbook ("Consolidated P&amp;L Monthly" sheet)':'FS workbook\'s own budget column'}</b>${b26Conso?'':' — drop the 2026 Consolidated Budget to use it instead'}. Central Plaza occupancy/yield is not disclosed in the FS workbook — only its GOP. Reconciliation: Sofitel GOP per FS ${money(hotel)} vs P&L GOP ${d.ok?money(state.period==='YTD'?g(d.p,'sum.gop','YTD','act'):d.gop.act):'—'} (FS is after mgmt/incentive fees — see cascade).</div></div>
       <div class="panel"><h3>Net profit after tax — trend ${granCtl()}</h3>
@@ -5856,7 +5921,7 @@ function renderOffice(d){
       if(!cp) return '';   // the banner above already explains how to populate it
       const rev=cp.totalRev?.act, full=!!state.cpFull;
       const st2=cst;
-      return `<div class="panel"><h3>Cost analysis — Central Plaza P&L <span class="small">(from the PHCL consolidated FS)</span>
+      return `<div class="panel"><h3>Cost analysis — Central Plaza P&L${budgetTag('fs')} <span class="small">(from the PHCL consolidated FS)</span>
         <span class="noprint" id="cpCostToggle" style="float:right">
           <button class="heatbtn ${full?'':'on'}" data-full="0" onclick="__setCpDetail(false)">Summary</button>
           <button class="heatbtn ${full?'on':''}" data-full="1" onclick="__setCpDetail(true)">Full detail</button></span></h3>
@@ -6136,7 +6201,15 @@ function renderSettings(){
       <label class="small" style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" ${otaVisible()?'checked':''} onchange="__toggleOta(this.checked)">
         <span>Show the <b>OTA price observation</b> panels on the Forecast tab</span></label>
-      <div class="small" style="margin-top:6px;color:var(--grey)">The OTA-vs-STR validation chart and the OTA BAR position table. Shown by default when the Last-minute Booking workbook is loaded; the scrape covers BAR only, so it is directional rather than a like-for-like ADR comparison.</div></div>
+      <div class="small" style="margin-top:6px;margin-bottom:10px;color:var(--grey)">The OTA-vs-STR validation chart and the OTA BAR position table. Shown by default when the Last-minute Booking workbook is loaded; the scrape covers BAR only, so it is directional rather than a like-for-like ADR comparison.</div>
+      <label class="small" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" ${budgetTagVisible()?'checked':''} onchange="__toggleBudgetTag(this.checked)">
+        <span>Show the <b>budget source</b> tag on panel headings</span></label>
+      <div class="small" style="margin-top:6px;color:var(--grey)">Two budgets are in play and they disagree.
+        <b>${budgetTag('owner',1).replace(/^ /,'')}</b> = the consolidated 2026 Budget workbook — authoritative, but it stops at the consolidated cascade and carries no departmental detail.
+        <b>${budgetTag('operator',1).replace(/^ /,'')}</b> = the budget column inside the monthly P&amp;L (Accor) — has the line-level detail the owner's book lacks, but is an older vintage.
+        <b>${budgetTag('mixed',1).replace(/^ /,'')}</b> appears where a single table draws on both: the owner's figures are used wherever they exist and the P&amp;L column fills the lines they don't cover.
+        <b>${budgetTag('fs',1).replace(/^ /,'')}</b> is the consolidated FS workbook's own budget column — still owner figures, just an older vintage than the Budget workbook.</div></div>
     <div class="panel"><h3>Edited titles &amp; captions
         <button class="noprint" onclick="__resetTexts()" style="margin-left:8px">↩ Reset all to original</button></h3>
       <div class="small">${Object.keys(state.store.textOverrides||{}).length} panel title(s) / caption(s) have been reworded on this dashboard.
@@ -6426,10 +6499,18 @@ function applyStickyHeaders(){
    those are skipped here and redone by the tab-switch handler once the tab is visible,
    exactly as balanceKgrids() already does for the same reason. */
 function stickyHeadOffsets(scope){
-  for(const t of (scope||document).querySelectorAll('.scrollbox table')){
-    const hr=t.tHead?.rows; if(!hr||hr.length<2) continue;
+  /* the page-sticky rule parks headers under the app header — keep the CSS var in step with
+     the real header height, which wraps to two lines on a narrow window */
+  const hdr=document.getElementById('hdr');
+  if(hdr){ const h=hdr.getBoundingClientRect().height;
+    if(h) document.documentElement.style.setProperty('--hdrh',Math.round(h)+'px'); }
+  for(const t of (scope||document).querySelectorAll('section.tab table')){
+    const hr=t.tHead?.rows; if(!hr||hr.length<2) continue;   // single-row headers: CSS handles it
     if(!hr[0].getBoundingClientRect().height) continue;      // hidden — leave for the tab switch
-    let top=0;
+    /* inside a scrollbox the header sticks to the BOX (base 0); on the page it sticks under
+       the app header (base = its height). Either way each row stacks under the one above. */
+    let top=t.closest('.scrollbox')?0
+            :(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hdrh'))||48);
     for(let i=0;i<hr.length;i++){
       for(const th of hr[i].cells) th.style.top=top+'px';
       top+=hr[i].getBoundingClientRect().height;
@@ -6855,7 +6936,10 @@ $$('#tabs button').forEach(b=>b.addEventListener('click',()=>{
     const ch=state.charts[c.id]; try{ ch?.resize(); ch?.update('none'); }catch(e){} }); });
 }));
 let _rzT=null;
-window.addEventListener('resize',()=>{ clearTimeout(_rzT); _rzT=setTimeout(balanceKgrids,150); });
+/* the app header wraps to a second line on a narrow window, which moves where page-sticky
+   table headers must park — so re-measure alongside the grid re-balance */
+window.addEventListener('resize',()=>{ clearTimeout(_rzT);
+  _rzT=setTimeout(()=>{ balanceKgrids(); stickyHeadOffsets(); },150); });
 
 /* expose for automated verification */
 window.__ingestBuffer=ingestBuffer; window.__renderAll=()=>{saveStore();refreshMonths();renderAll();}; window.__state=state;
