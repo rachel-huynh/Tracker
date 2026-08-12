@@ -1536,6 +1536,8 @@ function renderModDashboard() {
     '<button class="btn" onclick="goMod(\'pt\')">＋ Lập Phiếu Thu</button>' +
     '<button class="btn" onclick="goMod(\'pc\')">＋ Lập Phiếu Chi</button>' +
     '<button class="btn sec" onclick="goMod(\'baocao\')">Xem báo cáo quý</button>' +
+    '<button class="btn sec" onclick="hoiNamXuat(\'excel\')">📊 Xuất Excel</button>' +
+    '<button class="btn sec" onclick="hoiNamXuat(\'pdf\')">📄 Xuất PDF</button>' +
     '<button class="btn sec" onclick="exportData()">⬇ Xuất dữ liệu (sao lưu)</button>' +
     '</div></div>' +
     '<div class="card"><h3>10 phiếu gần nhất</h3><div class="tblwrap"><table class="tbl"><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>HT</th><th></th></tr>';
@@ -1572,7 +1574,9 @@ function renderModCaiDat() {
     '<div class="fld half"><label>Số dư đầu kỳ Ngân hàng năm ' + nam + '</label><input type="text" id="s_sdnh" value="' + fmt(sd.NH) + '"></div>' +
   '</div><div class="btnrow"><button class="btn" onclick="saveSettings()">💾 Lưu cài đặt</button><span class="note" id="s_msg"></span></div></div>' +
   '<div class="card"><h3>Xuất / Nhập dữ liệu (chia sẻ bằng file)</h3>' +
-    '<p class="note">Xuất toàn bộ dữ liệu thành file .json để sao lưu hoặc gửi cho đồng nghiệp. Khi nhận file, dùng Nhập dữ liệu và chọn Ghi đè hoặc Gộp.</p>' +
+    '<p class="note"><b>.xlsx</b> — mở bằng Excel để xem/lọc/in, gồm 8 sheet theo từng năm. <b>PDF</b> — bộ hồ sơ đầy đủ để lưu trữ hoặc gửi cấp trên (qua hộp thoại In → “Lưu dạng PDF”). <b>.json</b> — file dữ liệu gốc dùng để sao lưu và nạp lại vào app (Excel/PDF không nhập ngược lại được).</p>' +
+    '<div class="btnrow"><button class="btn sec" onclick="hoiNamXuat(\'excel\')">📊 Xuất Excel (.xlsx)</button>' +
+    '<button class="btn sec" onclick="hoiNamXuat(\'pdf\')">📄 Xuất PDF</button></div>' +
     '<div class="btnrow"><button class="btn" onclick="exportData()">⬇ Xuất dữ liệu (.json)</button>' +
     '<button class="btn sec" onclick="document.getElementById(\'importFile\').click()">⬆ Nhập dữ liệu từ file…</button>' +
     '<input type="file" id="importFile" accept=".json,application/json" style="display:none"></div></div>' +
@@ -2281,6 +2285,285 @@ function sbInit() {
     .catch(e => { SB_STATE_MSG = e.message; sbPill(); })
     .then(() => sbConnect());
   window.addEventListener('online', function () { if (sbOn()) { sbFlush(); sbConnect(); } });
+}
+
+/* ================================================================
+   XUẤT EXCEL (.xlsx thật — tự sinh OOXML + ZIP, không cần thư viện)
+   ================================================================ */
+const CRC_TB = (function () {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TB[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files) {
+  const enc = new TextEncoder(), parts = [], cen = [];
+  let off = 0, n = 0;
+  files.forEach(f => {
+    const nb = enc.encode(f.name), d = f.data, crc = crc32(d);
+    const lh = new Uint8Array(30 + nb.length), lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true); lv.setUint16(10, 0, true); lv.setUint16(12, 0x2100, true);
+    lv.setUint32(14, crc, true); lv.setUint32(18, d.length, true); lv.setUint32(22, d.length, true);
+    lv.setUint16(26, nb.length, true); lv.setUint16(28, 0, true);
+    lh.set(nb, 30);
+    parts.push(lh, d);
+    const ch = new Uint8Array(46 + nb.length), cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true); cv.setUint16(10, 0, true); cv.setUint16(12, 0, true); cv.setUint16(14, 0x2100, true);
+    cv.setUint32(16, crc, true); cv.setUint32(20, d.length, true); cv.setUint32(24, d.length, true);
+    cv.setUint16(28, nb.length, true); cv.setUint32(42, off, true);
+    ch.set(nb, 46);
+    cen.push(ch);
+    off += lh.length + d.length; n++;
+  });
+  const cenSize = cen.reduce((s, c) => s + c.length, 0);
+  const eo = new Uint8Array(22), ev = new DataView(eo.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, n, true); ev.setUint16(10, n, true);
+  ev.setUint32(12, cenSize, true); ev.setUint32(16, off, true);
+  const all = parts.concat(cen, [eo]);
+  const total = all.reduce((s, p) => s + p.length, 0);
+  const out = new Uint8Array(total);
+  let p = 0; all.forEach(a => { out.set(a, p); p += a.length; });
+  return out;
+}
+function xE(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ''); }
+function excelDate(iso) { if (!iso) return null; const d = new Date(iso + 'T00:00:00Z'); return isNaN(d) ? null : Math.floor(d.getTime() / 86400000) + 25569; }
+/* ô: {v: giá trị, t:'s'|'n'|'d', s: kiểu} */
+function oS(v, st) { return { v: v, t: 's', s: st === undefined ? 2 : st }; }
+function oN(v, st) { return { v: v, t: 'n', s: st === undefined ? 3 : st }; }
+function oD(v) { return { v: excelDate(v), t: 'd', s: 4 }; }
+function oH(v) { return { v: v, t: 's', s: 1 }; }
+function colName(i) { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+function sheetXml(sh) {
+  let cols = '';
+  if (sh.w && sh.w.length) cols = '<cols>' + sh.w.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join('') + '</cols>';
+  let rows = '';
+  sh.rows.forEach((r, ri) => {
+    let cells = '';
+    r.forEach((c, ci) => {
+      if (c == null) return;
+      const ref = colName(ci) + (ri + 1);
+      const st = c.s === undefined ? 0 : c.s;
+      if (c.t === 's') cells += '<c r="' + ref + '" s="' + st + '" t="inlineStr"><is><t xml:space="preserve">' + xE(c.v) + '</t></is></c>';
+      else if (c.v === null || c.v === '' || isNaN(c.v)) cells += '<c r="' + ref + '" s="' + st + '"/>';
+      else cells += '<c r="' + ref + '" s="' + st + '"><v>' + c.v + '</v></c>';
+    });
+    rows += '<row r="' + (ri + 1) + '">' + cells + '</row>';
+  });
+  const freeze = sh.freeze ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="' + sh.freeze + '" topLeftCell="A' + (sh.freeze + 1) + '" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' : '';
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    freeze + cols + '<sheetData>' + rows + '</sheetData></worksheet>';
+}
+function taoXlsx(sheets) {
+  const enc = new TextEncoder(), files = [];
+  const add = (name, str) => files.push({ name: name, data: enc.encode(str) });
+  const ten = sheets.map(s => String(s.ten).replace(/[\\\/\?\*\[\]:]/g, '-').slice(0, 31));
+  add('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+    sheets.map((s, i) => '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('') +
+    '</Types>');
+  add('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  add('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+    ten.map((t, i) => '<sheet name="' + xE(t) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>').join('') + '</sheets></workbook>');
+  add('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    sheets.map((s, i) => '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>').join('') +
+    '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+  const bd = '<border><left style="thin"><color rgb="FFB8C0CC"/></left><right style="thin"><color rgb="FFB8C0CC"/></right><top style="thin"><color rgb="FFB8C0CC"/></top><bottom style="thin"><color rgb="FFB8C0CC"/></bottom><diagonal/></border>';
+  add('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<numFmts count="1"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/></numFmts>' +
+    '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FF1E3A5F"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+    '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFEEF2F7"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+    '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>' + bd + '</borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="7">' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +                                                                              // 0 thường
+    '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +  // 1 tiêu đề cột
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' + // 2 chữ
+    '<xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>' +                                        // 3 số tiền
+    '<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>' + // 4 ngày
+    '<xf numFmtId="3" fontId="2" fillId="2" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>' +            // 5 số tổng cộng
+    '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>' +                                  // 6 chữ tổng cộng
+    '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+  sheets.forEach((s, i) => add('xl/worksheets/sheet' + (i + 1) + '.xml', sheetXml(s)));
+  return zipStore(files);
+}
+
+/* ---------- Gom dữ liệu thành các sheet ---------- */
+function duLieuXuat(nam) {
+  const sheets = [];
+  const phieuNam = DB.phieu.filter(p => yearOf(p.ngay) === nam).sort((a, b) => (a.ngay || '').localeCompare(b.ngay || ''));
+
+  // 1. Phiếu thu – chi
+  let rows = [['Số phiếu', 'Ngày', 'Loại', 'Người nộp / nhận', 'Bộ phận', 'Diễn giải', 'Mã số', 'Nội dung mục', 'Thu (VNĐ)', 'Chi (VNĐ)', 'Hình thức', 'Tài khoản', 'File kèm'].map(oH)];
+  let tThu = 0, tChi = 0;
+  phieuNam.forEach(p => {
+    const vao = (p.loai === 'PT' || p.loai === 'HU') ? p.soTien : 0, ra = vao ? 0 : p.soTien;
+    tThu += vao; tChi += ra;
+    rows.push([oS(p.so), oD(p.ngay), oS(p.loai), oS(p.nguoi), oS(p.boPhan), oS(p.dienGiai), oS(p.maSo), oS(tenMuc(p.maSo)),
+      oN(vao || null), oN(ra || null), oS(p.hinhThuc === 'TM' ? 'Tiền mặt' : 'Chuyển khoản'), oS(p.taiKhoan), oN((p.files || []).length || null)]);
+  });
+  rows.push([oS('TỔNG CỘNG', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oN(tThu, 5), oN(tChi, 5), oS('', 6), oS('', 6), oS('', 6)]);
+  sheets.push({ ten: 'Phiếu thu-chi ' + nam, rows: rows, freeze: 1, w: [13, 11, 7, 22, 9, 46, 7, 24, 14, 14, 13, 12, 8] });
+
+  // 2 & 3. Sổ quỹ tiền mặt / Sổ ngân hàng
+  [['TM', 'Sổ quỹ tiền mặt', 'Thu', 'Chi', 'Tồn quỹ'], ['CK', 'Sổ TK ngân hàng', 'Gửi vào', 'Rút ra', 'Còn lại']].forEach(cfg => {
+    const kind = cfg[0], open = getSoDu(nam)[kind === 'TM' ? 'TM' : 'NH'];
+    let bal = open, sThu = 0, sChi = 0;
+    const r = [['Ngày', 'Số phiếu thu', 'Số phiếu chi', 'Mã số', 'Diễn giải', cfg[2] + ' (VNĐ)', cfg[3] + ' (VNĐ)', cfg[4] + ' (VNĐ)'].map(oH)];
+    r.push([oS(''), oS(''), oS(''), oS(''), oS('Số dư đầu kỳ', 6), oN(null), oN(null), oN(open, 5)]);
+    ledgerEntries(kind, nam).forEach(p => {
+      const vao = (p.loai === 'PT' || p.loai === 'HU') ? p.soTien : 0, ra = vao ? 0 : p.soTien;
+      bal += vao - ra; sThu += vao; sChi += ra;
+      r.push([oD(p.ngay), oS(vao ? p.so : ''), oS(ra ? p.so : ''), oS(p.maSo), oS(p.dienGiai), oN(vao || null), oN(ra || null), oN(bal)]);
+    });
+    r.push([oS(''), oS(''), oS(''), oS(''), oS('Cộng phát sinh & tồn cuối kỳ', 6), oN(sThu, 5), oN(sChi, 5), oN(open + sThu - sChi, 5)]);
+    sheets.push({ ten: cfg[1] + ' ' + nam, rows: r, freeze: 1, w: [11, 14, 14, 7, 60, 15, 15, 16] });
+  });
+
+  // 4. Quyết toán 4 quý (mẫu B07/TLĐ)
+  const q = [1, 2, 3, 4].map(x => baoCaoData(x, nam));
+  const dong = (muc, ten, ma, lay, dam) => {
+    const st = dam ? 6 : 2, sn = dam ? 5 : 3;
+    return [oS(muc, st), oS(ten, st), oS(ma, st), oN(lay(q[0]), sn), oN(lay(q[1]), sn), oN(lay(q[2]), sn), oN(lay(q[3]), sn),
+      oN(lay(q[0]) + lay(q[1]) + lay(q[2]) + lay(q[3]), sn)];
+  };
+  const rq = [['Mục', 'Nội dung', 'Mã số', 'Quý I', 'Quý II', 'Quý III', 'Quý IV', 'Cả năm'].map(oH)];
+  rq.push(dong('I', 'PHẦN THU', '', () => 0, true));
+  [['1', 'Thu kinh phí Công đoàn', '22'], ['2', 'Thu đoàn phí công đoàn', '23'], ['3', 'Các khoản thu khác', '24']].forEach(m =>
+    rq.push(dong(m[0], m[1], m[2], d => d.thu[m[2]])));
+  rq.push(dong('', 'Cộng thu NSCĐ', '', d => d.congThu_ky, true));
+  rq.push(dong('4', 'Kinh phí cấp trên cấp', '25', d => d.thu['25']));
+  rq.push(dong('5', 'Số dư kỳ trước chuyển sang (Tiền mặt)', '26', d => d.duTM_ky));
+  rq.push(dong('6', 'Số dư kỳ trước chuyển sang (TK ngân hàng)', '', d => d.duNH_ky));
+  rq.push(dong('II', 'PHẦN CHI', '', () => 0, true));
+  [['1', 'Lương, phụ cấp và các khoản phải nộp', '27'], ['2', 'Phụ cấp cán bộ không chuyên trách', '28'], ['3', 'Quản lý hành chánh', '29'],
+   ['4', 'Hoạt động phong trào', '31'], ['5', 'Thăm hỏi đoàn viên', '33'], ['6', 'Các khoản chi khác', '35'],
+   ['7', 'Kinh phí nộp cấp trên trực tiếp', '36'], ['8', 'Đoàn phí nộp cấp trên trực tiếp', '37']].forEach(m =>
+    rq.push(dong(m[0], m[1], m[2], d => d.chi[m[2]])));
+  rq.push(dong('', 'TỔNG CỘNG CHI (II)', '', d => d.tongChi_ky, true));
+  rq.push([oS('III', 6), oS('Số dư cuối kỳ', 6), oS('38', 6), oN(q[0].duCuoiKy, 5), oN(q[1].duCuoiKy, 5), oN(q[2].duCuoiKy, 5), oN(q[3].duCuoiKy, 5), oS('', 6)]);
+  sheets.push({ ten: 'Quyết toán ' + nam, rows: rq, freeze: 1, w: [7, 42, 8, 16, 16, 16, 16, 17] });
+
+  // 5. Thăm hỏi đoàn viên — hạn mức
+  const st = thamHoiStats(nam);
+  const rt = [['STT', 'Họ tên', 'Bộ phận', 'Thăm bệnh', 'Thăm viếng', 'Mừng cưới', 'Thăm thai sản', 'Tổng đã chi', 'Còn lại', 'Trạng thái'].map(oH)];
+  st.forEach((s, i) => rt.push([oN(i + 1, 2), oS(s.hoTen), oS(s.boPhan), oN(s.thamBenh), oN(s.thamVieng), oN(s.mungCuoi), oN(s.thaiSan), oN(s.tong, 5),
+    oN(Math.max(0, HAN_MUC_TH - s.tong)), oS(s.tong > HAN_MUC_TH ? 'VƯỢT ' + fmt(s.tong - HAN_MUC_TH) + ' đ' : s.tong === HAN_MUC_TH ? 'Đã dùng hết' : 'Trong hạn mức')]));
+  sheets.push({ ten: 'Thăm hỏi ' + nam, rows: rt, freeze: 1, w: [6, 26, 10, 14, 14, 14, 15, 15, 14, 20] });
+
+  // 6. Bảng kê nộp KP & ĐP
+  const kp = (DB.kpdp && DB.kpdp[nam]) || [];
+  const rk = [['Nội dung'].concat(Array.from({ length: 12 }, (_, i) => 'Tháng ' + (i + 1))).concat(['Tổng cộng']).map(oH)];
+  const cot = Array(12).fill(0);
+  kp.forEach(r => {
+    let t = 0;
+    rk.push([oS(r.ten)].concat(r.vals.map((v, i) => { t += Number(v) || 0; cot[i] += Number(v) || 0; return oN(v || null); })).concat([oN(t, 5)]));
+  });
+  rk.push([oS('TỔNG CỘNG', 6)].concat(cot.map(v => oN(v, 5))).concat([oN(cot.reduce((a, b) => a + b, 0), 5)]));
+  sheets.push({ ten: 'KP-ĐP ' + nam, rows: rk, freeze: 1, w: [34].concat(Array(12).fill(13)).concat([15]) });
+
+  // 7. Phụ cấp cán bộ CĐ (4 quý)
+  const rp = [['Quý', 'STT', 'Họ và tên', 'Chức vụ', 'Số tiền', 'Ghi chú'].map(oH)];
+  let tongPC = 0;
+  [1, 2, 3, 4].forEach(qi => {
+    const list = (DB.phuCap && DB.phuCap[nam + '-' + qi]) || [];
+    list.forEach((r, i) => { tongPC += Number(r.soTien) || 0; rp.push([oS('Quý ' + ['I', 'II', 'III', 'IV'][qi - 1]), oN(i + 1, 2), oS(r.hoTen), oS(r.chucVu), oN(r.soTien), oS(r.ghiChu)]); });
+  });
+  rp.push([oS('TỔNG CỘNG', 6), oS('', 6), oS('', 6), oS('', 6), oN(tongPC, 5), oS('', 6)]);
+  sheets.push({ ten: 'Phụ cấp ' + nam, rows: rp, freeze: 1, w: [10, 6, 26, 18, 15, 34] });
+
+  // 8. Ủy nhiệm chi
+  const un = DB.unc.filter(u => yearOf(u.ngay) === nam).sort((a, b) => (a.ngay || '').localeCompare(b.ngay || ''));
+  const ru = [['Số', 'Ngày', 'Đơn vị trả', 'Người / đơn vị nhận', 'Số tài khoản', 'Ngân hàng', 'Nội dung', 'Số tiền (VNĐ)'].map(oH)];
+  un.forEach(u => ru.push([oS(u.so), oD(u.ngay), oS(u.traTen), oS(u.nhanTen), oS(u.nhanSTK), oS(u.nhanNH), oS(u.noiDung), oN(u.soTien)]));
+  ru.push([oS('TỔNG CỘNG', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oN(un.reduce((s, u) => s + u.soTien, 0), 5)]);
+  sheets.push({ ten: 'Ủy nhiệm chi ' + nam, rows: ru, freeze: 1, w: [14, 11, 26, 26, 18, 16, 46, 16] });
+
+  return sheets;
+}
+function xuatExcel(nam) {
+  try {
+    const bytes = taoXlsx(duLieuXuat(nam));
+    const d = new Date();
+    const ten = 'CongDoan-' + nam + '-' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') +
+      '-' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') + '.xlsx';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = ten; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    sbToast('📊 Đã xuất ' + ten);
+  } catch (e) { alert('Không xuất được Excel: ' + e.message); }
+}
+
+/* ================================================================
+   XUẤT PDF (dùng hộp thoại In của trình duyệt → "Lưu dạng PDF")
+   ================================================================ */
+function xuatPDF(nam) {
+  const s = DB.settings;
+  const ngat = '<div style="page-break-before:always"></div>';
+  const bangSo = kind => ledgerTableHTML(kind, nam, '__khong_loc__')
+    .replace('class="tblwrap"', '').replace('table class="tbl"', 'table class="ptbl" style="font-size:10.5px"');
+  const phieuNam = DB.phieu.filter(p => yearOf(p.ngay) === nam).sort((a, b) => (a.ngay || '').localeCompare(b.ngay || ''));
+  let tThu = 0, tChi = 0;
+  let bangPhieu = '<table class="ptbl" style="font-size:10.5px"><tr><th>Số phiếu</th><th>Ngày</th><th>Người nộp / nhận</th><th>Bộ phận</th><th>Diễn giải</th><th>Mã</th><th>Thu</th><th>Chi</th><th>HT</th></tr>';
+  phieuNam.forEach(p => {
+    const vao = (p.loai === 'PT' || p.loai === 'HU') ? p.soTien : 0, ra = vao ? 0 : p.soTien;
+    tThu += vao; tChi += ra;
+    bangPhieu += '<tr><td>' + esc(p.so) + '</td><td class="center">' + fmtDate(p.ngay) + '</td><td>' + esc(p.nguoi) + '</td><td>' + esc(p.boPhan) + '</td><td>' + esc(p.dienGiai) + '</td>' +
+      '<td class="center">' + esc(p.maSo) + '</td><td class="num">' + (vao ? fmt(vao) : '') + '</td><td class="num">' + (ra ? fmt(ra) : '') + '</td><td class="center">' + (p.hinhThuc === 'TM' ? 'TM' : 'CK') + '</td></tr>';
+  });
+  bangPhieu += '<tr><td colspan="6" class="b">TỔNG CỘNG (' + phieuNam.length + ' phiếu)</td><td class="num b">' + fmt(tThu) + '</td><td class="num b">' + fmt(tChi) + '</td><td></td></tr></table>';
+  const stat = thamHoiStats(nam);
+  let bangTH = '<table class="ptbl" style="font-size:10.5px"><tr><th>STT</th><th>Họ tên</th><th>Bộ phận</th>' +
+    TH_LOAI.map(t => '<th>' + t.ten + '</th>').join('') + '<th>Tổng đã chi</th><th>Còn lại</th></tr>';
+  stat.forEach((x, i) => {
+    bangTH += '<tr><td class="center">' + (i + 1) + '</td><td>' + esc(x.hoTen) + '</td><td>' + esc(x.boPhan) + '</td>' +
+      TH_LOAI.map(t => '<td class="num">' + (x[t.k] ? fmt(x[t.k]) : '') + '</td>').join('') +
+      '<td class="num b">' + fmt(x.tong) + '</td><td class="num">' + (x.tong > HAN_MUC_TH ? 'VƯỢT ' + fmt(x.tong - HAN_MUC_TH) : fmt(HAN_MUC_TH - x.tong)) + '</td></tr>';
+  });
+  bangTH += '</table>';
+  const html = '<div class="pdoc">' + orgHeaderHTML('') +
+    '<h1 class="ptitle">HỒ SƠ THU – CHI TÀI CHÍNH CÔNG ĐOÀN</h1>' +
+    '<div class="center b" style="margin-bottom:6px">NĂM ' + nam + '</div>' +
+    '<div class="center i" style="font-size:11px;margin-bottom:12px">Kết xuất ngày ' + fmtDate(todayISO()) + ' — gồm: danh sách phiếu, sổ quỹ tiền mặt, sổ tài khoản ngân hàng, thăm hỏi đoàn viên, quyết toán 4 quý</div>' +
+    '<div class="b" style="margin:10px 0 4px">I. DANH SÁCH PHIẾU THU – CHI</div>' + bangPhieu +
+    ngat + '<div class="b" style="margin:0 0 4px">II. SỔ QUỸ TIỀN MẶT NĂM ' + nam + '</div>' + bangSo('TM') +
+    ngat + '<div class="b" style="margin:0 0 4px">III. SỔ TÀI KHOẢN NGÂN HÀNG NĂM ' + nam + '</div>' + bangSo('CK') +
+    ngat + '<div class="b" style="margin:0 0 4px">IV. THĂM HỎI ĐOÀN VIÊN — hạn mức ' + fmt(HAN_MUC_TH) + ' đ/người/năm</div>' + bangTH +
+    [1, 2, 3, 4].map(qi => ngat + '<div class="b" style="margin:0 0 4px">V.' + qi + '. QUYẾT TOÁN QUÝ ' + ['I', 'II', 'III', 'IV'][qi - 1] + ' NĂM ' + nam + '</div>' +
+      baoCaoTableHTML(qi, nam, true).replace('class="tblwrap"', '').replace('table class="ptbl"', 'table class="ptbl" style="font-size:10.5px"')).join('') +
+    '<div class="psig" style="margin-top:18px"><div><div class="role">KẾ TOÁN CÔNG ĐOÀN</div><div class="name">' + esc(s.keToan) + '</div></div>' +
+    '<div><div class="role">TM. BAN CHẤP HÀNH CĐCS<br>CHỦ TỊCH</div><div class="name">' + esc(s.chuTich) + '</div></div></div>' +
+    '</div>';
+  printDoc(html, 'A4 landscape');
+  setTimeout(function () { sbToast('📄 Trong hộp thoại In, chọn máy in "Lưu dạng PDF" (Save as PDF) để lưu file.'); }, 400);
+}
+
+/* ---------- Hộp thoại chọn năm rồi xuất ---------- */
+function hoiNamXuat(loai) {
+  const years = namesOfYears();
+  const nayNam = new Date().getFullYear();
+  const sel = '<select id="xuatNam" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:14px">' +
+    years.map(y => '<option value="' + y + '"' + (y === nayNam ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+  showModal(loai === 'excel' ? 'Xuất dữ liệu ra Excel' : 'Xuất dữ liệu ra PDF',
+    'Chọn năm cần xuất: ' + sel + '<br><br>' +
+    (loai === 'excel'
+      ? 'File <b>.xlsx</b> gồm 8 sheet: Phiếu thu-chi, Sổ quỹ tiền mặt, Sổ TK ngân hàng, Quyết toán 4 quý, Thăm hỏi đoàn viên, Bảng kê KP&amp;ĐP, Phụ cấp cán bộ, Ủy nhiệm chi.'
+      : 'Sẽ mở hộp thoại In — chọn máy in <b>“Lưu dạng PDF / Save as PDF”</b> rồi bấm Lưu. Tài liệu gồm danh sách phiếu, 2 sổ, thăm hỏi đoàn viên và quyết toán 4 quý.'), [
+    {
+      text: loai === 'excel' ? '📊 Xuất Excel' : '📄 Xuất PDF', onClick: function () {
+        const n = Number(($('xuatNam') || {}).value) || nayNam;
+        if (loai === 'excel') xuatExcel(n); else xuatPDF(n);
+      }
+    },
+    { text: 'Hủy', sec: true }
+  ]);
 }
 
 /* ================================================================

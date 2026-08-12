@@ -3424,26 +3424,42 @@ function renderRooms(d){
   const pay=G('payrollIncl'), payPct=div(pay,rr), payPOR=div(pay,d.roomsSold);
   const ftLY=(rr!=null&&rrL!=null&&rr!==rrL)?(dp-dpL)/(rr-rrL):null;
   const ftBud=(rr!=null&&rrB!=null&&rr!==rrB)?(dp-dpB)/(rr-rrB):null;
-  const rows=[
-    ['Occupancy',pct(d.occ.act),pct(d.occ.bud),pct(d.occ.ly),d.compOcc!=null?n1(d.compOcc)+'%':na()],
-    ['ADR',money(d.adr.act),money(d.adr.bud),money(d.adr.ly),d.compAdr!=null?money(d.compAdr):na()],
-    ['RevPAR',money(d.revpar.act),money(d.revpar.bud),money(d.revpar.ly),d.compRevpar!=null?money(d.compRevpar):na()],
-    ['Rooms revenue (incl SC)',money(rr),money(rrB),money(rrL),'—'],
-    ['Rooms sold',n1(d.roomsSold,0),n1(g(p,'stats.roomsSold',P,'bud'),0),n1(g(p,'stats.roomsSold',P,'ly'),0),'—'],
-    ['Arrivals',n1(G('arrivals'),0),n1(G('arrivals','bud'),0),n1(G('arrivals','ly'),0),'—'],
-    ['ALOS (nights)',n1(G('alos'),2),n1(G('alos','bud'),2),n1(G('alos','ly'),2),'—'],
-    ['Double occupancy factor',n1(G('dof'),2),n1(G('dof','bud'),2),n1(G('dof','ly'),2),'—'],
-    ['CPOR (total dept cost / room sold)',money(cpor),money(div(G('totalExp','bud'),g(p,'stats.roomsSold',P,'bud'))),money(cporL),'—'],
-    ['Rooms payroll % revenue',pct(payPct),pct(div(G('payrollIncl','bud'),rrB)),pct(div(G('payrollIncl','ly'),rrL)),'—'],
-    ['Rooms payroll / occupied room',money(payPOR),'—',money(div(G('payrollIncl','ly'),g(p,'stats.roomsSold',P,'ly'))),'—'],
-    ['Dept profit',money(dp),money(dpB),money(dpL),'—'],
-    ['Dept profit %',pct(div(dp,rr)),pct(div(dpB,rrB)),pct(div(dpL,rrL)),'—'],
-    ['Flow-through vs LY / vs Bud',pct(ftLY),pct(ftBud),'—','—'],
-    ['Payroll cost POR',money(G('porPay')),money(G('porPay','bud')),money(G('porPay','ly')),'—'],
-    ['Other expenses POR',money(G('porOther')),money(G('porOther','bud')),money(G('porOther','ly')),'—'],
-    ['Total expenses POR',money(G('porTotal')),money(G('porTotal','bud')),money(G('porTotal','ly')),'—'],
-    ['Dept profit POR',money(G('porProfit')),money(G('porProfit','bud')),money(G('porProfit','ly')),'—'],
-  ].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join('');
+  /* Rows carry RAW values plus a formatter so vs Bud / vs LY can be computed here rather
+     than re-parsed from formatted text. `cost:true` inverts the colour — on a cost line
+     coming in ABOVE budget/LY is bad, which the default cls() would paint green.
+     The comp-set column was dropped at the owner's request; comp-set benchmarking lives
+     on the Market — STR tab (and the RevPAR-vs-comp chart directly beside this table). */
+  const n0=v=>n1(v,0), n2=v=>n1(v,2);
+  const KR=[
+    ['Occupancy',d.occ.act,d.occ.bud,d.occ.ly,pct],
+    ['ADR',d.adr.act,d.adr.bud,d.adr.ly,money],
+    ['RevPAR',d.revpar.act,d.revpar.bud,d.revpar.ly,money],
+    ['Rooms revenue (incl SC)',rr,rrB,rrL,money],
+    ['Rooms sold',d.roomsSold,g(p,'stats.roomsSold',P,'bud'),g(p,'stats.roomsSold',P,'ly'),n0],
+    ['Arrivals',G('arrivals'),G('arrivals','bud'),G('arrivals','ly'),n0],
+    ['ALOS (nights)',G('alos'),G('alos','bud'),G('alos','ly'),n2],
+    ['Double occupancy factor',G('dof'),G('dof','bud'),G('dof','ly'),n2],
+    ['CPOR (total dept cost / room sold)',cpor,div(G('totalExp','bud'),g(p,'stats.roomsSold',P,'bud')),cporL,money,1],
+    ['Rooms payroll % revenue',payPct,div(G('payrollIncl','bud'),rrB),div(G('payrollIncl','ly'),rrL),pct,1],
+    ['Rooms payroll / occupied room',payPOR,null,div(G('payrollIncl','ly'),g(p,'stats.roomsSold',P,'ly')),money,1],
+    ['Dept profit',dp,dpB,dpL,money],
+    ['Dept profit %',div(dp,rr),div(dpB,rrB),div(dpL,rrL),pct],
+    ['Payroll cost POR',G('porPay'),G('porPay','bud'),G('porPay','ly'),money,1],
+    ['Other expenses POR',G('porOther'),G('porOther','bud'),G('porOther','ly'),money,1],
+    ['Total expenses POR',G('porTotal'),G('porTotal','bud'),G('porTotal','ly'),money,1],
+    ['Dept profit POR',G('porProfit'),G('porProfit','bud'),G('porProfit','ly'),money],
+  ];
+  const vcell=(a,b,cost)=>{ const v=varPct(a,b);
+    return `<td data-v="${v??''}" class="${v==null?'':(cost? (v>0?'neg':v<0?'pos':'') : cls(v))}">${pct(v)}</td>`; };
+  let rows=KR.map(([lbl,a,b,l,fmt,cost])=>`<tr><td>${lbl}</td>
+    <td data-v="${a??''}">${a==null?'—':fmt(a)}</td>
+    <td data-v="${b??''}">${b==null?'—':fmt(b)}</td>${vcell(a,b,cost)}
+    <td data-v="${l??''}">${l==null?'—':fmt(l)}</td>${vcell(a,l,cost)}</tr>`).join('');
+  /* Flow-through is already a variance-style ratio, so the two figures ARE the comparison —
+     it gets its own row rather than being forced into the actual/budget/LY shape. */
+  rows+=`<tr><td>Flow-through <span class="small">(Δ dept profit ÷ Δ revenue)</span></td>
+    <td colspan="2" style="text-align:right">vs LY <b>${pct(ftLY)}</b></td><td></td>
+    <td colspan="2" style="text-align:right">vs Bud <b>${pct(ftBud)}</b></td></tr>`;
 
   /* cost-line detail (sortable) */
   let expRows='';
@@ -3462,22 +3478,33 @@ function renderRooms(d){
 
   /* top revenue segments (from Tracking Segmentation) */
   const A=P==='YTD'?'ytdAct':'mtdAct', L=P==='YTD'?'ytdLy':'mtdLy';
-  const topSeg=(p.seg?.rows||[]).filter(r=>r.type==='sub').sort((a,b)=>(b.vals[A]?.rev??0)-(a.vals[A]?.rev??0)).slice(0,6)
-    .map(r=>`<tr><td>${r.code} ${r.name}</td><td>${n1(r.vals[A]?.rn,0)}</td><td>${money(r.vals[A]?.rev)}</td><td>${money(r.vals[A]?.arr)}</td>
-      <td class="${cls(varPct(r.vals[A]?.arr,r.vals[L]?.arr))}">${pct(varPct(r.vals[A]?.arr,r.vals[L]?.arr))}</td></tr>`).join('');
+  /* Share-of-RN denominator is the segmentation sheet's OWN grand total (excl comp, incl SC),
+     not the P&L rooms-sold figure — the two sit on different bases, so mixing them would make
+     the shares quietly wrong. Falls back to summing the sub rows if the grand row is absent. */
+  const segSubs=(p.seg?.rows||[]).filter(r=>r.type==='sub');
+  const segTotRn=p.seg?.grand?.inclSC?.vals?.[A]?.rn
+    ?? (segSubs.length?segSubs.reduce((s,r)=>s+(r.vals[A]?.rn??0),0):null);
+  const topSeg=segSubs.slice().sort((a,b)=>(b.vals[A]?.rev??0)-(a.vals[A]?.rev??0)).slice(0,6)
+    .map(r=>{ const rn=r.vals[A]?.rn;
+      return `<tr><td>${r.code} ${r.name}</td><td>${n1(rn,0)}</td>
+      <td data-v="${segTotRn&&rn!=null?rn/segTotRn:''}">${segTotRn&&rn!=null?pct(rn/segTotRn):na()}</td>
+      <td>${money(r.vals[A]?.rev)}</td><td>${money(r.vals[A]?.arr)}</td>
+      <td class="${cls(varPct(r.vals[A]?.arr,r.vals[L]?.arr))}">${pct(varPct(r.vals[A]?.arr,r.vals[L]?.arr))}</td></tr>`; }).join('');
 
   el.innerHTML=`
     <div class="cols c2">
       <div class="panel"><h3>Rooms KPIs — ${P}</h3>
-        <table><thead><tr><th>Metric</th><th>Actual</th><th>Budget</th><th>LY</th><th>Comp set</th></tr></thead><tbody>${rows}</tbody></table>
+        <table><thead><tr><th>Metric</th><th>Actual</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="small" style="margin-top:6px">On cost lines (CPOR, payroll, expenses POR) a variance above budget or LY is shown red — coming in <i>under</i> is the good outcome. Comp-set benchmarking is on the <b>Market — STR</b> tab and in the RevPAR chart beside this table.</div>
       </div>
       <div>
         <div class="panel"><h3>RevPAR vs comp set — STR history ${granCtl()}</h3>
           <div class="chartbox tall" style="margin-top:14px"><canvas id="chRoomsTrend"></canvas></div>
           ${granNote('RevPAR and RGI are averaged across the months of each quarter')}</div>
         <div class="panel"><h3>Top 6 revenue segments — ${P} <span class="small">(full detail in Segmentation tab)</span></h3>
-          <table><thead><tr><th>Sub-segment</th><th>RN</th><th>Revenue</th><th>ARR</th><th>ARR %LY</th></tr></thead>
-          <tbody>${topSeg||'<tr><td colspan=5>'+na('Tracking Segmentation sheet not parsed')+'</td></tr>'}</tbody></table></div>
+          <table><thead><tr><th>Sub-segment</th><th>RN</th><th>% of RN</th><th>Revenue</th><th>ARR</th><th>ARR %LY</th></tr></thead>
+          <tbody>${topSeg||'<tr><td colspan=6>'+na('Tracking Segmentation sheet not parsed')+'</td></tr>'}</tbody></table>
+          ${segTotRn?`<div class="small" style="margin-top:6px">% of RN is each segment's share of the <b>${n1(segTotRn,0)}</b> room nights on the segmentation sheet (excl. complimentary, incl. service charge) — that basis differs slightly from the P&amp;L rooms-sold figure above.</div>`:''}</div>
       </div>
     </div>
     ${roomCatTable(d)}
@@ -3504,6 +3531,54 @@ function renderRooms(d){
 }
 
 /* ---------------- SEGMENTATION ---------------- */
+/* Main-group room-night mix for every stored month. Each P&L carries its own Tracking
+   Segmentation block, so the mix is recoverable month by month without any extra file.
+   Shares always divide by THAT month's own group total, so a month whose P&L isn't stored
+   simply drops out of the series instead of distorting neighbouring shares.
+   Deliberately NOT trimmed by the shared focus period: seasonality needs the longest run
+   of history available, and the default focus would silently cut the earliest years. */
+function segMixByMonth(){
+  const out=[];
+  for(const mk of Object.keys(state.store.months).sort()){
+    const sg=state.store.months[mk].pnlVND?.seg; if(!sg?.rows?.length) continue;
+    const gts=sg.rows.filter(r=>r.type==='grouptotal');
+    if(!gts.length) continue;
+    const tot=gts.reduce((s,r)=>s+(r.vals.mtdAct?.rn??0),0);
+    if(!tot) continue;
+    const share={}; gts.forEach(r=>{ share[r.group]=(r.vals.mtdAct?.rn??0)/tot; });
+    out.push({mk,tot,share});
+  }
+  return out;
+}
+/* Which calendar months carry a genuinely seasonal mix, rather than one odd month.
+   For each main group, compare that calendar month's mean share against the group's
+   overall mean. A calendar month is flagged when the biggest such gap clears MIN_DEV AND
+   — where two or more years are stored for it — every year agrees on the direction. That
+   consistency test is what stops a single unusual month being read as a season; with only
+   one year stored the flag is still raised but marked unconfirmed by the caller. */
+function segSeasonality(mix,MIN_DEV=0.05){
+  const groups=[...new Set(mix.flatMap(m=>Object.keys(m.share)))];
+  if(!groups.length||mix.length<3) return {};
+  const overall={};
+  for(const gp of groups){ const v=mix.map(m=>m.share[gp]??0); overall[gp]=v.reduce((a,b)=>a+b,0)/v.length; }
+  const byCal={};
+  mix.forEach(m=>{ const c=+m.mk.slice(5,7); (byCal[c]=byCal[c]||[]).push(m); });
+  const flags={};
+  for(const c of Object.keys(byCal)){
+    const ms=byCal[c]; let best=null;
+    for(const gp of groups){
+      const vals=ms.map(m=>m.share[gp]??0);
+      const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+      const dev=mean-overall[gp];
+      if(Math.abs(dev)<MIN_DEV) continue;
+      const consistent=vals.length<2||vals.every(v=>Math.sign(v-overall[gp])===Math.sign(dev));
+      if(!consistent) continue;
+      if(!best||Math.abs(dev)>Math.abs(best.dev)) best={group:gp,dev,years:vals.length,mean,base:overall[gp]};
+    }
+    if(best) flags[+c]=best;
+  }
+  return flags;
+}
 function renderSeg(d){
   const el=$('#tab-seg');
   const seg=d.p?.seg;
@@ -3553,12 +3628,33 @@ function renderSeg(d){
     rows+=`<tr class="tot"><td colspan="3"></td><td>${g.label}</td><td>${n1(v.rn,0)}</td><td></td><td>${money(v.rev)}</td><td>${money(v.arr)}</td><td colspan="4"></td></tr>`;
   }
 
+  /* ---- seasonality: mix share by month across every stored P&L ---- */
+  const mix=segMixByMonth();
+  const seasFlags=segSeasonality(mix);
+  const seasYears=new Set(mix.map(m=>m.mk.slice(0,4))).size;
+  const seasList=Object.keys(seasFlags).map(Number).sort((a,b)=>a-b).map(c=>{
+    const f=seasFlags[c];
+    return `<li><b>${CALMONTHS[c-1]}</b> — ${f.group} runs <b class="${f.dev>0?'pos':'neg'}" style="color:var(--${f.dev>0?'green':'red'})">${f.dev>0?'+':''}${n1(f.dev*100,1)} pts</b> ${f.dev>0?'above':'below'} its ${pct(f.base)} annual norm (${pct(f.mean)} in ${CALMONTHS[c-1]}${f.years>1?`, consistent across all ${f.years} stored years`:', 1 year stored'})</li>`;
+  }).join('');
+  const seasPanel=mix.length<3?
+    `<div class="panel"><h3>Segment mix by month — seasonality</h3>
+      <div class="small" style="padding:14px">${na('Needs at least 3 stored months of P&L files to show a mix-by-month series — '+mix.length+' stored so far')}</div></div>`
+    :`<div class="panel"><h3>Segment mix by month — seasonality
+        <span class="small" style="font-weight:400">(${mix.length} stored months${seasYears>1?', '+seasYears+' years':''} · share of room nights, MTD)</span></h3>
+      <div class="chartbox tall"><canvas id="chSegSeason"></canvas></div>
+      <div class="small" style="margin-top:8px">${Object.keys(seasFlags).length
+        ? `<b>Shaded months</b> are where the mix departs most from the annual norm${seasYears>1?' in the same direction every stored year':''}:<ul style="margin:4px 0 0 18px">${seasList}</ul>
+           ${seasYears>1?'':'<div style="margin-top:4px;color:var(--gold2)"><b>Only one year is stored</b>, so these are this year\'s swings, not yet a confirmed repeating season — they are shaded so you can watch whether next year repeats them.</div>'}`
+        : `No calendar month shifts a main group by 5+ points from its annual norm${seasYears>1?' consistently across the stored years':''}, so no period is shaded — the mix looks stable through the year on the data stored so far.`}
+        <div style="margin-top:4px">Each bar is one month's room-night split, so bars always total 100% and a change in height of one band is a genuine mix shift rather than a volume effect. Uses <b>every stored month</b> regardless of the focus period, since seasonality needs the longest run available.</div></div></div>`;
+
   el.innerHTML=`
     <div class="kgrid">${kpis}</div>
     <div class="cols c2">
       <div class="panel"><h3>Room-night mix by main group — ${P}</h3><div class="chartbox"><canvas id="chSegMix"></canvas></div></div>
       <div class="panel"><h3>Top 10 sub-segments by revenue — ${P}</h3><div class="chartbox"><canvas id="chSegTop"></canvas></div></div>
     </div>
+    ${seasPanel}
     <div class="cols c2">
       <div class="panel"><h3>Biggest gains vs LY</h3>${wl(win,'good')||'<div class="small">—</div>'}</div>
       <div class="panel"><h3>Biggest losses vs LY</h3>${wl(lose,'crit')||'<div class="small">—</div>'}</div>
@@ -3585,6 +3681,37 @@ function renderSeg(d){
       {label:'LY',data:top.map(r=>cv(r.vals[L]?.rev??0)),backgroundColor:'rgba(46,95,158,.55)'}]},
     options:{indexAxis:'y',plugins:{tooltip:{callbacks:{afterLabel:c=>{const r=top[c.dataIndex];return 'ARR: '+money(r.vals[A]?.arr)+' (LY '+money(r.vals[L]?.arr)+')';}}}},
       scales:{x:{ticks:{callback:v=>moneyFmt(v,1)}}},maintainAspectRatio:false}});
+
+  /* ---- seasonality chart: 100%-stacked mix by month, seasonal months shaded ---- */
+  if(mix.length>=3){
+    const sGroups=[...new Set(mix.flatMap(m=>Object.keys(m.share)))];
+    const seasIdx=mix.map((m,i)=>seasFlags[+m.mk.slice(5,7)]?i:-1).filter(i=>i>=0);
+    mkChart('chSegSeason',{type:'bar',
+      data:{labels:mix.map(m=>fmtMonthKey(m.mk)),datasets:sGroups.map((gp,i)=>({label:gp,
+        data:mix.map(m=>(m.share[gp]??0)*100),backgroundColor:palette[i%palette.length],stack:'s'}))},
+      options:{scales:{x:{stacked:true},y:{stacked:true,max:100,ticks:{callback:v=>v+'%'}}},
+        plugins:{tooltip:{callbacks:{
+          label:c=>c.dataset.label+': '+n1(c.parsed.y,1)+'%',
+          afterBody:items=>{ const f=seasFlags[+mix[items[0].dataIndex].mk.slice(5,7)];
+            return f?['', 'Seasonal: '+f.group+' '+(f.dev>0?'+':'')+n1(f.dev*100,1)+' pts vs its annual norm']:[]; }}}},
+        maintainAspectRatio:false},
+      /* Bands are painted BEFORE the bars so the shading sits behind them; each band spans
+         the full category slot, derived from the gap between adjacent ticks (the last slot
+         reuses the previous gap, since there is no tick beyond it to measure against). */
+      plugins:[{id:'seasonBands',beforeDatasetsDraw(ch){
+        if(!seasIdx.length) return;
+        const x=ch.scales.x, {ctx,chartArea}=ch; if(!x||!chartArea) return;
+        const step=x.ticks.length>1?Math.abs(x.getPixelForTick(1)-x.getPixelForTick(0))
+                                   :(chartArea.right-chartArea.left);
+        ctx.save(); ctx.fillStyle='rgba(201,162,39,.16)';
+        for(const i of seasIdx){
+          const c0=x.getPixelForTick(i)-step/2;
+          ctx.fillRect(Math.max(c0,chartArea.left),chartArea.top,
+                       Math.min(step,chartArea.right-Math.max(c0,chartArea.left)),chartArea.bottom-chartArea.top);
+        }
+        ctx.restore();
+      }}]});
+  }
 }
 
 /* ---------------- F&B ---------------- */
