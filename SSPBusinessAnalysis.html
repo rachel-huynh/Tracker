@@ -204,6 +204,11 @@ tr.bad td{background:#fdeeec}
   section.tab{display:block!important;page-break-after:always}
   .panel,.kpi{box-shadow:none;break-inside:avoid}
   th{background:#eee;color:#333}
+  /* Long tables are capped at 430px on screen so the header can freeze. On paper that
+     would silently cut every row past the fold, so release the cap and un-stick the
+     header — the board pack must carry the whole table. */
+  .scrollbox{max-height:none!important;overflow:visible!important}
+  .scrollbox thead th,.scrollbox tfoot td{position:static!important}
 }
 </style>
 </head>
@@ -3545,10 +3550,33 @@ function segMixByMonth(){
     if(!gts.length) continue;
     const tot=gts.reduce((s,r)=>s+(r.vals.mtdAct?.rn??0),0);
     if(!tot) continue;
-    const share={}; gts.forEach(r=>{ share[r.group]=(r.vals.mtdAct?.rn??0)/tot; });
-    out.push({mk,tot,share});
+    const share={},rn={};
+    gts.forEach(r=>{ rn[r.group]=r.vals.mtdAct?.rn??0; share[r.group]=rn[r.group]/tot; });
+    out.push({mk,tot,share,rn});   // rn kept so quarters can be summed, not averaged
   }
   return out;
+}
+window.__setSegGran=v=>{ state.segGran=v; renderSeg(derive()); };
+/* Monthly or quarterly view of the same mix. Quarters SUM the room nights and re-derive the
+   share — averaging the three monthly percentages would give a quiet month the same weight
+   as a busy one and quietly distort the split. A quarter missing months is marked "*". */
+function segMixSeries(gran){
+  const mix=segMixByMonth();
+  if(gran!=='quarterly')
+    return mix.map(m=>({...m,label:fmtMonthKey(m.mk),bucket:+m.mk.slice(5,7),bucketLabel:CALMONTHS[+m.mk.slice(5,7)-1]}));
+  const byQ={};
+  for(const m of mix){
+    const q=m.mk.slice(0,4)+'-Q'+Math.ceil(+m.mk.slice(5,7)/3);
+    const b=byQ[q]=byQ[q]||{rn:{},tot:0,n:0};
+    for(const [gp,v] of Object.entries(m.rn)) b.rn[gp]=(b.rn[gp]||0)+v;
+    b.tot+=m.tot; b.n++;
+  }
+  return Object.keys(byQ).sort().map(q=>{
+    const b=byQ[q], share={};
+    for(const [gp,v] of Object.entries(b.rn)) share[gp]=b.tot?v/b.tot:0;
+    return {mk:q,tot:b.tot,share,rn:b.rn,months:b.n,
+      label:q.replace('-',' ')+(b.n<3?'*':''),bucket:+q.slice(-1),bucketLabel:'Q'+q.slice(-1)};
+  });
 }
 /* Which calendar months carry a genuinely seasonal mix, rather than one odd month.
    For each main group, compare that calendar month's mean share against the group's
@@ -3562,7 +3590,7 @@ function segSeasonality(mix,MIN_DEV=0.05){
   const overall={};
   for(const gp of groups){ const v=mix.map(m=>m.share[gp]??0); overall[gp]=v.reduce((a,b)=>a+b,0)/v.length; }
   const byCal={};
-  mix.forEach(m=>{ const c=+m.mk.slice(5,7); (byCal[c]=byCal[c]||[]).push(m); });
+  mix.forEach(m=>{ const c=m.bucket??+m.mk.slice(5,7); (byCal[c]=byCal[c]||[]).push(m); });
   const flags={};
   for(const c of Object.keys(byCal)){
     const ms=byCal[c]; let best=null;
@@ -3629,24 +3657,30 @@ function renderSeg(d){
   }
 
   /* ---- seasonality: mix share by month across every stored P&L ---- */
-  const mix=segMixByMonth();
+  const segGran=state.segGran==='quarterly'?'quarterly':'monthly';
+  const mix=segMixSeries(segGran);
   const seasFlags=segSeasonality(mix);
   const seasYears=new Set(mix.map(m=>m.mk.slice(0,4))).size;
+  const unit=segGran==='quarterly'?'quarter':'month', unitPl=unit+'s';
+  const bucketName=c=>segGran==='quarterly'?'Q'+c:CALMONTHS[c-1];
   const seasList=Object.keys(seasFlags).map(Number).sort((a,b)=>a-b).map(c=>{
     const f=seasFlags[c];
-    return `<li><b>${CALMONTHS[c-1]}</b> — ${f.group} runs <b class="${f.dev>0?'pos':'neg'}" style="color:var(--${f.dev>0?'green':'red'})">${f.dev>0?'+':''}${n1(f.dev*100,1)} pts</b> ${f.dev>0?'above':'below'} its ${pct(f.base)} annual norm (${pct(f.mean)} in ${CALMONTHS[c-1]}${f.years>1?`, consistent across all ${f.years} stored years`:', 1 year stored'})</li>`;
+    return `<li><b>${bucketName(c)}</b> — ${f.group} runs <b class="${f.dev>0?'pos':'neg'}" style="color:var(--${f.dev>0?'green':'red'})">${f.dev>0?'+':''}${n1(f.dev*100,1)} pts</b> ${f.dev>0?'above':'below'} its ${pct(f.base)} annual norm (${pct(f.mean)} in ${bucketName(c)}${f.years>1?`, consistent across all ${f.years} stored years`:', 1 year stored'})</li>`;
   }).join('');
+  const granBtns=`<span class="noprint" style="float:right;font-weight:400">
+      ${[['monthly','Monthly'],['quarterly','Quarterly']].map(([k,l])=>
+        `<button class="heatbtn ${segGran===k?'on':''}" onclick="__setSegGran('${k}')">${l}</button>`).join(' ')}</span>`;
   const seasPanel=mix.length<3?
-    `<div class="panel"><h3>Segment mix by month — seasonality</h3>
-      <div class="small" style="padding:14px">${na('Needs at least 3 stored months of P&L files to show a mix-by-month series — '+mix.length+' stored so far')}</div></div>`
-    :`<div class="panel"><h3>Segment mix by month — seasonality
-        <span class="small" style="font-weight:400">(${mix.length} stored months${seasYears>1?', '+seasYears+' years':''} · share of room nights, MTD)</span></h3>
+    `<div class="panel"><h3>Segment mix by ${unit} — seasonality${granBtns}</h3>
+      <div class="small" style="padding:14px">${na('Needs at least 3 stored '+unitPl+' of P&L files to show a mix series — '+mix.length+' so far')}</div></div>`
+    :`<div class="panel"><h3>Segment mix by ${unit} — seasonality${granBtns}
+        <span class="small" style="font-weight:400">(${mix.length} ${unitPl}${seasYears>1?', '+seasYears+' years':''} · share of room nights, MTD)</span></h3>
       <div class="chartbox tall"><canvas id="chSegSeason"></canvas></div>
       <div class="small" style="margin-top:8px">${Object.keys(seasFlags).length
-        ? `<b>Shaded months</b> are where the mix departs most from the annual norm${seasYears>1?' in the same direction every stored year':''}:<ul style="margin:4px 0 0 18px">${seasList}</ul>
+        ? `<b>Shaded ${unitPl}</b> are where the mix departs most from the annual norm${seasYears>1?' in the same direction every stored year':''}:<ul style="margin:4px 0 0 18px">${seasList}</ul>
            ${seasYears>1?'':'<div style="margin-top:4px;color:var(--gold2)"><b>Only one year is stored</b>, so these are this year\'s swings, not yet a confirmed repeating season — they are shaded so you can watch whether next year repeats them.</div>'}`
-        : `No calendar month shifts a main group by 5+ points from its annual norm${seasYears>1?' consistently across the stored years':''}, so no period is shaded — the mix looks stable through the year on the data stored so far.`}
-        <div style="margin-top:4px">Each bar is one month's room-night split, so bars always total 100% and a change in height of one band is a genuine mix shift rather than a volume effect. Uses <b>every stored month</b> regardless of the focus period, since seasonality needs the longest run available.</div></div></div>`;
+        : `No ${unit} shifts a main group by 5+ points from its annual norm${seasYears>1?' consistently across the stored years':''}, so no period is shaded — the mix looks stable through the year on the data stored so far.`}
+        <div style="margin-top:4px">Each bar is one ${unit}'s room-night split, so bars always total 100% and a change in height of one band is a genuine mix shift rather than a volume effect.${segGran==='quarterly'?' Quarters <b>sum the room nights</b> and re-derive the share — averaging the three monthly percentages would weight a quiet month like a busy one; a quarter marked <b>*</b> is missing at least one month.':''} Uses <b>every stored month</b> regardless of the focus period, since seasonality needs the longest run available.</div></div></div>`;
 
   el.innerHTML=`
     <div class="kgrid">${kpis}</div>
@@ -3685,14 +3719,14 @@ function renderSeg(d){
   /* ---- seasonality chart: 100%-stacked mix by month, seasonal months shaded ---- */
   if(mix.length>=3){
     const sGroups=[...new Set(mix.flatMap(m=>Object.keys(m.share)))];
-    const seasIdx=mix.map((m,i)=>seasFlags[+m.mk.slice(5,7)]?i:-1).filter(i=>i>=0);
+    const seasIdx=mix.map((m,i)=>seasFlags[m.bucket]?i:-1).filter(i=>i>=0);
     mkChart('chSegSeason',{type:'bar',
-      data:{labels:mix.map(m=>fmtMonthKey(m.mk)),datasets:sGroups.map((gp,i)=>({label:gp,
+      data:{labels:mix.map(m=>m.label),datasets:sGroups.map((gp,i)=>({label:gp,
         data:mix.map(m=>(m.share[gp]??0)*100),backgroundColor:palette[i%palette.length],stack:'s'}))},
       options:{scales:{x:{stacked:true},y:{stacked:true,max:100,ticks:{callback:v=>v+'%'}}},
         plugins:{tooltip:{callbacks:{
           label:c=>c.dataset.label+': '+n1(c.parsed.y,1)+'%',
-          afterBody:items=>{ const f=seasFlags[+mix[items[0].dataIndex].mk.slice(5,7)];
+          afterBody:items=>{ const f=seasFlags[mix[items[0].dataIndex].bucket];
             return f?['', 'Seasonal: '+f.group+' '+(f.dev>0?'+':'')+n1(f.dev*100,1)+' pts vs its annual norm']:[]; }}}},
         maintainAspectRatio:false},
       /* Bands are painted BEFORE the bars so the shading sits behind them; each band spans
@@ -4447,18 +4481,34 @@ function renderConso(d){
   /* MoM bridge: previous FS month */
   const keys=Object.keys(fsAll).sort(); const iCur=keys.indexOf(state.month);
   const prevKey=iCur>0?keys[iCur-1]:null; const prev=prevKey?fsAll[prevKey]:null;
-  let bridgeHtml='';
+  let bridgeHtml='', bridgeWf=null;
   if(prev){
     const dHotel=(fs.hotelGop?.act??0)-(prev.hotelGop?.act??0);
     const dCentral=(fs.centralGop?.act??0)-(prev.centralGop?.act??0);
     const dOther=((fs.npat?.act??0)-(prev.npat?.act??0))-dHotel-dCentral;
-    bridgeHtml=`<div class="panel"><h3>MoM bridge ${fmtMonthKey(prevKey)} → ${fmtMonthKey(state.month)} (net profit after tax)</h3>
-      <table><thead><tr><th>Driver</th><th>Δ</th></tr></thead><tbody>
-      <tr><td>NPAT ${fmtMonthKey(prevKey)}</td><td>${money(prev.npat?.act)}</td></tr>
-      <tr><td>Δ Sofitel GOP</td><td class="${cls(dHotel)}">${money(dHotel)}</td></tr>
-      <tr><td>Δ Central Plaza GOP</td><td class="${cls(dCentral)}">${money(dCentral)}</td></tr>
-      <tr><td>Δ Fixed / financial / tax / other</td><td class="${cls(dOther)}">${money(dOther)}</td></tr>
-      <tr class="tot"><td>NPAT ${fmtMonthKey(state.month)}</td><td>${money(fs.npat?.act)}</td></tr></tbody></table></div>`;
+    /* "Previous" is the previous STORED FS month, which is not always the previous CALENDAR
+       month — with a month missing this would quietly present a two-month jump as a
+       month-on-month move. Detect the gap and say so in red rather than let the title imply
+       a normal step. */
+    const expPrev=(()=>{ const y=+state.month.slice(0,4), m=+state.month.slice(5,7);
+      const d2=new Date(y,m-2,1); return d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0'); })();
+    const gap=prevKey!==expPrev;
+    const gapMonths=(()=>{ const a=+prevKey.slice(0,4)*12+ +prevKey.slice(5,7), b=+state.month.slice(0,4)*12+ +state.month.slice(5,7);
+      return b-a; })();
+    bridgeWf={start:prev.npat?.act??0,end:fs.npat?.act??0,
+      steps:[['Δ Sofitel GOP',dHotel],['Δ Central Plaza GOP',dCentral],['Δ Fixed / fin / tax / other',dOther]],
+      startLabel:'NPAT '+fmtMonthKey(prevKey),endLabel:'NPAT '+fmtMonthKey(state.month)};
+    bridgeHtml=`<div class="panel"><h3${gap?' style="color:var(--red)"':''}>${gap?'⚠ ':''}Bridge ${fmtMonthKey(prevKey)} → ${fmtMonthKey(state.month)} (net profit after tax)</h3>
+      ${gap?`<div class="alert crit" style="margin-bottom:8px"><div class="h">Not a month-on-month step — this spans ${gapMonths} months</div>
+        <div class="d">${fmtMonthKey(expPrev)} has no stored consolidated FS, so the bridge jumps from ${fmtMonthKey(prevKey)} straight to ${fmtMonthKey(state.month)}. Every Δ below therefore covers ${gapMonths} months, not one. Drop the ${fmtMonthKey(expPrev)} FS in <b>Settings &amp; Data</b> to get a true month-on-month bridge.</div></div>`:''}
+      <div class="chartbox"><canvas id="chNpatBridge"></canvas></div>
+      <table style="margin-top:8px"><thead><tr><th>Driver</th><th>Δ</th></tr></thead><tbody>
+      <tr><td>NPAT ${fmtMonthKey(prevKey)}</td><td data-v="${prev.npat?.act??''}">${money(prev.npat?.act)}</td></tr>
+      <tr><td>Δ Sofitel GOP</td><td data-v="${dHotel}" class="${cls(dHotel)}">${money(dHotel)}</td></tr>
+      <tr><td>Δ Central Plaza GOP</td><td data-v="${dCentral}" class="${cls(dCentral)}">${money(dCentral)}</td></tr>
+      <tr><td>Δ Fixed / financial / tax / other</td><td data-v="${dOther}" class="${cls(dOther)}">${money(dOther)}</td></tr>
+      <tr class="tot"><td>NPAT ${fmtMonthKey(state.month)}</td><td data-v="${fs.npat?.act??''}">${money(fs.npat?.act)}</td></tr></tbody></table>
+      <div class="small" style="margin-top:6px">Single-month figures (not the ${P} toggle). Green bars add to profit, red take away; "Fixed / financial / tax / other" is the residual that reconciles the two GOP moves to the change in NPAT.</div></div>`;
   }
   const contrib= group? `${pct(hotel/group)} Sofitel / ${pct(central/group)} Central Plaza` : '—';
   /* top 5 things to look at — consolidated */
@@ -4489,8 +4539,8 @@ function renderConso(d){
       ${kpiCard('FX ref rate',fs.fxRate?n1(fs.fxRate,0)+' ₫/$':na('FS note not found'),null,null)}
     </div>
     <div class="cols c2">
+      ${bridgeHtml||'<div class="panel"><h3>Bridge — net profit after tax</h3><div class="small">Store a prior month\'s FS to see the NPAT bridge.</div></div>'}
       ${topCHtml}
-      ${bridgeHtml||'<div class="panel"><h3>MoM bridge — net profit after tax</h3><div class="small">Store a prior month\'s FS to see the month-on-month NPAT bridge.</div></div>'}
     </div>
     <div class="cols c2">
       <div class="panel"><h3>Consolidated cascade — ${P}</h3>
@@ -4506,6 +4556,21 @@ function renderConso(d){
       <div class="small" style="margin-top:6px">Bars = actual GOP for each property. Lines = that property's budget (dashed) and last year (dotted). Click a legend entry to hide a series.</div>
       ${granNote('GOP is summed within each quarter')}</div>`;
 
+  /* NPAT bridge as a floating-bar waterfall — same construction as the cockpit's GOP
+     waterfall so the two read identically: end bars anchored at 0, step bars floating
+     between the running totals, green up / red down. */
+  if(bridgeWf){
+    let run=bridgeWf.start;
+    const labels=[bridgeWf.startLabel], data=[[0,bridgeWf.start]], colors=['#4a7dbd'];
+    for(const [lb,v] of bridgeWf.steps){ labels.push(lb); data.push([run,run+v]); colors.push(v>=0?'#2f9e6e':'#d64545'); run+=v; }
+    labels.push(bridgeWf.endLabel); data.push([0,bridgeWf.end]); colors.push('#C9A227');
+    mkChart('chNpatBridge',{type:'bar',
+      data:{labels:labels.map(l=>l.replace('Δ ','')),datasets:[{data:data.map(([a,b])=>[cv(a),cv(b)]),
+        backgroundColor:colors,borderWidth:0,barPercentage:.8}]},
+      options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.raw[1]-c.raw[0])}}},
+        scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}},x:{ticks:{maxRotation:45,minRotation:30}}},
+        maintainAspectRatio:false}});
+  }
   const ks=keys;
   /* NPAT trend — actual / budget / LY */
   const gN=granGroup(ks,[['act'],['bud'],['ly']].map(([fld])=>(
@@ -6330,6 +6395,57 @@ function renderAll(){
   applyTabVisibility();
   applyTextOverrides();     // must run after every innerHTML rebuild
   balanceKgrids();
+  applyStickyHeaders();     // after the DOM settles, so row counts are final
+}
+
+/* Freeze the header row on any table long enough that the header scrolls out of sight.
+   Applied generically after every render rather than table-by-table, so a table that grows
+   with the data (segmentation detail, expense lines, monthly histories) picks it up on its
+   own and nothing has to be remembered when a new table is added.
+   Reuses the existing .scrollbox class (sticky thead + sticky tfoot) already proven on the
+   Central Plaza GOP list, so there is only ever one sticky mechanism in the app. */
+const STICKY_MIN_ROWS=14;
+function applyStickyHeaders(){
+  for(const t of document.querySelectorAll('section.tab table')){
+    const nRows=(t.tBodies[0]?.rows.length)||0;
+    let box=t.closest('.scrollbox');
+    if(nRows<STICKY_MIN_ROWS){
+      /* shrank below the threshold on a re-render (period switch, filter) — release it,
+         otherwise a now-short table keeps an empty 430px scroll well */
+      if(box&&box.dataset.autoSticky==='1'){ box.replaceWith(...box.childNodes); }
+      continue;
+    }
+    if(box) continue;                                   // hand-written .scrollbox — leave alone
+    const par=t.parentElement;
+    /* Tables already sitting in an overflow-x wrapper: promote that wrapper instead of
+       nesting a second scroller inside it (nested scrollers trap the wheel and would also
+       break sticky, since the inner box never scrolls vertically). */
+    if(par&&par!==t&&/auto|scroll/.test(par.style.overflowX||'')&&par.children.length===1){
+      par.classList.add('scrollbox'); par.dataset.autoSticky='1'; par.style.overflowX='';
+      box=par;
+    }else{
+      box=document.createElement('div');
+      box.className='scrollbox'; box.dataset.autoSticky='1';
+      t.replaceWith(box); box.appendChild(t);
+    }
+  }
+  stickyHeadOffsets();
+}
+/* Multi-row headers (the MTD|YTD tables have 2, the cockpit cascade 3) need each row parked
+   beneath the ones above it, or they all stick at top:0 and pile up. Heights are MEASURED,
+   not assumed — they vary with font, zoom and column wrapping. A hidden tab measures 0, so
+   those are skipped here and redone by the tab-switch handler once the tab is visible,
+   exactly as balanceKgrids() already does for the same reason. */
+function stickyHeadOffsets(scope){
+  for(const t of (scope||document).querySelectorAll('.scrollbox table')){
+    const hr=t.tHead?.rows; if(!hr||hr.length<2) continue;
+    if(!hr[0].getBoundingClientRect().height) continue;      // hidden — leave for the tab switch
+    let top=0;
+    for(let i=0;i<hr.length;i++){
+      for(const th of hr[i].cells) th.style.top=top+'px';
+      top+=hr[i].getBoundingClientRect().height;
+    }
+  }
 }
 
 /* Revenue Analysis is hidden by default — it is a deep-dive tab most readers do not
@@ -6744,6 +6860,7 @@ $$('#tabs button').forEach(b=>b.addEventListener('click',()=>{
   $$('section.tab').forEach(s=>s.classList.remove('on')); $('#tab-'+b.dataset.tab).classList.add('on');
   $('#pageTitle').textContent=b.textContent.replace(/\d+$/,'').trim();
   balanceKgrids();   // tab is now visible & measurable — balance synchronously to avoid a fallback-layout flash
+  stickyHeadOffsets($('#tab-'+b.dataset.tab));   // multi-row sticky headers, same reason
   /* nudge charts + re-balance on the newly visible tab (couldn't be measured while hidden) */
   requestAnimationFrame(()=>{ balanceKgrids(); $$('#tab-'+b.dataset.tab+' canvas').forEach(c=>{
     const ch=state.charts[c.id]; try{ ch?.resize(); ch?.update('none'); }catch(e){} }); });
