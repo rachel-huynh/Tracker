@@ -134,7 +134,8 @@ tr.total td{background:#16283e0d;font-weight:700;border-top:2px solid var(--navy
 #printReport h2{font-size:14px;color:#1f3a5f;margin:16px 0 6px}
 #printReport table{margin-bottom:10px;font-size:11.5px}
 #printReport th{position:static}
-@media print{ body.rpt>header,body.rpt>nav,body.rpt>main{display:none!important} body.rpt #printReport{display:block!important} }
+@media print{ body.rpt>header,body.rpt>nav,body.rpt>main{display:none!important} body.rpt #printReport{display:block!important}
+  .onlyprint{display:table-cell!important} }
 </style>
 </head>
 <body>
@@ -157,6 +158,7 @@ tr.total td{background:#16283e0d;font-weight:700;border-top:2px solid var(--navy
   <section class="tab" id="tab-dash"></section>
   <section class="tab" id="tab-versions"></section>
   <section class="tab" id="tab-compare"></section>
+  <section class="tab" id="tab-analysis"></section>
   <section class="tab" id="tab-rates"></section>
   <section class="tab" id="tab-estimate"></section>
   <section class="tab" id="tab-ve"></section>
@@ -220,7 +222,7 @@ en:{
  sumBase:'Summary basis', room:'Room', keys:'keys', gfa:'GFA', prevBudget:'Previous budget (from file)', addOns:'Below-the-line items', grand:'TOTAL PROJECT',
  confirm:'Confirm', vsBaseline:'vs baseline',
  areasT:'Main areas', chartAreas:'Cost by main area',
- areaGuest:'Guestrooms', areaGuestSub:'Rooms, suites + corridor (main package)',
+ areaGuest:'Guestrooms', areaGuestSub:'Rooms + suites (main package)', areaCorrSub:'Corridors, lift lobbies & lift cars',
  areaPublic:'Public areas', areaPublicSub:'Lobby, Club Lounge',
  areaFnb:'F&B outlets', areaFnbSub:'Not in the estimate file — enter budget lines below',
  areaProj:'Project-wide', areaProjSub:'Professional fees etc.',
@@ -266,6 +268,15 @@ en:{
  impMergeHint:'Keeps what you already have (including your manual classifications and removals) and adds only lines that are not there yet. Use this for a ledger covering another period, or when re-importing the same export.',
  impReplaceHint:'Throws away the current payment dataset and keeps only this file. Use this when the new export is the complete, corrected book.',
  impResult:'Ledger updated', impNothingNew:'no new lines',
+ analysis:'Analysis', anT:'Budget comparison for the committee', anOrig:'Original', anRev:'Revised', anChange:'Change', anReason:'Reason / comment',
+ anTip:'Board-style comparison of any two versions: room costs are shown WITHOUT MEP (MEP is one line covering every area, as in the committee slides), corridors and lift lobbies are separated from guestrooms, and everything is computed from the uploaded files — nothing is typed in except the reason notes.',
+ agRooms:'Regular rooms', agSuites:'Suites', agCorridor:'Corridor & lift lobby', agOther:'Other areas',
+ anMep:'MEP systems (all areas)', anSubtotal:'Subtotal — nett construction', anPrelims:'Preliminaries', anFees:'Professional & preparation fees',
+ anLobby:'Lobby & Club Lounge', anGrand:'GRAND TOTAL', anPerKey:'/ key', anKeys:'keys',
+ anByTrade:'By work category', anTradeTip:'Same two versions, split the way the QS book is structured. Write the reason for each movement — it is carried into the Excel and PDF report.',
+ anNoData:'Upload at least two versions to build the comparison.', anSaving:'saving', anIncrease:'increase',
+ anNote1:'Room and suite figures exclude MEP; MEP for those areas is inside the “MEP systems” line.',
+ anUnalloc:'Not broken down by area in the file',
  sbT:'Automatic sync (Supabase realtime)', sbOnLbl:'Sync automatically', sbUrl:'Project URL', sbKey:'API key (publishable)',
  sbHelp:'When on, everything you change is sent to the shared database within a second, and changes made by other members appear here by themselves — no Push/Pull, no import/export. Data still lives in this browser first, so the app keeps working offline and re-sends when the connection returns.',
  sbSetup:'One-time setup for the whole team: in Supabase open SQL Editor and run the file <b>budget-tracker-supabase.sql</b> (kept in this folder). Each computer then only needs the switch above.',
@@ -320,7 +331,7 @@ vi:{
  sumBase:'Cơ sở tổng hợp', room:'Phòng', keys:'phòng', gfa:'GFA', prevBudget:'Ngân sách trước (trong file)', addOns:'Các khoản ngoài xây dựng', grand:'TỔNG DỰ ÁN',
  confirm:'Xác nhận', vsBaseline:'so với bản gốc',
  areasT:'Khu vực chính', chartAreas:'Chi phí theo khu vực chính',
- areaGuest:'Khối phòng', areaGuestSub:'Phòng, suite + hành lang (gói chính)',
+ areaGuest:'Khối phòng', areaGuestSub:'Phòng + suite (gói chính)', areaCorrSub:'Hành lang, sảnh thang & cabin thang',
  areaPublic:'Khu công cộng', areaPublicSub:'Sảnh, Club Lounge',
  areaFnb:'Khối F&B', areaFnbSub:'Chưa có trong file dự toán — nhập ngân sách bên dưới',
  areaProj:'Toàn dự án', areaProjSub:'Phí tư vấn v.v.',
@@ -366,6 +377,15 @@ vi:{
  impMergeHint:'Giữ nguyên dữ liệu hiện có (kể cả phân loại thủ công và các dòng đã xóa) và chỉ thêm những dòng chưa có. Dùng khi nhập sổ của kỳ khác, hoặc nhập lại đúng file cũ.',
  impReplaceHint:'Bỏ toàn bộ dữ liệu thanh toán hiện tại, chỉ giữ file này. Dùng khi file mới là sổ đầy đủ, đã chỉnh sửa lại.',
  impResult:'Đã cập nhật sổ', impNothingNew:'không có dòng mới',
+ analysis:'Phân tích', anT:'So sánh ngân sách để báo cáo', anOrig:'Ban đầu', anRev:'Điều chỉnh', anChange:'Thay đổi', anReason:'Lý do / ghi chú',
+ anTip:'So sánh hai phiên bản theo kiểu slide báo cáo: chi phí phòng KHÔNG gồm MEP (MEP là một dòng riêng cho toàn bộ khu vực, như trong slide), hành lang và sảnh thang tách khỏi khối phòng, mọi số liệu tính từ file đã tải lên — chỉ có phần lý do là bạn tự nhập.',
+ agRooms:'Phòng thường', agSuites:'Suites', agCorridor:'Hành lang & sảnh thang', agOther:'Khu vực khác',
+ anMep:'Hệ thống MEP (toàn bộ khu vực)', anSubtotal:'Cộng — xây dựng thuần', anPrelims:'Preliminaries', anFees:'Phí tư vấn & chuẩn bị',
+ anLobby:'Sảnh & Club Lounge', anGrand:'TỔNG CỘNG', anPerKey:'/ phòng', anKeys:'phòng',
+ anByTrade:'Theo hạng mục thi công', anTradeTip:'Vẫn hai phiên bản đó, chia theo đúng cấu trúc sổ QS. Ghi lý do cho từng thay đổi — nội dung này được đưa vào cả file Excel và PDF.',
+ anNoData:'Cần ít nhất hai phiên bản để lập bảng so sánh.', anSaving:'tiết kiệm', anIncrease:'tăng',
+ anNote1:'Số liệu phòng và suite không bao gồm MEP; phần MEP của các khu vực đó nằm trong dòng “Hệ thống MEP”.',
+ anUnalloc:'Chưa chia theo khu vực trong file',
  sbT:'Đồng bộ tự động (Supabase realtime)', sbOnLbl:'Tự động đồng bộ', sbUrl:'Project URL', sbKey:'API key (publishable)',
  sbHelp:'Khi bật, mọi thay đổi của bạn được gửi lên cơ sở dữ liệu chung trong khoảng một giây, và thay đổi của thành viên khác tự hiện ở đây — không cần bấm Đẩy/Tải, không cần xuất/nhập file. Dữ liệu vẫn nằm trong trình duyệt này trước, nên mất mạng vẫn dùng được và sẽ tự gửi lại khi có mạng.',
  sbSetup:'Cài đặt một lần cho cả nhóm: vào Supabase → SQL Editor, chạy file <b>budget-tracker-supabase.sql</b> (để sẵn trong thư mục này). Sau đó mỗi máy chỉ cần bật công tắc ở trên.',
@@ -426,7 +446,7 @@ let state = { lang:'en', currency:'VND', fx:26450, prelimsPct:7, contPct:0, budg
   versions:[], activeId:null, baseId:null, options:[], manualAreas:[], attDir:'Attachments',
   cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null}, cloudEnabled:true, roomLabel:'code', compRef:'auto',
   payments:null, contracts:[], payKeywords:PAY_KW_DEFAULT, payOverrides:{}, payRemoved:{}, showInternal:false,
-  quotes:[], rateLinks:{}, sb:{enabled:false,url:'',key:'',lastPush:null,lastPull:null}, tab:'dash' };
+  quotes:[], rateLinks:{}, anNotes:{}, sb:{enabled:false,url:'',key:'',lastPush:null,lastPull:null}, tab:'dash' };
 let attCache=[]; // metadata cache of files store
 let saveT=null;
 function save(){ clearTimeout(saveT); saveT=setTimeout(()=>{
@@ -460,7 +480,12 @@ function parseSummary(rows){
   const codesRow=rows[hr-1]||[];
   const blocks=[];
   for(let c=colUSD>0?colUSD+1:colTotal+1;c<H.length;c++){
-    if(norm(H[c])==='%'&&s(codesRow[c])){ blocks.push({code:s(codesRow[c]),cPct:c,cM2:c+1,cTot:c+2}); } }
+    const code=s(codesRow[c]); if(!code) continue;
+    /* Đa số khối có 3 cột: % | Cost/m² | TOTAL. Riêng LIFT CAR trong file QS không có cột %
+       (chỉ Cost/m² | TOTAL) — nếu chỉ dò theo '%' sẽ bỏ sót nguyên khối này. */
+    if(norm(H[c])==='%') blocks.push({code,cPct:c,cM2:c+1,cTot:c+2});
+    else if(/^cost/.test(norm(H[c]))) blocks.push({code,cPct:-1,cM2:c,cTot:c+1});
+    else if(/^cost/.test(norm(H[c+1]||''))) blocks.push({code,cPct:-1,cM2:c+1,cTot:c+2}); }
   // previous budget block (label in row hr-2)
   const r6=rows[hr-2]||[];
   for(let c=0;c<r6.length;c++){ if(/previous budget/i.test(s(r6[c]))){ for(let c2=c;c2<c+4;c2++){ if(norm(H[c2]||'').startsWith('total')){ out.prevBudget={label:s(r6[c]),col:c2,grandTotal:null}; break; } } } }
@@ -623,16 +648,26 @@ function forecastGrand(v){ const a=adjustedGrand(v); if(a==null) return null; re
    public = Lobby + Club Lounge add-ons, proj = professional fees, fnb = manual only */
 const AREAS=[
   {id:'guest', k:'areaGuest', sub:'areaGuestSub', color:'#1f3a5f'},
+  {id:'corridor',k:'agCorridor',sub:'areaCorrSub',color:'#5b8c8f'},
   {id:'public',k:'areaPublic',sub:'areaPublicSub',color:'#c8a557'},
   {id:'fnb',  k:'areaFnb',  sub:'areaFnbSub',  color:'#3e7c8f'},
   {id:'proj', k:'areaProj', sub:'areaProjSub', color:'#9aa4b1'}];
 function areaBreakdown(v){
-  const res={guest:{file:0,manual:0},public:{file:0,manual:0},fnb:{file:0,manual:0},proj:{file:0,manual:0}};
-  if(v&&v.summary){ const su=v.summary; res.guest.file+=su.nett||0;
+  const res={guest:{file:0,manual:0},corridor:{file:0,manual:0},public:{file:0,manual:0},fnb:{file:0,manual:0},proj:{file:0,manual:0}};
+  if(v&&v.summary){ const su=v.summary;
+    /* Hành lang & sảnh thang tách khỏi khối phòng, lấy đúng các dòng per-key của chính file
+       (đã gồm prelims). Nếu file không có khối per-key thì quay về cách cũ: gộp vào khối phòng. */
+    const pk=(re)=>{ const r=(su.perKey||[]).find(p=>re.test(p.name)); return r?(r.totalVND||0):null; };
+    const rooms=pk(/^guestrooms?$/i), suites=pk(/^suites?$/i);
+    const corr=['corridors','lift lobbies','lift cars'].map(nm=>pk(new RegExp('^'+nm+'$','i')))
+      .filter(x=>x!=null).reduce((a,b)=>a+b,0);
+    if(rooms!=null&&corr>0){ res.guest.file+=rooms+(suites||0); res.corridor.file+=corr; }
+    else res.guest.file+=su.nett||0;
     for(const a of su.addOns){ const nm=norm(a.name);
       if(/lobby|club/.test(nm)) res.public.file+=a.total||0;
       else if(/fee/.test(nm)) res.proj.file+=a.total||0;
-      else res.guest.file+=a.total||0; } }
+      else if(rooms==null||corr<=0) res.guest.file+=a.total||0;   // prelims đã nằm trong dòng per-key
+    } }
   for(const m of (state.manualAreas||[])){ if(res[m.area]) res[m.area].manual+=n(m.amount)||0; }
   return res;
 }
@@ -875,6 +910,7 @@ function sbDocs(){
   d['ratelinks']={kind:'map',label:'Rate links',obj:state.rateLinks||{}};
   d['payoverrides']={kind:'map',label:'Payment overrides',obj:state.payOverrides||{}};
   d['payremoved']={kind:'map',label:'Removed payments',obj:state.payRemoved||{}};
+  d['annotes']={kind:'map',label:'Analysis notes',obj:state.anNotes||{}};
   for(const f of attCache){ if(f.rel||(f.dataUrl&&(f.size||0)<=SB_ATT_MAX)) d['att:'+f.id]={kind:'att',label:f.name,obj:f}; }
   return d;
 }
@@ -887,6 +923,7 @@ function sbApplyDoc(key,obj){
   if(key==='ratelinks'){ state.rateLinks=obj||{}; return ''; }
   if(key==='payoverrides'){ state.payOverrides=obj||{}; return ''; }
   if(key==='payremoved'){ state.payRemoved=obj||{}; return ''; }
+  if(key==='annotes'){ state.anNotes=obj||{}; return ''; }
   const p=key.indexOf(':'); if(p<0) return '';
   const pre=key.slice(0,p);
   if(pre==='ver'){ state.versions=state.versions||[]; sbPutById(state.versions,obj); if(!state.activeId) state.activeId=obj.id; return t('versions')+': '+obj.name; }
@@ -1114,7 +1151,7 @@ function mkChart(id,cfg){ const cv=document.getElementById(id); if(!cv||typeof C
 const PAL=['#1f3a5f','#c8a557','#3e7c8f','#7d5a8c','#b05c50','#5b8c5a','#8a8f5a','#5a6f8c','#a5744f','#4f7ea5','#6b5a8c','#8c5a6b','#4a8c7a','#8c7a4a'];
 
 /* ============================== render: shell ============================== */
-const TABS=[['dash','dash'],['versions','versions'],['compare','compare'],['rates','rates'],['estimate','estimate'],['ve','ve'],['materials','materials'],['pay','pay'],['atts','atts'],['settings','settings']];
+const TABS=[['dash','dash'],['versions','versions'],['compare','compare'],['analysis','analysis'],['rates','rates'],['estimate','estimate'],['ve','ve'],['materials','materials'],['pay','pay'],['atts','atts'],['settings','settings']];
 function renderNav(){
   $('#nav').innerHTML=TABS.map(([id,k])=>`<button class="${state.tab===id?'on':''}" onclick="App.go('${id}')">${t(k)}</button>`).join('');
   document.querySelectorAll('#curSeg button').forEach(b=>b.classList.toggle('on',b.dataset.cur===state.currency));
@@ -1126,7 +1163,7 @@ function renderNav(){
   try{ sbPill(); }catch(e){}
 }
 function renderAll(){ renderNav();
-  ({dash:renderDash,versions:renderVersions,compare:renderCompare,rates:renderRates,estimate:renderEstimate,ve:renderVE,materials:renderMaterials,pay:renderPay,atts:renderAtts,settings:renderSettings})[state.tab]();
+  ({dash:renderDash,versions:renderVersions,compare:renderCompare,analysis:renderAnalysis,rates:renderRates,estimate:renderEstimate,ve:renderVE,materials:renderMaterials,pay:renderPay,atts:renderAtts,settings:renderSettings})[state.tab]();
 }
 
 /* ============================== render: dashboard ============================== */
@@ -1246,14 +1283,16 @@ function roomName(v,code){ if(!v||!v.rooms||!v.rooms.length) return code;
   const c=code.toLowerCase(); return c.charAt(0).toUpperCase()+c.slice(1); }
 function roomLbl(v,code){ return state.roomLabel==='name'?roomName(v,code):code; }
 function perKeyRow(v,re){ return (((v||{}).summary||{}).perKey||[]).find(p=>re.test(p.name)); }
-function guestSubRows(v){ // Rooms / Suites / Corridors+lift lobbies from the summary per-key block
+function guestSubRows(v){ // Rooms / Suites (hành lang đã tách thành khu vực riêng)
   const fx=(v&&v.fx)||state.fx; const out=[];
   const rooms=perKeyRow(v,/^guestrooms?$/i), suites=perKeyRow(v,/^suites?$/i);
-  const corrParts=['corridors','lift lobbies','lift cars'].map(nm=>perKeyRow(v,new RegExp('^'+nm+'$','i'))).filter(Boolean);
   if(rooms&&rooms.perKeyUSD) out.push({label:t('roomsSub'),total:rooms.totalVND,keys:Math.round(rooms.totalVND/(rooms.perKeyUSD*fx)),perKey:rooms.perKeyUSD});
   if(suites&&suites.perKeyUSD) out.push({label:t('suitesSub'),total:suites.totalVND,keys:Math.round(suites.totalVND/(suites.perKeyUSD*fx)),perKey:suites.perKeyUSD});
-  if(corrParts.length) out.push({label:t('corrSub'),total:corrParts.reduce((x,p)=>x+(p.totalVND||0),0),keys:null,perKey:null});
   return out;
+}
+function corrSubRows(v){ // chi tiết hành lang / sảnh thang / cabin thang
+  return ['corridors','lift lobbies','lift cars'].map(nm=>{ const p=perKeyRow(v,new RegExp('^'+nm+'$','i'));
+    return p?{label:p.name,total:p.totalVND,keys:null,perKey:null}:null; }).filter(Boolean);
 }
 function areasHtml(v){
   const br=areaBreakdown(v); const fx=(v&&v.fx)||state.fx;
@@ -1273,7 +1312,7 @@ function areasHtml(v){
       <td class="num">${keys?'$'+Math.round(tot/keys/fx).toLocaleString():'—'}</td>
       <td class="num">${pct(tot/grandAll)}</td>
       <td><button class="btn sm ghost noprint" onclick="App.areaAdd('${a.id}')">${t('addLine')}</button></td></tr>`;
-    if(a.id==='guest'){ for(const sr of subs){
+    if(a.id==='guest'||a.id==='corridor'){ for(const sr of (a.id==='guest'?subs:corrSubRows(v))){
       rows+=`<tr><td style="padding-left:28px;color:var(--mut)">↳ ${esc(sr.label)}</td>
         <td class="num">${money(sr.total)}</td><td></td><td class="num">${money(sr.total)}</td>
         <td class="num">${sr.keys||'—'}</td>
@@ -1735,8 +1774,121 @@ function renderMaterials(){
   </div>`;
 }
 
+/* ============================== render: analysis (báo cáo BOD) ============================== */
+const AN_GROUPS=[
+  {id:'rooms',   k:'agRooms',    test:c=>/^(sk|st|gk|gt|cr)/i.test(c)},
+  {id:'suites',  k:'agSuites',   test:c=>/^(ps|js)/i.test(c)},
+  {id:'corridor',k:'agCorridor', test:c=>/corridor|lift/i.test(c)}];
+function anGroupOf(code){ const g=AN_GROUPS.find(x=>x.test(code)); return g?g.id:'other'; }
+/* Tính theo cấu trúc slide: chi phí phòng KHÔNG gồm MEP, MEP là 1 dòng cho toàn dự án */
+function anData(v){
+  const su=v&&v.summary; if(!su) return null;
+  const fx=v.fx||state.fx;
+  const secByCode={};   // tên mục -> {mã phòng: tiền}
+  for(const sc of su.sections){ const m={};
+    for(const it of sc.items) for(const code in (it.perRoom||{})) m[code]=(m[code]||0)+((it.perRoom[code]||{}).t||0);
+    secByCode[sc.name]=m; }
+  const isMep=nm=>/mep/i.test(nm);
+  const g={rooms:{nonMep:0,mep:0,keys:0},suites:{nonMep:0,mep:0,keys:0},corridor:{nonMep:0,mep:0,keys:0},other:{nonMep:0,mep:0,keys:0}};
+  for(const b of (su.roomBlocks||[])){
+    const id=anGroupOf(b.code); const keys=roomKeys(v,b.code);
+    if(keys>0) g[id].keys+=keys;
+    for(const nm in secByCode){ const amt=secByCode[nm][b.code]||0;
+      if(isMep(nm)) g[id].mep+=amt; else g[id].nonMep+=amt; } }
+  const mepAll=g.rooms.mep+g.suites.mep+g.corridor.mep+g.other.mep;
+  const add=re=>(su.addOns||[]).filter(a=>re.test(norm(a.name))).reduce((x,a)=>x+(a.total||0),0);
+  const rows=[
+    {id:'rooms',   label:t('agRooms'),   total:g.rooms.nonMep,   keys:g.rooms.keys},
+    {id:'suites',  label:t('agSuites'),  total:g.suites.nonMep,  keys:g.suites.keys},
+    {id:'corridor',label:t('agCorridor'),total:g.corridor.nonMep,keys:null}];
+  if(g.other.nonMep>0.5) rows.push({id:'other',label:t('agOther'),total:g.other.nonMep,keys:null});
+  rows.push({id:'mep',label:t('anMep'),total:mepAll,keys:null});
+  /* Dòng đối chiếu: phần chi phí trong sổ nhưng không được chia về cột khu vực nào,
+     để các dòng trên LUÔN cộng đúng bằng Subtotal (không bao giờ báo cáo thiếu tiền). */
+  const alloc=rows.reduce((x,r)=>x+r.total,0);
+  const gapv=(su.nett||0)-alloc;
+  if(Math.abs(gapv)>1000) rows.push({id:'unalloc',label:t('anUnalloc'),total:gapv,keys:null});
+  rows.push({id:'sub',label:t('anSubtotal'),total:su.nett,keys:null,strong:true});
+  rows.push({id:'prelims',label:t('anPrelims'),total:add(/preliminar/),keys:null});
+  rows.push({id:'fees',label:t('anFees'),total:add(/fee/),keys:null});
+  rows.push({id:'lobby',label:t('anLobby'),total:add(/lobby|club/),keys:null});
+  rows.push({id:'grand',label:t('anGrand'),total:su.grandTotal,keys:null,grand:true});
+  return {rows,fx,groups:g};
+}
+function anTradeRows(v){
+  const su=v&&v.summary; if(!su) return [];
+  const out=su.sections.map(sc=>({id:'sec:'+norm(sc.name),label:sc.name,total:sc.subtotal||0}));
+  for(const a of (su.addOns||[])) out.push({id:'add:'+norm(a.name),label:a.name,total:a.total||0});
+  out.push({id:'grand',label:t('anGrand'),total:su.grandTotal,grand:true});
+  return out;
+}
+function anPair(rowsA,rowsB){
+  const mA={}; rowsA.forEach(r=>mA[r.id]=r);
+  return rowsB.map(r=>{ const a=mA[r.id]; const av=a?a.total:null;
+    const d=(av==null)?null:r.total-av; const dp=(av)?d/Math.abs(av):null;
+    return Object.assign({},r,{a:av,b:r.total,d,dp,aKeys:a?a.keys:null}); });
+}
+function renderAnalysis(){
+  const el=$('#tab-analysis');
+  const vs=state.versions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  if(vs.length<2){ el.innerHTML=`<div class="panel"><h3>📑 ${t('anT')}</h3><div class="help">${t('anNoData')}</div>
+    <div style="margin-top:10px"><button class="btn gold" onclick="App.pickXlsx()">⬆ ${t('upload')}</button></div></div>`; return; }
+  if(!anState.a||!ver(anState.a)) anState.a=(state.baseId&&ver(state.baseId))?state.baseId:vs[0].id;
+  if(!anState.b||!ver(anState.b)) anState.b=state.activeId&&ver(state.activeId)?state.activeId:vs[vs.length-1].id;
+  const A=ver(anState.a), B=ver(anState.b);
+  const dA=anData(A), dB=anData(B);
+  if(!dA||!dB){ el.innerHTML=`<div class="panel"><div class="help">${t('anNoData')}</div></div>`; return; }
+  const opts=id=>vs.map(x=>`<option value="${x.id}" ${x.id===id?'selected':''}>${esc(x.name)} (${x.date})</option>`).join('');
+  const fxA=dA.fx, fxB=dB.fx;
+  const perKey=(tot,keys,fx)=>keys>0?('$'+Math.round(tot/keys/fx).toLocaleString('en-US')):'';
+  const paired=anPair(dA.rows,dB.rows);
+  const line=r=>{
+    const cls2=r.grand?'total':(r.strong?'sect':'');
+    const note=(state.anNotes||{})[r.id]||'';
+    return `<tr class="${cls2}">
+      <td>${esc(r.label)}${r.keys?` <span class="chip n">${r.keys} ${t('anKeys')}</span>`:''}</td>
+      <td class="num" style="color:var(--mut)">${perKey(r.a,r.aKeys,fxA)}</td>
+      <td class="num">${r.a==null?'—':money(r.a)}</td>
+      <td class="num" style="color:var(--mut)">${perKey(r.b,r.keys,fxB)}</td>
+      <td class="num"><b>${money(r.b)}</b></td>
+      <td class="num ${r.d==null?'':cls(r.d)}">${r.d==null?'—':sign(r.d)+money(r.d)}</td>
+      <td class="num ${r.d==null?'':cls(r.d)}">${r.dp==null?'—':sign(r.d)+pct(r.dp)}</td>
+      <td class="noprint"><input value="${esc(note)}" placeholder="${t('anReason')}…" style="width:100%;font-size:11.5px" onchange="App.anNote('${r.id}',this.value)"></td>
+      <td class="onlyprint" style="display:none">${esc(note)}</td></tr>`; };
+  const tradePaired=anPair(anTradeRows(A),anTradeRows(B));
+  const head=`<tr><th>${t('category')}</th><th class="num">${t('anPerKey')}</th><th class="num">${t('anOrig')}</th>
+    <th class="num">${t('anPerKey')}</th><th class="num">${t('anRev')}</th><th class="num">${t('anChange')}</th><th class="num">%</th>
+    <th style="min-width:180px">${t('anReason')}</th></tr>`;
+  const gr=paired.find(r=>r.id==='grand')||{};
+  el.innerHTML=`
+  <div class="panel"><h3>📑 ${t('anT')}
+    <span style="margin-left:auto" class="noprint">
+      <button class="btn sm ghost" onclick="App.tabXlsx()">${t('exportTab')}</button>
+      <button class="btn sm ghost" onclick="App.tabPdf()">${t('printTab')}</button></span></h3>
+    <div class="help">${t('anTip')}</div>
+    <div class="toolbar" style="margin-top:10px">
+      <div><label style="font-size:11px;color:var(--mut)">${t('anOrig')}</label><br><select onchange="App.anSet('a',this.value)">${opts(anState.a)}</select></div>
+      <div style="font-size:20px;color:var(--gold);align-self:end">→</div>
+      <div><label style="font-size:11px;color:var(--mut)">${t('anRev')}</label><br><select onchange="App.anSet('b',this.value)">${opts(anState.b)}</select></div>
+    </div></div>
+  <div class="cards">
+    <div class="card"><div class="lbl">${t('anOrig')}</div><div class="val">${money(gr.a)}</div><div class="sub">${esc(A.name)}</div></div>
+    <div class="card"><div class="lbl">${t('anRev')}</div><div class="val">${money(gr.b)}</div><div class="sub">${esc(B.name)}</div></div>
+    <div class="card" style="border-left:4px solid ${gr.d>0?'var(--red)':'var(--green)'}">
+      <div class="lbl">${gr.d>0?t('anIncrease'):t('anSaving')}</div>
+      <div class="val ${cls(gr.d)}">${sign(gr.d)}${money(Math.abs(gr.d)===gr.d?gr.d:gr.d)}</div>
+      <div class="sub">${gr.dp==null?'':sign(gr.d)+pct(gr.dp)}</div></div>
+  </div>
+  <div class="panel"><h3>🏨 ${t('areasT')}</h3>
+    <div class="tblwrap" style="max-height:none;overflow:auto"><table><thead>${head}</thead><tbody>${paired.map(line).join('')}</tbody></table></div>
+    <div class="help" style="margin-top:8px">${t('anNote1')}</div></div>
+  <div class="panel"><h3>🔧 ${t('anByTrade')}</h3><div class="help" style="margin-bottom:8px">${t('anTradeTip')}</div>
+    <div class="tblwrap" style="max-height:none;overflow:auto"><table><thead>${head}</thead><tbody>${tradePaired.map(line).join('')}</tbody></table></div></div>`;
+}
+
 /* ============================== render: rate studio ============================== */
 let rateState={q:'',cat:'__all',onlyQs:false,onlyAll:false};
+let anState={a:null,b:null};
 function renderRates(){
   const el=$('#tab-rates'); const v=activeVer();
   const head=`<div class="panel"><h3>⚖ ${t('ratesT')}
@@ -2176,6 +2328,9 @@ const App={
      attCache.push({id:uid(),name:f.name,mime:f.type||'',size:f.size||0,date:Date.now(),link:'',note:'',rel:dir+'/'+f.name});
      fPut(attCache[attCache.length-1]); }
    save(); renderAll(); toast('✓ '+t('saved')); },
+ // analysis (báo cáo BOD)
+ anSet(k,v2){ anState[k]=v2; renderAnalysis(); },
+ anNote(id,v2){ state.anNotes=state.anNotes||{}; if(s(v2)) state.anNotes[id]=v2; else delete state.anNotes[id]; save(); },
  // rate studio
  rateSet(k,v2){ rateState[k]=v2; if(k==='q'){ debounceRender(renderRates); } else renderRates(); },
  readQuoteFiles(files){ if(typeof XLSX==='undefined'){ toast(t('libFail')); return; }
@@ -2342,6 +2497,23 @@ const App={
      const aoa=[[t('vName'),t('vDate'),t('vFile'),t('vTotal')+' (VND)','USD',t('vNote')]];
      for(const x of vs) aoa.push([x.name,x.date,x.fileName,grandOf(x),Math.round((grandOf(x)||0)/(x.fx||state.fx)),x.note]);
      add('Versions',aoa,[{wch:34},{wch:12},{wch:38},{wch:18},{wch:12},{wch:28}]);
+   } else if(state.tab==='analysis'){
+     const A=ver(anState.a), B=ver(anState.b); const dA=anData(A), dB=anData(B);
+     if(!dA||!dB){ toast(t('anNoData')); return; }
+     const notes=state.anNotes||{};
+     const mk=(title,pairs,fxA,fxB)=>{ const aoa=[[title],
+       [t('category'),t('anKeys'),t('anOrig')+' '+t('anPerKey')+' (USD)',t('anOrig')+' (VND)',
+        t('anRev')+' '+t('anPerKey')+' (USD)',t('anRev')+' (VND)',t('anChange')+' (VND)','%',t('anReason')]];
+       for(const r of pairs) aoa.push([r.label, r.keys||'',
+         (r.aKeys>0&&r.a!=null)?Math.round(r.a/r.aKeys/fxA):'', r.a,
+         (r.keys>0)?Math.round(r.b/r.keys/fxB):'', r.b, r.d, r.dp, notes[r.id]||'']);
+       return aoa; };
+     const head=[['SOFITEL SAIGON PLAZA RENOVATION — '+t('anT')],
+       [t('anOrig'),A.name,A.date,'',t('anRev'),B.name,B.date],
+       ['FX (VND/USD)',dA.fx,'',dB.fx],[t('anNote1')],[]];
+     const a1=head.concat(mk(t('areasT'),anPair(dA.rows,dB.rows),dA.fx,dB.fx))
+       .concat([[]]).concat(mk(t('anByTrade'),anPair(anTradeRows(A),anTradeRows(B)),dA.fx,dB.fx));
+     add('Analysis',a1,[{wch:42},{wch:8},{wch:16},{wch:18},{wch:16},{wch:18},{wch:18},{wch:9},{wch:56}]);
    } else if(state.tab==='rates'&&state.quotes.length){ const rows=rateRows();
      const aoa=[[t('ratesT')+' — '+t('repVersion')+': '+(v?v.name:'—')],
        [t('category'),t('desc'),t('unit'),t('qsRate')+' (VND)','QS '+t('qty')].concat(state.quotes.map(q=>q.name.slice(0,28))).concat([t('bestVs')])];
@@ -2444,7 +2616,7 @@ const App={
    if(!confirm(t('confirmImport'))) return;
    if(sbOn()&&!confirm(t('sbImportWarn'))) return;
    const keepSb=state.sb, keepCloud=state.cloud;
-   state=Object.assign({lang:'en',currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},payRemoved:{},showInternal:false,quotes:[],rateLinks:{},tab:'dash'},p.state);
+   state=Object.assign({lang:'en',currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},payRemoved:{},showInternal:false,quotes:[],rateLinks:{},anNotes:{},tab:'dash'},p.state);
    if((!state.cloud||!state.cloud.apiKey)&&keepCloud&&keepCloud.apiKey) state.cloud=keepCloud;
    state.sb=keepSb||state.sb;   // cấu hình đồng bộ là của từng máy, không lấy từ file sao lưu
    await fClear(); attCache=[];
@@ -2452,7 +2624,7 @@ const App={
    save(); renderAll(); toast('✓ '+t('importBtn')); },
  async wipe(){ if(!confirm(t('confirmWipe'))) return;
    const keepSb2=state.sb; SB_SNAP=null;   // xóa cục bộ KHÔNG được xóa dữ liệu chung của mọi người
-   state={lang:state.lang,currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},payRemoved:{},showInternal:false,quotes:[],rateLinks:{},sb:keepSb2,tab:'dash'};
+   state={lang:state.lang,currency:'VND',fx:26450,prelimsPct:7,contPct:0,budgetTarget:null,versions:[],activeId:null,baseId:null,options:[],manualAreas:[],attDir:'Attachments',cloud:{apiKey:'',binId:'',lastPush:null,lastPull:null},cloudEnabled:true,roomLabel:'code',compRef:'auto',payments:null,contracts:[],payKeywords:PAY_KW_DEFAULT,payOverrides:{},payRemoved:{},showInternal:false,quotes:[],rateLinks:{},anNotes:{},sb:keepSb2,tab:'dash'};
    await fClear(); attCache=[]; save(); renderAll();
    if(sbOn()){ SB_PULLED_OK=false; sbStart(); }   // xóa máy này = tải lại bản chung
  }
