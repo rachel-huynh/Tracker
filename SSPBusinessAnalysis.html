@@ -171,7 +171,12 @@ tr.segsub td{font-weight:600;color:#374151;background:#f7f9fc}
    A table sitting in an `overflow-x:auto` wrapper is its own scroll container, so the
    page-level rule cannot reach it — those are the ones applyStickyHeaders() promotes to a
    real .scrollbox once they are long enough to need it. */
-section.tab table thead th{position:sticky;top:var(--hdrh,48px);z-index:3;background:#f3f5f9}
+/* Default 0 = stick to whatever scrollport the table is in. The page offset is applied as an
+   INLINE style by stickyHeadOffsets(), and only to tables whose scrollport is the page —
+   a plain `top:var(--hdrh)` here is wrong for any table inside an overflow wrapper, because
+   `overflow-x:auto` computes overflow-y to auto as well, making that wrapper the scrollport;
+   the header then parks 45px BELOW the wrapper top, i.e. underneath the first data row. */
+section.tab table thead th{position:sticky;top:0;z-index:3;background:#f3f5f9}
 .scrollbox{max-height:430px;overflow-y:auto;overflow-x:auto}
 .scrollbox table{border-collapse:separate;border-spacing:0}
 /* Inside a scrollbox the header sticks to the BOX, so top must be 0 — NOT the page offset.
@@ -3521,9 +3526,11 @@ function renderRooms(d){
     <td data-v="${l??''}">${l==null?'—':fmt(l)}</td>${vcell(a,l,cost)}</tr>`).join('');
   /* Flow-through is already a variance-style ratio, so the two figures ARE the comparison —
      it gets its own row rather than being forced into the actual/budget/LY shape. */
+  /* Budget before LY, so this row reads in the same order as the columns above it
+     (Actual | Budget | vs Bud | LY | vs LY) rather than the reverse. */
   rows+=`<tr><td>Flow-through <span class="small">(Δ dept profit ÷ Δ revenue)</span></td>
-    <td colspan="2" style="text-align:right">vs LY <b>${pct(ftLY)}</b></td><td></td>
-    <td colspan="2" style="text-align:right">vs Bud <b>${pct(ftBud)}</b></td></tr>`;
+    <td colspan="2" style="text-align:right">vs Bud <b>${pct(ftBud)}</b></td><td></td>
+    <td colspan="2" style="text-align:right">vs LY <b>${pct(ftLY)}</b></td></tr>`;
 
   /* cost-line detail (sortable) */
   let expRows='';
@@ -6507,15 +6514,23 @@ function stickyHeadOffsets(scope){
   const hdr=document.getElementById('hdr');
   if(hdr){ const h=hdr.getBoundingClientRect().height;
     if(h) document.documentElement.style.setProperty('--hdrh',Math.round(h)+'px'); }
+  const pageBase=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hdrh'))||48;
   for(const t of (scope||document).querySelectorAll('section.tab table')){
-    const hr=t.tHead?.rows; if(!hr||hr.length<2) continue;   // single-row headers: CSS handles it
-    if(!hr[0].getBoundingClientRect().height) continue;      // hidden — leave for the tab switch
-    /* inside a scrollbox the header sticks to the BOX (base 0); on the page it sticks under
-       the app header (base = its height). Either way each row stacks under the one above. */
-    let top=t.closest('.scrollbox')?0
-            :(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hdrh'))||48);
+    const hr=t.tHead?.rows; if(!hr||!hr.length) continue;
+    /* Which scrollport does this header stick to? Any ancestor that scrolls (a .scrollbox, or
+       an `overflow-x:auto` wrapper — whose overflow-y computes to auto, making it a scrollport
+       too) owns it, and there the offset must be 0. Only a table with no scrolling ancestor
+       sticks to the page, and only that one gets parked under the app header. */
+    let scrolled=false;
+    for(let n=t.parentElement;n&&!n.classList?.contains('tab');n=n.parentElement){
+      const cs=getComputedStyle(n);
+      if(cs.overflowX!=='visible'||cs.overflowY!=='visible'){ scrolled=true; break; }
+    }
+    let top=scrolled?0:pageBase;
+    const measurable=hr[0].getBoundingClientRect().height>0;
     for(let i=0;i<hr.length;i++){
       for(const th of hr[i].cells) th.style.top=top+'px';
+      if(!measurable) break;             // hidden tab: base is right, stacking waits for the switch
       top+=hr[i].getBoundingClientRect().height;
     }
   }
