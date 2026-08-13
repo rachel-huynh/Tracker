@@ -174,7 +174,10 @@ tr.segsub td{font-weight:600;color:#374151;background:#f7f9fc}
 section.tab table thead th{position:sticky;top:var(--hdrh,48px);z-index:3;background:#f3f5f9}
 .scrollbox{max-height:430px;overflow-y:auto;overflow-x:auto}
 .scrollbox table{border-collapse:separate;border-spacing:0}
-.scrollbox thead th{position:sticky;top:0;z-index:2;background:#f3f5f9}   /* box, not page */
+/* Inside a scrollbox the header sticks to the BOX, so top must be 0 — NOT the page offset.
+   The selector has to out-specify `section.tab table thead th` (0,1,4) or that rule wins and
+   parks the header 45px DOWN INSIDE the box, floating it over the middle of the table. */
+section.tab .scrollbox table thead th{position:sticky;top:0;z-index:2;background:#f3f5f9}
 .scrollbox tfoot td{position:sticky;bottom:0;z-index:2;background:#fff;border-top:2px solid var(--navy)}
 table.heat td{text-align:center;padding:3px 4px;font-size:11px;border:1px solid #fff}
 table.heat th{text-align:center}
