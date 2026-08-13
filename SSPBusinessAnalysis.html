@@ -4189,7 +4189,10 @@ function renderMarket(d){
       }
     }
     const dHead=`<tr><th style="text-align:left">${fmtMonthKey(st.monthKey)}</th>${
-      days.map(d2=>`<th style="text-align:center;${isWE(st.monthKey,d2)?'background:rgba(107,114,128,.12)':''}">${dowL[dowOf(st.monthKey,d2)]}<br>${d2}</th>`).join('')
+      /* SOLID weekend tint, not rgba: this th is sticky, and a translucent background lets the
+         scrolled rows show straight through the frozen header. #e3e5ea is exactly
+         rgba(107,114,128,.12) composited over the header's own #f3f5f9, so it looks identical. */
+      days.map(d2=>`<th style="text-align:center;${isWE(st.monthKey,d2)?'background:#e3e5ea':''}">${dowL[dowOf(st.monthKey,d2)]}<br>${d2}</th>`).join('')
       }<th>MTD</th><th>MTD WD</th><th>MTD WE</th></tr>`;
     dailyPanel=`<div class="panel"><h3>Daily data — My Property vs ${bName} ${st.provisional?'<span class="tag a">provisional</span>':''}
         <span class="noprint" style="float:right">
@@ -5840,6 +5843,7 @@ window.__setCpDetail=v=>{ state.cpFull=v;
   const cp=curMonth().fs?.centralPL, body=document.getElementById('cpCostBody');
   if(cp&&body) body.innerHTML=cpCostRowsHtml(cp);
   document.querySelectorAll('#cpCostToggle button').forEach(b=>b.classList.toggle('on', b.dataset.full===(v?'1':'0')));
+  applyStickyHeaders();   // 9 rows ⇄ 41 rows crosses the freeze threshold both ways
 };
 function renderOffice(d){
   const el=$('#tab-office');
@@ -6312,7 +6316,10 @@ window.__goTab=t2=>{ const b=document.querySelector('[data-tab="'+t2+'"]'); if(b
 /* re-render this tab only, then re-balance: replacing the tab's innerHTML throws away the
    inline grid-template-columns balanceKgrids() had set, so the scorecard would otherwise
    fall back to the CSS auto-fill default (fixed 160px cards + a trailing gap). */
-window.__setExpFull=v=>{ state.expFull=!!v; renderExpenses(derive()); balanceKgrids(); };
+/* applyStickyHeaders directly as well as via the observer: Summary→Full detail takes this
+   table from a handful of rows to ~300, and the header must freeze in the same frame rather
+   than waiting on a requestAnimationFrame that a backgrounded tab never fires. */
+window.__setExpFull=v=>{ state.expFull=!!v; renderExpenses(derive()); balanceKgrids(); applyStickyHeaders(); };
 function renderExpenses(d){
   const el=$('#tab-expenses'); if(!el) return;
   if(!d.ok){ el.innerHTML=noData(); return; }
@@ -6508,6 +6515,20 @@ function applyStickyHeaders(){
    not assumed — they vary with font, zoom and column wrapping. A hidden tab measures 0, so
    those are skipped here and redone by the tab-switch handler once the tab is visible,
    exactly as balanceKgrids() already does for the same reason. */
+/* A frozen header cell MUST be opaque — anything translucent lets the rows scrolling beneath
+   show straight through it (this bit the STR daily table, whose weekend columns carried an
+   rgba tint). Any alpha < 1 is composited over the header colour once and written back as a
+   solid value; idempotent, because the next pass sees alpha === 1 and leaves it alone. */
+const STICKY_HEAD_BG=[243,245,249];      // #f3f5f9, the th background in the stylesheet
+function opaqueSticky(th){
+  const m=/^rgba?\(([^)]+)\)$/.exec(getComputedStyle(th).backgroundColor||'');
+  if(!m) return;
+  const p=m[1].split(',').map(s=>parseFloat(s.trim()));
+  const a=p.length>3?p[3]:1;
+  if(a>=1) return;                        // already solid (includes the stylesheet default)
+  const mix=i=>Math.round(a*p[i]+(1-a)*STICKY_HEAD_BG[i]);
+  th.style.backgroundColor=`rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
+}
 function stickyHeadOffsets(scope){
   /* the page-sticky rule parks headers under the app header — keep the CSS var in step with
      the real header height, which wraps to two lines on a narrow window */
@@ -6529,7 +6550,10 @@ function stickyHeadOffsets(scope){
     let top=scrolled?0:pageBase;
     const measurable=hr[0].getBoundingClientRect().height>0;
     for(let i=0;i<hr.length;i++){
-      for(const th of hr[i].cells) th.style.top=top+'px';
+      for(const th of hr[i].cells){
+        th.style.top=top+'px';
+        opaqueSticky(th);
+      }
       if(!measurable) break;             // hidden tab: base is right, stacking waits for the switch
       top+=hr[i].getBoundingClientRect().height;
     }
@@ -6958,6 +6982,24 @@ let _rzT=null;
    table headers must park — so re-measure alongside the grid re-balance */
 window.addEventListener('resize',()=>{ clearTimeout(_rzT);
   _rzT=setTimeout(()=>{ balanceKgrids(); stickyHeadOffsets(); },150); });
+
+/* Sticky headers after PARTIAL re-renders. Several controls rebuild one table without going
+   through renderAll — the Summary/Full detail toggles (__setExpFull, __setCpDetail), metric
+   switches, filters — so a table that just grew past the threshold would never be promoted
+   and its header would not freeze. Watching the DOM covers all of them at once, including
+   any added later, instead of relying on every handler remembering to call the pass.
+   `busy` stops the pass re-triggering itself while it wraps tables; once the layout is
+   stable a pass makes no mutations, so this settles rather than looping. */
+let _stkPending=false,_stkBusy=false;
+function scheduleSticky(){
+  if(_stkBusy||_stkPending) return;
+  _stkPending=true;
+  requestAnimationFrame(()=>{ _stkPending=false; _stkBusy=true;
+    try{ applyStickyHeaders(); }catch(e){ console.error('sticky',e); }
+    finally{ _stkBusy=false; } });
+}
+new MutationObserver(scheduleSticky).observe(document.getElementById('content')||document.body,
+  {childList:true,subtree:true});
 
 /* expose for automated verification */
 window.__ingestBuffer=ingestBuffer; window.__renderAll=()=>{saveStore();refreshMonths();renderAll();}; window.__state=state;
