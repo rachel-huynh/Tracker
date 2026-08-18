@@ -806,6 +806,25 @@ function n1(v,dec=1){ return v==null||!isFinite(v)?na():v.toLocaleString('en',{m
 function na(tip){ return `<span class="na" title="${tip||t('naTip')}">N/A</span>`; }
 function varPct(a,b){ return (num(a)!==null&&num(b))? (a-b)/Math.abs(b) : null; }
 function cls(v){ return v==null?'':(v>0?'pos':v<0?'neg':''); }
+/* A percentage variance needs a non-zero base, so varPct() returns null whenever the compared
+   period is zero or absent. Rendering all of those as "N/A" reads as missing data when usually
+   the comparison is perfectly well defined — the base period simply had nothing in it. Verified
+   against Jul-2026: "Airline Disrupts" ran 14 RN against 0 last year (new business, not unknown)
+   while "Airline Other" was 0 against 0 (nothing either side). Distinguished here:
+     base 0, current > 0  -> "new"   (came from nothing; a % would be meaningless, not missing)
+     base 0, current 0    -> "–"     (nothing happened on either side)
+     base null/absent     -> N/A     (genuinely not reported — the only true unknown)
+   Returns a full <td> so the data-v sort key and colour stay consistent with the plain cells. */
+function varTd(cur,base,extra){
+  const v=varPct(cur,base);
+  if(v!=null) return `<td data-v="${v}" class="${cls(v)}"${extra||''}>${pct(v)}</td>`;
+  const c=num(cur), b=num(base);
+  if(b===0&&c!=null&&c>0)
+    return `<td data-v="1e99" class="pos"${extra||''} title="No comparable figure in the base period — this is new business, not a missing number">new</td>`;
+  if(b===0&&(c==null||c===0))
+    return `<td data-v=""${extra||''} title="Nothing in either period">–</td>`;
+  return `<td data-v=""${extra||''}>${na()}</td>`;
+}
 function toast(msg,err){ const d=document.createElement('div'); d.className='toast'+(err?' err':''); d.textContent=msg; $('#toasts').appendChild(d); setTimeout(()=>d.remove(),6000); }
 
 /* =====================================================================
@@ -3560,7 +3579,7 @@ function renderRooms(d){
       return `<tr><td>${r.code} ${r.name}</td><td>${n1(rn,0)}</td>
       <td data-v="${segTotRn&&rn!=null?rn/segTotRn:''}">${segTotRn&&rn!=null?pct(rn/segTotRn):na()}</td>
       <td>${money(r.vals[A]?.rev)}</td><td>${money(r.vals[A]?.arr)}</td>
-      <td class="${cls(varPct(r.vals[A]?.arr,r.vals[L]?.arr))}">${pct(varPct(r.vals[A]?.arr,r.vals[L]?.arr))}</td></tr>`; }).join('');
+      ${varTd(r.vals[A]?.arr,r.vals[L]?.arr)}</tr>`; }).join('');
 
   el.innerHTML=`
     <div class="cols c2">
@@ -3712,10 +3731,7 @@ function renderSeg(d){
       <td data-v="${(v.rn??0)/totRN}">${r.type!=='segtotal'?pct((v.rn??0)/totRN):''}</td>
       <td data-v="${v.rev??''}">${money(v.rev)}</td>
       <td data-v="${v.arr??''}">${money(v.arr)}</td>
-      <td data-v="${varPct(v.rn,vb.rn)??''}" class="${cls(varPct(v.rn,vb.rn))}">${pct(varPct(v.rn,vb.rn))}</td>
-      <td data-v="${varPct(v.rn,vl.rn)??''}" class="${cls(varPct(v.rn,vl.rn))}">${pct(varPct(v.rn,vl.rn))}</td>
-      <td data-v="${varPct(v.rev,vl.rev)??''}" class="${cls(varPct(v.rev,vl.rev))}">${pct(varPct(v.rev,vl.rev))}</td>
-      <td data-v="${varPct(v.arr,vl.arr)??''}" class="${cls(varPct(v.arr,vl.arr))}">${pct(varPct(v.arr,vl.arr))}</td></tr>`;
+      ${varTd(v.rn,vb.rn)}${varTd(v.rn,vl.rn)}${varTd(v.rev,vl.rev)}${varTd(v.arr,vl.arr)}</tr>`;
   }
   const g1=seg.grand.exclSC, g2=seg.grand.inclSC;
   for(const g of [g1,g2].filter(Boolean)){
@@ -3765,7 +3781,8 @@ function renderSeg(d){
       <div style="overflow-x:auto"><table><thead><tr><th>Group</th><th>Segment</th><th>Code</th><th>Sub-segment</th>
         <th>RN</th><th>Mix %</th><th>Revenue</th><th>ARR</th><th>RN %Bud</th><th>RN %LY</th><th>Rev %LY</th><th>ARR %LY</th></tr></thead>
       <tbody>${rows}</tbody></table></div>
-      <div class="small" style="margin-top:6px">Click any column header to sort · type in the filter box to search · grey rows = segment subtotals, navy rows = main-group totals.</div></div>`;
+      <div class="small" style="margin-top:6px">Click any column header to sort · type in the filter box to search · grey rows = segment subtotals, navy rows = main-group totals.
+        In the variance columns <b>new</b> means the comparison period was zero — the segment produced nothing then and something now, so a percentage would be meaningless rather than missing; <b>–</b> means zero on both sides; <b>N/A</b> is kept only where the figure genuinely was not reported.</div></div>`;
 
   /* mix chart: stacked RN by group for Actual/Budget/LY */
   const groups=seg.rows.filter(r=>r.type==='grouptotal');
