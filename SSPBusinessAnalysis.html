@@ -3643,6 +3643,12 @@ function segMixByMonth(){
   return out;
 }
 window.__setSegGran=v=>{ state.segGran=v; renderSeg(derive()); };
+/* main-group slicer on the detail table — session-only, deliberately not persisted: a saved
+   filter that survives a reload is the classic way to end up reading a partial number as the
+   whole hotel. `All` (empty array) is always one click away. */
+window.__segSelAll=()=>{ state.segSel=[]; renderSeg(derive()); };
+window.__segSelToggle=g=>{ const s=new Set(state.segSel||[]);
+  s.has(g)?s.delete(g):s.add(g); state.segSel=[...s]; renderSeg(derive()); };
 /* Monthly or quarterly view of the same mix. Quarters SUM the room nights and re-derive the
    share — averaging the three monthly percentages would give a quiet month the same weight
    as a busy one and quietly distort the split. A quarter missing months is marked "*". */
@@ -3719,9 +3725,32 @@ function renderSeg(d){
   const wl=(list,cl)=>list.map(x=>`<div class="alert ${cl}"><div class="h">${x.r.code} — ${x.r.name}</div>
     <div class="d">${money(Math.abs(x.d))} ${x.d>=0?'gained':'lost'} vs LY · RN ${n1(x.r.vals[L]?.rn,0)} → ${n1(x.r.vals[A]?.rn,0)} · ARR ${money(x.r.vals[L]?.arr)} → ${money(x.r.vals[A]?.arr)}</div></div>`).join('');
 
+  /* ---- main-group slicer ----
+     Multi-select: click groups to build a selection, click again to drop one, "All" clears.
+     Empty selection = everything, so the table never lands in a blank state. The chosen set
+     drives both which rows show and the "Selection total" line beneath them. */
+  /* The workbook labels the DETAIL rows "Groups" but its own total row "Group Total", so the
+     parser stores two different group names for what is one main group. Match on a canonical
+     key (lower-cased, trailing "s" dropped — no other main group ends in one) so the slicer
+     shows a single button and the group total stays attached to its own sub-segments. */
+  const gKey=g2=>String(g2||'').trim().toLowerCase().replace(/s$/,'');
+  const gLabel={};
+  for(const r of seg.rows){ if(!r.group) continue; const k=gKey(r.group);
+    if(r.type==='grouptotal'||!gLabel[k]) gLabel[k]=r.group; }   // prefer the total row's wording
+  const allGroups=[...new Set(seg.rows.filter(r=>r.group).map(r=>gKey(r.group)))];
+  const sel=(state.segSel||[]).filter(k=>allGroups.includes(k));
+  const isSel=g2=>sel.length===0||sel.includes(gKey(g2));
+  const slicer=`<span class="noprint" style="float:right;font-weight:400">
+    <button class="heatbtn ${sel.length===0?'on':''}" onclick="__segSelAll()" title="Show every main group">All</button>
+    ${allGroups.map(k=>`<button class="heatbtn ${sel.includes(k)?'on':''}"
+      onclick="__segSelToggle('${escA(k)}')" title="Add or remove ${escA(gLabel[k])} from the selection">${gLabel[k]}</button>`).join(' ')}
+  </span>`;
+  const selLabels=sel.map(k=>gLabel[k]);
+
   /* main table */
   let rows='';
   for(const r of seg.rows){
+    if(r.group&&!isSel(r.group)) continue;
     const v=r.vals[A]||{}, vb=r.vals[B]||{}, vl=r.vals[L]||{};
     const cls2=r.type==='grouptotal'?'seggrp':r.type==='segtotal'?'segsub':'';
     rows+=`<tr class="${cls2}">
@@ -3733,10 +3762,29 @@ function renderSeg(d){
       <td data-v="${v.arr??''}">${money(v.arr)}</td>
       ${varTd(v.rn,vb.rn)}${varTd(v.rn,vl.rn)}${varTd(v.rev,vl.rev)}${varTd(v.arr,vl.arr)}</tr>`;
   }
+  /* Selection total — aggregated from the SUB rows only, never the subtotal/grouptotal rows,
+     which would double-count. ARR is re-derived from the summed revenue ÷ summed room nights
+     rather than averaged, so a big segment cannot be outweighed by a tiny one. */
+  if(sel.length){
+    const subs2=seg.rows.filter(r=>r.type==='sub'&&isSel(r.group));
+    const sum=(blk,f)=>subs2.reduce((s,r)=>s+(r.vals[blk]?.[f]??0),0);
+    const rn=sum(A,'rn'), rv=sum(A,'rev'), rnB=sum(B,'rn'), rnL=sum(L,'rn'), rvL=sum(L,'rev');
+    const arr=rn?rv/rn:null, arrL=rnL?rvL/rnL:null;
+    rows+=`<tr class="tot" style="background:#fdf6e3"><td colspan="3"></td>
+      <td>Selection total <span class="small" style="font-weight:400">(${selLabels.join(', ')})</span></td>
+      <td data-v="${rn}">${n1(rn,0)}</td><td data-v="${rn/totRN}">${pct(rn/totRN)}</td>
+      <td data-v="${rv}">${money(rv)}</td><td data-v="${arr??''}">${money(arr)}</td>
+      ${varTd(rn,rnB)}${varTd(rn,rnL)}${varTd(rv,rvL)}${varTd(arr,arrL)}</tr>`;
+  }
   const g1=seg.grand.exclSC, g2=seg.grand.inclSC;
   for(const g of [g1,g2].filter(Boolean)){
-    const v=g.vals[A]||{};
-    rows+=`<tr class="tot"><td colspan="3"></td><td>${g.label}</td><td>${n1(v.rn,0)}</td><td></td><td>${money(v.rev)}</td><td>${money(v.arr)}</td><td colspan="4"></td></tr>`;
+    const v=g.vals[A]||{}, vb=g.vals[B]||{}, vl=g.vals[L]||{};
+    /* the grand-total rows carry budget and LY blocks like any other row — they were being
+       rendered as four empty cells, so the file's own totals showed no variance at all */
+    rows+=`<tr class="tot"><td colspan="3"></td><td>${g.label}</td>
+      <td data-v="${v.rn??''}">${n1(v.rn,0)}</td><td></td>
+      <td data-v="${v.rev??''}">${money(v.rev)}</td><td data-v="${v.arr??''}">${money(v.arr)}</td>
+      ${varTd(v.rn,vb.rn)}${varTd(v.rn,vl.rn)}${varTd(v.rev,vl.rev)}${varTd(v.arr,vl.arr)}</tr>`;
   }
 
   /* ---- seasonality: mix share by month across every stored P&L ---- */
@@ -3777,12 +3825,14 @@ function renderSeg(d){
       <div class="panel"><h3>Biggest losses vs LY</h3>${wl(lose,'crit')||'<div class="small">—</div>'}</div>
     </div>
     <div class="panel"><h3>Full segmentation detail — ${P}
-        <input class="tblflt noprint" placeholder="${t('filter')}"></h3>
+        <input class="tblflt noprint" placeholder="${t('filter')}">${slicer}</h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Group</th><th>Segment</th><th>Code</th><th>Sub-segment</th>
         <th>RN</th><th>Mix %</th><th>Revenue</th><th>ARR</th><th>RN %Bud</th><th>RN %LY</th><th>Rev %LY</th><th>ARR %LY</th></tr></thead>
       <tbody>${rows}</tbody></table></div>
       <div class="small" style="margin-top:6px">Click any column header to sort · type in the filter box to search · grey rows = segment subtotals, navy rows = main-group totals.
-        In the variance columns <b>new</b> means the comparison period was zero — the segment produced nothing then and something now, so a percentage would be meaningless rather than missing; <b>–</b> means zero on both sides; <b>N/A</b> is kept only where the figure genuinely was not reported.</div></div>`;
+        In the variance columns <b>new</b> means the comparison period was zero — the segment produced nothing then and something now, so a percentage would be meaningless rather than missing; <b>–</b> means zero on both sides; <b>N/A</b> is kept only where the figure genuinely was not reported.
+        ${sel.length?`<br><b>Slicer active — showing ${selLabels.join(' + ')}.</b> The gold <b>Selection total</b> aggregates only those groups, summed from the sub-segment rows (never the subtotals, which would double-count) with ARR re-derived as revenue ÷ room nights. The two Grand Total rows below it are the workbook's own file-level totals and always cover <b>every</b> group, selected or not. Click <b>All</b> to clear.`
+          :`<br>Use the <b>group buttons</b> above to slice the table — pick several to aggregate them together; a <b>Selection total</b> line then appears above the grand totals. The selection is not saved between sessions.`}</div></div>`;
 
   /* mix chart: stacked RN by group for Actual/Budget/LY */
   const groups=seg.rows.filter(r=>r.type==='grouptotal');
