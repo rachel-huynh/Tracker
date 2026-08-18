@@ -269,7 +269,7 @@ en:{
  impReplaceHint:'Throws away the current payment dataset and keeps only this file. Use this when the new export is the complete, corrected book.',
  impResult:'Ledger updated', impNothingNew:'no new lines',
  analysis:'Analysis', anT:'Budget comparison for the committee', anOrig:'Original', anRev:'Revised', anChange:'Change', anReason:'Reason / comment',
- anTip:'Board-style comparison of any two versions: room costs are shown WITHOUT MEP (MEP is one line covering every area, as in the committee slides), corridors and lift lobbies are separated from guestrooms, and everything is computed from the uploaded files — nothing is typed in except the reason notes.',
+ anTip:'Board-style comparison of any two versions. Corridors and lift lobbies are separated from guestrooms, cost per key uses 261 keys (see the note under the table), and every figure is computed from the uploaded files — only the reason notes are typed in. Use the three buttons to choose what the room cost includes; the grand total never changes, only the way it is presented.',
  agRooms:'Regular rooms', agSuites:'Suites', agCorridor:'Corridor & lift lobby', agOther:'Other areas',
  anMep:'MEP systems (all areas)', anSubtotal:'Subtotal — nett construction', anPrelims:'Preliminaries', anFees:'Professional & preparation fees',
  anLobby:'Lobby & Club Lounge', anGrand:'GRAND TOTAL', anPerKey:'/ key', anKeys:'keys',
@@ -278,7 +278,18 @@ en:{
  anNote1:'Room and suite figures exclude MEP; MEP for those areas is inside the “MEP systems” line.',
  anUnalloc:'Not broken down by area in the file', anPhysKeys:'physical rooms',
  renamedChip:'renamed / re-coded', renamedTo:'now:', renamedNote:'Items that were only renamed or re-coded between the two versions are shown as one line with the real difference, instead of a “removed” line and an “added” line.',
- anCrNote:'A connecting room (CR) is two regular rooms combined and twice the size, so it counts as <b>2 keys</b> — otherwise the cost per key looks inflated. Cost per m² is shown next to each figure and is not affected by this rule.',
+ anCrNote:'A connecting room (CR) is <b>2 sellable rooms</b> sharing a connecting door that can be closed on request, so it counts as 2 keys: 211 single rooms + 25 CR × 2 = <b>261 keys</b>. Cost per m² is shown next to each figure and is not affected by this rule.',
+ anScope:'Room cost includes', anInclCorr:'+ Corridor & lift lobby', anInclMep:'+ MEP', anIdOnly:'ID fit-out only',
+ anScope1:'1 · ID fit-out only', anScope2:'2 · + Corridor', anScope3:'3 · + MEP (all-in)', anOrPick:'or pick freely:',
+ anDenom:'m² divided by', anDenomRoom:'room area only', anDenomAll:'room + corridor area',
+ anDenomHint:'Cost per m² is currently divided by the <b>room area only</b> — the corridor cost is carried by the room area, so the figure answers “how much does a sellable m² cost”.',
+ anDenomHint2:'Cost per m² is currently divided by the <b>room area plus the allocated corridor area</b> — the figure answers “how much does a built m² cost”.',
+ anHintBase:'Rooms and suites exactly as in the QS book — ID fit-out only. Corridor and MEP are shown as their own lines.',
+ anHintCorr:'Corridor, lift lobby and lift car are spread over rooms and suites in proportion to their m², so a suite carries about twice the corridor of a regular room. Cost per m² still uses the room area only.',
+ anHintMep:'Each area also carries its own MEP.',
+ anHintBoth:'Rooms and suites carry their own MEP plus their share of the corridor (allocated by m², including its MEP) — the full cost of delivering one room.',
+ anAllocated:'incl. allocated corridor', anAllocatedMep:'incl. allocated corridor + MEP', anInclMepTag:'incl. MEP',
+ anTotalNote:'Whatever you tick, the grand total stays the same — only the way it is presented changes.',
  sbT:'Automatic sync (Supabase realtime)', sbOnLbl:'Sync automatically', sbUrl:'Project URL', sbKey:'API key (publishable)',
  sbHelp:'When on, everything you change is sent to the shared database within a second, and changes made by other members appear here by themselves — no Push/Pull, no import/export. Data still lives in this browser first, so the app keeps working offline and re-sends when the connection returns.',
  sbSetup:'One-time setup for the whole team: in Supabase open SQL Editor and run the file <b>budget-tracker-supabase.sql</b> (kept in this folder). Each computer then only needs the switch above.',
@@ -380,7 +391,7 @@ vi:{
  impReplaceHint:'Bỏ toàn bộ dữ liệu thanh toán hiện tại, chỉ giữ file này. Dùng khi file mới là sổ đầy đủ, đã chỉnh sửa lại.',
  impResult:'Đã cập nhật sổ', impNothingNew:'không có dòng mới',
  analysis:'Phân tích', anT:'So sánh ngân sách để báo cáo', anOrig:'Ban đầu', anRev:'Điều chỉnh', anChange:'Thay đổi', anReason:'Lý do / ghi chú',
- anTip:'So sánh hai phiên bản theo kiểu slide báo cáo: chi phí phòng KHÔNG gồm MEP (MEP là một dòng riêng cho toàn bộ khu vực, như trong slide), hành lang và sảnh thang tách khỏi khối phòng, mọi số liệu tính từ file đã tải lên — chỉ có phần lý do là bạn tự nhập.',
+ anTip:'So sánh hai phiên bản theo kiểu slide báo cáo. Hành lang và sảnh thang tách khỏi khối phòng, chi phí/phòng chia cho 261 keys (xem ghi chú dưới bảng), mọi số liệu tính từ file đã tải lên — chỉ phần lý do là bạn tự nhập. Dùng 3 nút để chọn chi phí phòng gồm những gì; tổng cộng không đổi, chỉ đổi cách trình bày.',
  agRooms:'Phòng thường', agSuites:'Suites', agCorridor:'Hành lang & sảnh thang', agOther:'Khu vực khác',
  anMep:'Hệ thống MEP (toàn bộ khu vực)', anSubtotal:'Cộng — xây dựng thuần', anPrelims:'Preliminaries', anFees:'Phí tư vấn & chuẩn bị',
  anLobby:'Sảnh & Club Lounge', anGrand:'TỔNG CỘNG', anPerKey:'/ phòng', anKeys:'phòng',
@@ -389,7 +400,18 @@ vi:{
  anNote1:'Số liệu phòng và suite không bao gồm MEP; phần MEP của các khu vực đó nằm trong dòng “Hệ thống MEP”.',
  anUnalloc:'Chưa chia theo khu vực trong file', anPhysKeys:'phòng thực tế',
  renamedChip:'đổi tên / đổi mã', renamedTo:'nay là:', renamedNote:'Hạng mục chỉ đổi tên hoặc đổi mã giữa hai phiên bản được gộp thành MỘT dòng với chênh lệch thật, thay vì một dòng “bị bỏ” và một dòng “thêm mới”.',
- anCrNote:'Phòng thông nhau (CR) là 2 phòng thường ghép lại, diện tích gấp đôi, nên được tính là <b>2 keys</b> — nếu không chi phí/phòng sẽ bị thổi lên gây hiểu nhầm. Chi phí/m² hiển thị kèm bên cạnh và không bị ảnh hưởng bởi quy tắc này.',
+ anCrNote:'Phòng thông nhau (CR) là <b>2 phòng bán được</b> dùng chung một cửa thông có thể đóng khi cần, nên tính là 2 keys: 211 phòng đơn + 25 CR × 2 = <b>261 keys</b>. Chi phí/m² hiển thị kèm bên cạnh và không bị ảnh hưởng bởi quy tắc này.',
+ anScope:'Chi phí phòng gồm', anInclCorr:'+ Hành lang & sảnh thang', anInclMep:'+ MEP', anIdOnly:'Chỉ ID fit-out',
+ anScope1:'1 · Chỉ ID fit-out', anScope2:'2 · + Hành lang', anScope3:'3 · + MEP (trọn gói)', anOrPick:'hoặc tự chọn:',
+ anDenom:'m² chia cho', anDenomRoom:'chỉ diện tích phòng', anDenomAll:'phòng + hành lang',
+ anDenomHint:'Chi phí/m² đang chia cho <b>diện tích phòng</b> — chi phí hành lang do diện tích phòng gánh, nên con số trả lời “một m² bán được tốn bao nhiêu”.',
+ anDenomHint2:'Chi phí/m² đang chia cho <b>diện tích phòng cộng phần hành lang được phân bổ</b> — con số trả lời “một m² xây dựng tốn bao nhiêu”.',
+ anHintBase:'Phòng và suite đúng như sổ QS — chỉ ID fit-out. Hành lang và MEP là dòng riêng.',
+ anHintCorr:'Hành lang, sảnh thang và cabin thang được phân bổ về phòng và suite theo tỷ lệ m², nên một suite gánh khoảng gấp đôi phần hành lang của phòng thường. Chi phí/m² vẫn tính trên diện tích phòng.',
+ anHintMep:'Mỗi khu vực gánh thêm phần MEP của chính nó.',
+ anHintBoth:'Phòng và suite gánh MEP của chính mình cộng phần hành lang được chia theo m² (đã gồm MEP hành lang) — tức toàn bộ chi phí để hoàn thành một phòng.',
+ anAllocated:'đã gồm hành lang phân bổ', anAllocatedMep:'đã gồm hành lang + MEP phân bổ', anInclMepTag:'đã gồm MEP',
+ anTotalNote:'Chọn kiểu nào thì tổng cộng vẫn không đổi — chỉ đổi cách trình bày.',
  sbT:'Đồng bộ tự động (Supabase realtime)', sbOnLbl:'Tự động đồng bộ', sbUrl:'Project URL', sbKey:'API key (publishable)',
  sbHelp:'Khi bật, mọi thay đổi của bạn được gửi lên cơ sở dữ liệu chung trong khoảng một giây, và thay đổi của thành viên khác tự hiện ở đây — không cần bấm Đẩy/Tải, không cần xuất/nhập file. Dữ liệu vẫn nằm trong trình duyệt này trước, nên mất mạng vẫn dùng được và sẽ tự gửi lại khi có mạng.',
  sbSetup:'Cài đặt một lần cho cả nhóm: vào Supabase → SQL Editor, chạy file <b>budget-tracker-supabase.sql</b> (để sẵn trong thư mục này). Sau đó mỗi máy chỉ cần bật công tắc ở trên.',
@@ -1824,7 +1846,8 @@ const AN_GROUPS=[
   {id:'corridor',k:'agCorridor', test:c=>/corridor|lift/i.test(c)}];
 function anGroupOf(code){ const g=AN_GROUPS.find(x=>x.test(code)); return g?g.id:'other'; }
 /* Tính theo cấu trúc slide: chi phí phòng KHÔNG gồm MEP, MEP là 1 dòng cho toàn dự án */
-function anData(v){
+function anData(v,opt){
+  opt=opt||{corr:!!anState.corr,mep:!!anState.mep,gfaCorr:!!anState.gfaCorr};
   const su=v&&v.summary; if(!su) return null;
   const fx=v.fx||state.fx;
   const secByCode={};   // tên mục -> {mã phòng: tiền}
@@ -1843,12 +1866,28 @@ function anData(v){
   const mepAll=g.rooms.mep+g.suites.mep+g.corridor.mep+g.other.mep;
   const gfaAll=g.rooms.gfa+g.suites.gfa+g.corridor.gfa+g.other.gfa;
   const add=re=>(su.addOns||[]).filter(a=>re.test(norm(a.name))).reduce((x,a)=>x+(a.total||0),0);
+  /* Hai lựa chọn ĐỘC LẬP, tick cái nào cũng được:
+     corr = gộp hành lang & sảnh thang vào phòng, chia theo tỷ lệ m² phòng
+            (suite rộng gấp đôi nên gánh gấp đôi phần hành lang);
+     mep  = mỗi khu vực gánh phần MEP của chính nó.
+     Dù chọn kiểu nào, tổng các dòng luôn đúng bằng nett — chỉ đổi cách trình bày. */
+  const roomGfa=g.rooms.gfa+g.suites.gfa;
+  const shR=roomGfa?g.rooms.gfa/roomGfa:0, shS=roomGfa?g.suites.gfa/roomGfa:0;
+  const corrTot=g.corridor.nonMep+(opt.mep?g.corridor.mep:0);
+  let rTot=g.rooms.nonMep+(opt.mep?g.rooms.mep:0), sTot=g.suites.nonMep+(opt.mep?g.suites.mep:0);
+  let oTot=g.other.nonMep+(opt.mep?g.other.mep:0);
+  if(opt.corr){ rTot+=corrTot*shR; sTot+=corrTot*shS; }
+  /* Mẫu số của chi phí/m²: chỉ diện tích phòng, hoặc cộng luôn phần hành lang được phân bổ */
+  const rGfa=g.rooms.gfa+((opt.corr&&opt.gfaCorr)?g.corridor.gfa*shR:0);
+  const sGfa=g.suites.gfa+((opt.corr&&opt.gfaCorr)?g.corridor.gfa*shS:0);
+  const tag=(opt.corr&&opt.mep)?t('anAllocatedMep'):(opt.corr?t('anAllocated'):(opt.mep?t('anInclMepTag'):''));
   const rows=[
-    {id:'rooms',   label:t('agRooms'),   total:g.rooms.nonMep,   keys:g.rooms.keys, phys:g.rooms.phys, gfa:g.rooms.gfa},
-    {id:'suites',  label:t('agSuites'),  total:g.suites.nonMep,  keys:g.suites.keys, phys:g.suites.phys, gfa:g.suites.gfa},
-    {id:'corridor',label:t('agCorridor'),total:g.corridor.nonMep,keys:null, gfa:g.corridor.gfa}];
-  if(g.other.nonMep>0.5) rows.push({id:'other',label:t('agOther'),total:g.other.nonMep,keys:null,gfa:g.other.gfa});
-  rows.push({id:'mep',label:t('anMep'),total:mepAll,keys:null,gfa:gfaAll});
+    {id:'rooms',   label:t('agRooms'),   total:rTot, keys:g.rooms.keys, phys:g.rooms.phys, gfa:rGfa, tag},
+    {id:'suites',  label:t('agSuites'),  total:sTot, keys:g.suites.keys, phys:g.suites.phys, gfa:sGfa, tag}];
+  if(!opt.corr) rows.push({id:'corridor',label:t('agCorridor'),total:corrTot,keys:null,gfa:g.corridor.gfa,
+    tag:opt.mep?t('anInclMepTag'):''});
+  if(oTot>0.5) rows.push({id:'other',label:t('agOther'),total:oTot,keys:null,gfa:g.other.gfa});
+  if(!opt.mep) rows.push({id:'mep',label:t('anMep'),total:mepAll,keys:null,gfa:gfaAll});
   /* Dòng đối chiếu: phần chi phí trong sổ nhưng không được chia về cột khu vực nào,
      để các dòng trên LUÔN cộng đúng bằng Subtotal (không bao giờ báo cáo thiếu tiền). */
   const alloc=rows.reduce((x,r)=>x+r.total,0);
@@ -1899,7 +1938,7 @@ function renderAnalysis(){
     const note=(state.anNotes||{})[r.id]||'';
     return `<tr class="${cls2}">
       <td>${esc(r.label)}${r.keys?` <span class="chip n">${r.keys} ${t('anKeys')}</span>`:''}
-        ${r.phys&&r.keys!==r.phys?`<div style="font-size:10.5px;color:var(--mut)">${r.phys} ${t('anPhysKeys')}</div>`:''}</td>
+        ${r.tag?`<div style="font-size:10.5px;color:var(--blue)">${esc(r.tag)}</div>`:''}</td>
       <td class="num">${r.a==null?'—':money(r.a)}${r.a==null?'':unit(r.a,r.aKeys,r.gfa,fxA)}</td>
       <td class="num"><b>${money(r.b)}</b>${unit(r.b,r.keys,r.gfa,fxB)}</td>
       <td class="num ${r.d==null?'':cls(r.d)}">${r.d==null?'—':sign(r.d)+money(r.d)}</td>
@@ -1931,6 +1970,18 @@ function renderAnalysis(){
       <div class="sub">${gr.dp==null?'':sign(gr.d)+pct(gr.dp)}</div></div>
   </div>
   <div class="panel"><h3>🏨 ${t('areasT')}</h3>
+    <div class="toolbar noprint" style="margin-bottom:4px">
+      <span style="font-size:12px;color:var(--mut)">${t('anScope')}:</span>
+      ${[[1,false,false],[2,true,false],[3,true,true]].map(([n2,c,m])=>
+        `<button class="btn sm ${(anState.corr===c&&anState.mep===m)?'gold':'ghost'}" onclick="App.anPreset(${c},${m})">${t('anScope'+n2)}</button>`).join('')}
+      <span style="font-size:12px;color:var(--mut);margin-left:6px">${t('anOrPick')}</span>
+      <button class="btn sm ${anState.corr?'':'ghost'}" onclick="App.anToggle('corr')">${anState.corr?'☑':'☐'} ${t('anInclCorr')}</button>
+      <button class="btn sm ${anState.mep?'':'ghost'}" onclick="App.anToggle('mep')">${anState.mep?'☑':'☐'} ${t('anInclMep')}</button>
+      ${anState.corr?`<span style="font-size:12px;color:var(--mut);margin-left:6px">${t('anDenom')}:</span>
+        <button class="btn sm ${!anState.gfaCorr?'gold':'ghost'}" onclick="App.anSet('gfaCorr',false)">${t('anDenomRoom')}</button>
+        <button class="btn sm ${anState.gfaCorr?'gold':'ghost'}" onclick="App.anSet('gfaCorr',true)">${t('anDenomAll')}</button>`:''}
+    </div>
+    <div class="help" style="margin-bottom:8px">${(anState.corr&&anState.mep)?t('anHintBoth'):(anState.corr?t('anHintCorr'):(anState.mep?t('anHintBase')+' '+t('anHintMep'):t('anHintBase')))} ${anState.corr?(anState.gfaCorr?t('anDenomHint2'):t('anDenomHint')):''} <b>${t('anTotalNote')}</b></div>
     <div class="tblwrap" style="max-height:none;overflow:auto"><table><thead>${head}</thead><tbody>${paired.map(line).join('')}</tbody></table></div>
     <div class="help" style="margin-top:8px">${t('anNote1')}</div>
     <div class="okbox" style="margin-top:6px">🔑 ${t('anCrNote')}</div></div>
@@ -1940,7 +1991,7 @@ function renderAnalysis(){
 
 /* ============================== render: rate studio ============================== */
 let rateState={q:'',cat:'__all',onlyQs:false,onlyAll:false};
-let anState={a:null,b:null};
+let anState={a:null,b:null,corr:false,mep:false,gfaCorr:false};
 function renderRates(){
   const el=$('#tab-rates'); const v=activeVer();
   const head=`<div class="panel"><h3>⚖ ${t('ratesT')}
@@ -2382,6 +2433,8 @@ const App={
    save(); renderAll(); toast('✓ '+t('saved')); },
  // analysis (báo cáo BOD)
  anSet(k,v2){ anState[k]=v2; renderAnalysis(); },
+ anToggle(k){ anState[k]=!anState[k]; renderAnalysis(); },
+ anPreset(corr,mep){ anState.corr=!!corr; anState.mep=!!mep; renderAnalysis(); },
  anNote(id,v2){ state.anNotes=state.anNotes||{}; if(s(v2)) state.anNotes[id]=v2; else delete state.anNotes[id]; save(); },
  // rate studio
  rateSet(k,v2){ rateState[k]=v2; if(k==='q'){ debounceRender(renderRates); } else renderRates(); },
@@ -2565,7 +2618,11 @@ const App={
        return aoa; };
      const head=[['SOFITEL SAIGON PLAZA RENOVATION — '+t('anT')],
        [t('anOrig'),A.name,A.date,'',t('anRev'),B.name,B.date],
-       ['FX (VND/USD)',dA.fx,'',dB.fx],[t('anNote1')],[String(t('anCrNote')).replace(/<[^>]+>/g,'')],[]];
+       ['FX (VND/USD)',dA.fx,'',dB.fx],
+       [t('anScope'),[t('anIdOnly'),anState.corr?t('anInclCorr'):'',anState.mep?t('anInclMep'):'',
+          anState.corr?(t('anDenom')+': '+(anState.gfaCorr?t('anDenomAll'):t('anDenomRoom'))):''].filter(Boolean).join('  '),
+        (anState.corr&&anState.mep)?t('anHintBoth'):(anState.corr?t('anHintCorr'):(anState.mep?t('anHintMep'):t('anHintBase')))],
+       [t('anNote1')],[String(t('anCrNote')).replace(/<[^>]+>/g,'')],[]];
      const a1=head.concat(mk(t('areasT'),anPair(dA.rows,dB.rows),dA.fx,dB.fx))
        .concat([[]]).concat(mk(t('anByTrade'),anPair(anTradeRows(A),anTradeRows(B)),dA.fx,dB.fx));
      add('Analysis',a1,[{wch:42},{wch:8},{wch:10},{wch:18},{wch:16},{wch:15},{wch:18},{wch:16},{wch:15},{wch:18},{wch:9},{wch:56}]);
