@@ -4443,7 +4443,10 @@ function renderMarket(d){
       <table><thead><tr><th></th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead>
       <tbody>${paceHtml}</tbody></table>
       <div class="small" style="margin-top:6px">From the Daily/Weekly STAR pace files dropped in Settings &amp; Data — a running read on the current month before the official Monthly STAR arrives (usually ~day 20). Once that file is dropped, the tab above switches from PROVISIONAL to the official figures and this panel becomes historical context only. Hide this panel any time from <b>Settings &amp; Data → Visible tabs &amp; panels</b>.</div></div>`:''}
-    <div class="cols c2">
+    <!-- Snapshot and scorecard each take a FULL row. The snapshot carries 12 numeric columns
+         (15 with "+ Last year") plus a multi-line caption, so in a half-width cell its columns
+         crushed together and it towered over the 9-column scorecard beside it — the two could
+         not line up. Full width each, so both tables' columns breathe and their rows align. -->
       <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
           <span class="noprint" style="float:right">${lyBtns} &nbsp;|&nbsp; ${spBtns}</span></h3>
         <table><thead><tr><th></th><th>Property</th><th>% Chg</th>${showLy?'<th>Property LY</th>':''}
@@ -4466,7 +4469,6 @@ function renderMarket(d){
         <table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
         <tbody>${scRows}</tbody></table>
         <div class="small" style="margin-top:6px">Top rows = property levels (STR Glance); bottom rows = indexes vs comp set — an index % change &lt; 0 means the market grew faster than we did.</div></div>
-    </div>
     <div class="cols c2">
       <div class="panel"><h3>Index trend ${showLy?'<span class="small">(dashed = same month last year)</span>':''} ${granCtl()}</h3>
         <div class="chartbox" style="margin-top:14px"><canvas id="chIdxTrend"></canvas></div>
