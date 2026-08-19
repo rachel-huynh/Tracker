@@ -213,6 +213,10 @@ tr.bad td{background:#fdeeec}
 .alert .d{color:var(--grey);font-size:11.5px;margin-top:2px}
 .na{color:var(--grey2);cursor:help;border-bottom:1px dotted var(--grey2)}
 .small{font-size:11px;color:var(--grey)}
+/* The pos/neg colours above are scoped to `td`, so a variance rendered inside a <div> (the
+   STR snapshot's stacked cells) fell through to .small's grey. These carry the colour onto
+   any small element and out-specify .small (0,2,0 vs 0,1,0). */
+.small.pos{color:var(--green)}.small.neg{color:var(--red)}.small.warn{color:var(--amber)}
 #toasts{position:fixed;right:14px;bottom:14px;z-index:99}
 .toast{background:#fff;border:1px solid var(--navy);border-left:5px solid var(--green);border-radius:6px;padding:8px 14px;margin-top:6px;font-size:12px;box-shadow:0 4px 14px rgba(15,30,58,.2)}
 .toast.err{border-left-color:var(--red)}
@@ -1466,11 +1470,24 @@ function parseStarMonthly(wb){
       const perCol=hc=>{ if(hc<0||!yrAtCm) return -1;
         for(let j=hc;j<Math.min(hc+5,mrow.length);j++) if(cellStr(mrow[j])===yrAtCm) return j; return -1; };
       const cols={cm:cmC, ytd:perCol(ytdC), r3:perCol(r3C), r12:perCol(r12C)};
+      /* Prior-year columns, so the industry benchmark can show its own LY level rather than a
+         blank line. Each period header is followed by 2024/2025/2026, so LY is simply the
+         (year-1) column; for the current month it is the same month name in the previous
+         year's monthly block. */
+      const pyr=String(+yrAtCm-1);
+      const perColY=(hc,y)=>{ if(hc<0) return -1;
+        for(let j=hc;j<Math.min(hc+5,mrow.length);j++) if(cellStr(mrow[j])===y) return j; return -1; };
+      let cmLyC=-1;
+      if(cmC>=0){ const nm=cellStr(mrow[cmC]).toLowerCase().slice(0,3); let cy=null;
+        for(let j=2;j<monEnd;j++){ const s=cellStr(hdr[j]); if(/^\d{4}$/.test(s)) cy=s;
+          if(cy===pyr&&cellStr(mrow[j]).toLowerCase().slice(0,3)===nm){ cmLyC=j; break; } } }
+      const lyCols={cm:cmLyC, ytd:perColY(ytdC,pyr), r3:perColY(r3C,pyr), r12:perColY(r12C,pyr)};
       const at=(row,c)=>c>=0?num(row[c]):null;
       const m={};
       for(const p of ['cm','ytd','r3','r12']){
         m[p]={my:at(myR,cols[p]), ind:at(indR,cols[p]), idx:at(idxR,cols[p])};
         m[p+'Chg']={my:at(cMyR,cols[p]), ind:at(cIndR,cols[p]), idx:at(cIdxR,cols[p])};
+        m[p+'Ly']={my:at(myR,lyCols[p]), ind:at(indR,lyCols[p]), idx:at(idxR,lyCols[p])};
       }
       /* monthly history, for the charts that already plot an industry line */
       const months=[],my=[],ind=[],idx=[]; let cy=null;
@@ -4276,16 +4293,18 @@ function renderMarket(d){
     const miv = ind?.metrics?.[met]?.[sp]?.idx ?? ((pv!=null&&mv)? pv/mv*100 : null);
     const mic = ind?.metrics?.[met]?.[sp+'Chg']?.idx;
     const lyP=showLy?lyAt(met,'my'):null, lyC=showLy?lyAt(met,'comp'):null, lyX=showLy?lyAt(met,'idx'):null;
-    /* value / YoY % / LY stacked per cell — see snapTd. The two benchmark columns have no
-       last-year series in the STAR comp history, so they get a blank third line (null) rather
-       than a missing one, keeping every row the same height. */
+    /* value / YoY % / LY stacked per cell — see snapTd. The benchmark and its index carry
+       their own last-year level from the Industry sheet's prior-year columns, so every column
+       now shows a real LY figure rather than a placeholder. */
+    const mLy = ind?.metrics?.[met]?.[sp+'Ly']?.ind ?? null;
+    const miLy= ind?.metrics?.[met]?.[sp+'Ly']?.idx ?? null;
     const L=v=>showLy?v:undefined;
     snapRows+=`<tr><td>${label}</td>
       ${snapTd(pv,pc,L(lyP),fmt)}
       ${snapTd(cVal,cChg,L(lyC),fmt)}
       ${snapTd(iv,ic,L(lyX),idx)}
-      ${snapTd(mv,mc,showLy?null:undefined,fmt)}
-      ${snapTd(miv,mic,showLy?null:undefined,idx)}
+      ${snapTd(mv,mc,L(mLy),fmt)}
+      ${snapTd(miv,mic,L(miLy),idx)}
       ${rankCell(met)}</tr>`;
   }
 
