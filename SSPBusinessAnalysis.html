@@ -723,10 +723,6 @@ const TS_FROM_DEFAULT='2025-01';
 let state = {
   month:null, period:'MTD', cur:'VND', lang:'en', heatMetric:'revpar', benchMetric:'gop',
   snapPer:'cm', dailyBench:'comp',   // Market — STR: snapshot period + daily-table benchmark
-  /* STR benchmark column: the HCMC submarket, which is what the panel's caption always
-     claimed. It previously read "Market: Vietnam South VNM" — all of southern Vietnam,
-     every price class — making market ADR/RevPAR look implausibly low beside the comp set. */
-  starBench:'submkt',
   trendGran:'monthly', trendCmp:true, // Patterns tab: trend-explorer granularity + compare-to-previous-year
   /* Market time-series opens MONTHLY: at the default focus width the daily view packs ~575
      points into the plot and reads as noise (owner request 2026-08-09). Daily is still one
@@ -1424,6 +1420,67 @@ function parseStarMonthly(wb){
         idx:months.map(m=>num(rows.idx?.[m.c])), rank:months.map(m=>cellStr(rows.rank?.[m.c])) };
     }
   } else W(warns,'STAR Comp sheet missing');
+
+  /* Industry sheet (Tab 5) — the ONLY source for the submarket/industry benchmark, per the
+     owner (2026-08-09), so the snapshot's benchmark column and the daily Industry table can
+     never disagree. Its own header names the scope, e.g. "Submarket Class: Ho Chi Minh City
+     Luxury", and it carries the same four periods as the Summary sheet, so nothing is lost.
+     NB it is a genuinely different population from any Summary row — Jun-2026 industry ADR
+     4,763,288 here vs 3,321,405 for "Submarket: Ho Chi Minh City" and 4,145,145 for
+     "SubmarketCollapsedClass: Luxury & Upper Upscale" — which is exactly why mixing the two
+     sources made the figures look like they did not match.
+     Layout per metric block: label row, then period labels; +2 My Property, +3 Industry,
+     +4 Index; " % Chg" at +6 with the same three rows at +7/+8/+9. Monthly columns run from
+     the year headers up to "Year to Date"; each period header is followed by 2024/2025/2026. */
+  out.industry=(()=>{
+    const iws=sheetByRe(wb,/^Industry$/i);
+    if(!iws){ W(warns,'STAR Industry sheet missing — submarket benchmark unavailable'); return null; }
+    const ig=grid(iws);
+    const MON=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const scope=(ig.slice(0,6).flat().map(cellStr).find(s=>/(Submarket|Market)\s*Class\s*:/i.test(s))||'').replace(/\s+/g,' ').trim();
+    const res={scope,metrics:{}};
+    for(const [k,re] of [['occ',/^Occupancy \(%\)$/i],['adr',/^ADR$/i],['revpar',/^RevPAR$/i]]){
+      const br=ig.findIndex(r=>re.test(cellStr((r||[])[1])));
+      if(br<0){ W(warns,'STAR Industry: block missing '+k); continue; }
+      const hdr=ig[br]||[], mrow=ig[br+1]||[];
+      const myR=ig[br+2]||[], indR=ig[br+3]||[], idxR=ig[br+4]||[];
+      const cMyR=ig[br+7]||[], cIndR=ig[br+8]||[], cIdxR=ig[br+9]||[];
+      const pcol=n=>hdr.findIndex(c=>cellStr(c)===n);
+      const ytdC=pcol('Year to Date'), r3C=pcol('Running 3 Month'), r12C=pcol('Running 12 Month');
+      const monEnd=ytdC<0?hdr.length:ytdC;
+      /* current month = the LAST month-named column before the YTD block carrying a figure;
+         bounding at ytdC matters — scanning a fixed 12 columns runs into the period columns
+         and silently reads a Running-3-Month number as the current month. */
+      let cmC=-1, yr=null;
+      for(let j=2;j<monEnd;j++){
+        const s=cellStr(hdr[j]); if(/^\d{4}$/.test(s)) yr=s;
+        if(MON.includes(cellStr(mrow[j]).toLowerCase().slice(0,3))&&num(indR[j])!=null) cmC=j;
+      }
+      let yrAtCm=null; for(let j=2;j<=cmC;j++){ const s=cellStr(hdr[j]); if(/^\d{4}$/.test(s)) yrAtCm=s; }
+      const perCol=hc=>{ if(hc<0||!yrAtCm) return -1;
+        for(let j=hc;j<Math.min(hc+5,mrow.length);j++) if(cellStr(mrow[j])===yrAtCm) return j; return -1; };
+      const cols={cm:cmC, ytd:perCol(ytdC), r3:perCol(r3C), r12:perCol(r12C)};
+      const at=(row,c)=>c>=0?num(row[c]):null;
+      const m={};
+      for(const p of ['cm','ytd','r3','r12']){
+        m[p]={my:at(myR,cols[p]), ind:at(indR,cols[p]), idx:at(idxR,cols[p])};
+        m[p+'Chg']={my:at(cMyR,cols[p]), ind:at(cIndR,cols[p]), idx:at(cIdxR,cols[p])};
+      }
+      /* monthly history, for the charts that already plot an industry line */
+      const months=[],my=[],ind=[],idx=[]; let cy=null;
+      for(let j=2;j<monEnd;j++){
+        const s=cellStr(hdr[j]); if(/^\d{4}$/.test(s)) cy=s;
+        const mi=MON.indexOf(cellStr(mrow[j]).toLowerCase().slice(0,3));
+        if(mi<0||!cy) continue;
+        months.push(cy+'-'+String(mi+1).padStart(2,'0'));
+        my.push(num(myR[j])); ind.push(num(indR[j])); idx.push(num(idxR[j]));
+      }
+      m.hist={months,my,ind,idx};
+      m.monthKey=cmC>=0&&yrAtCm?yrAtCm+'-'+String(MON.indexOf(cellStr(mrow[cmC]).toLowerCase().slice(0,3))+1).padStart(2,'0'):null;
+      res.metrics[k]=m;
+    }
+    return Object.keys(res.metrics).length?res:null;
+  })();
 
   /* Day of Week */
   const dws=sheetByRe(wb,MAP.star.dow);
@@ -4158,16 +4215,20 @@ function renderMarket(d){
      was HCMC, which is why market ADR/RevPAR looked implausibly low against a 4.3M comp set.
      Default is now the HCMC submarket — what the caption always said — and the others stay
      one click away, each shown under its own name straight from the file. */
-  const BENCH=[['submkt','HCMC submarket'],['subcls','HCMC lux &amp; upper upscale'],
-               ['mclass','Luxury class'],['market','Vietnam South']];
-  const benchEnt=BENCH.some(b=>b[0]===state.starBench)&&sum[SNAP_MET[0][0]]?.[state.starBench]
-                 ? state.starBench
-                 : (BENCH.find(b=>sum[SNAP_MET[0][0]]?.[b[0]])?.[0]||'market');
-  const benchName=st.entityLabels?.[benchEnt]||BENCH.find(b=>b[0]===benchEnt)?.[1]||'Market';
-  const benchBtns=`<span class="noprint" style="float:right;font-weight:400">
-    ${BENCH.filter(([k])=>sum[SNAP_MET[0][0]]?.[k]).map(([k,l])=>
-      `<button class="heatbtn ${benchEnt===k?'on':''}" onclick="__setStarBench('${k}')"
-        title="${escA(st.entityLabels?.[k]||l)}">${l}</button>`).join(' ')}</span>`;
+  /* Benchmark column comes ONLY from the Industry sheet (owner instruction) so that this
+     column and the daily Industry table are the same population. The Summary sheet's
+     Market/Submarket rows are a different scope and reading them here is what made the two
+     views disagree. Falls back to the Summary submarket only if the file has no Industry
+     sheet at all, and says so rather than passing it off as the same figure. */
+  const ind=st.industry;
+  /* which source actually filled the column, so the caption can name it truthfully rather
+     than always claiming the Industry sheet: a Weekly-STAR (provisional) month has no
+     Industry sheet, and its Glance still carries an industry benchmark. */
+  const benchSrc = ind?.metrics?.occ ? 'industry'
+                 : sum.occ?.submkt   ? 'summary'
+                 : gl.cmInd?.occ     ? 'glance' : 'none';
+  const benchName=ind?.scope||(benchSrc==='summary'?(st.entityLabels?.submkt||'Submarket'):'Industry');
+  const benchShort=(ind?.scope||'').replace(/^.*Class\s*:\s*/i,'').trim()||'Industry';
   let snapRows='';
   for(const [met,label,fmt] of SNAP_MET){
     const pv = sum[met]?.prop?.[sp]     ?? gl[sp]?.[met]?.my;
@@ -4176,8 +4237,9 @@ function renderMarket(d){
     const cChg=sum[met]?.comp?.[sp+'Chg'] ?? gl[sp+'Chg']?.[met]?.comp;
     const iv = gl[sp]?.[met]?.idx ?? ((pv!=null&&cVal)?pv/cVal*100:null);
     const ic = gl[sp+'Chg']?.[met]?.idx;
-    const mv = sum[met]?.[benchEnt]?.[sp] ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
-    const mc = sum[met]?.[benchEnt]?.[sp+'Chg'];
+    const mv = ind?.metrics?.[met]?.[sp]?.ind
+               ?? sum[met]?.submkt?.[sp] ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
+    const mc = ind?.metrics?.[met]?.[sp+'Chg']?.ind ?? sum[met]?.submkt?.[sp+'Chg'];
     const lyP=showLy?lyAt(met,'my'):null, lyC=showLy?lyAt(met,'comp'):null, lyX=showLy?lyAt(met,'idx'):null;
     snapRows+=`<tr><td>${label}</td><td data-v="${pv??''}">${fmt(pv)}</td>${chgTd(pc)}
       ${showLy?`<td data-v="${lyP??''}" style="color:var(--grey)">${fmt(lyP)}</td>`:''}
@@ -4298,7 +4360,8 @@ function renderMarket(d){
         </span></h3>
       <div style="overflow-x:auto"><table><thead>${dHead}</thead><tbody>${dBody}</tbody></table></div>
       <div class="small" style="margin-top:6px">Shaded day columns = STR weekend (Fri–Sat); MTD WD = Sun–Thu, MTD WE = Fri–Sat. MTD ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc).
-        ${lyDl?'% chg rows compare the same calendar day of '+fmtMonthKey(lyKey)+'.':'Drop the '+fmtMonthKey(lyKey)+' Monthly STAR to unlock the YoY % change rows.'}</div></div>`;
+        ${lyDl?'% chg rows compare the same calendar day of '+fmtMonthKey(lyKey)+'.':'Drop the '+fmtMonthKey(lyKey)+' Monthly STAR to unlock the YoY % change rows.'}
+        ${state.dailyBench==='ind'&&st.industry?`<br><b>Same population as the benchmark column in the snapshot above</b> — ${escH(st.industry.scope)} — just aggregated differently: these MTD cells are the <b>day average</b> of the daily grid, whereas STR's own monthly figure (used in the snapshot) weights each day by that day's room supply. The two therefore sit about a point apart on occupancy; both are correct for their purpose — use the daily grid to read day patterns and the snapshot for the month's headline.`:''}</div></div>`;
   }
 
   /* ---------- Market time-series window: shared focus period + Daily/Monthly/Quarterly
@@ -4366,15 +4429,19 @@ function renderMarket(d){
     <div class="cols c2">
       <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
           <span class="noprint" style="float:right">${lyBtns} &nbsp;|&nbsp; ${spBtns}</span></h3>
-        <div class="small noprint" style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          <span>Benchmark column:</span>${benchBtns}</div>
         <table><thead><tr><th></th><th>Property</th><th>% Chg</th>${showLy?'<th>Property LY</th>':''}
           <th>Comp Set</th><th>% Chg</th>${showLy?'<th>Comp Set LY</th>':''}
           <th>Index</th><th>% Chg</th>${showLy?'<th>Index LY</th>':''}
-          <th title="${escA(benchName)}">${BENCH.find(b=>b[0]===benchEnt)?.[1]||'Market'}</th><th>% Chg</th><th>Rank</th></tr></thead>
+          <th title="${escA(benchName)}">${escH(benchShort)}</th><th>% Chg</th><th>Rank</th></tr></thead>
         <tbody>${snapRows}</tbody></table>
         <div class="small" style="margin-top:8px"><b>Competitive set (${compN}):</b><br>${compChips}</div>
-        <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). The benchmark column is the STAR Summary row <b>“${escH(benchName)}”</b>${sum.occ?.[benchEnt]?'':' — not in this file; Industry MTD shown when a weekly/daily STR extract is loaded'}. These STR geographies nest and are far apart, so pick the one you mean: <b>HCMC submarket</b> is the whole city across every price class, <b>HCMC lux &amp; upper upscale</b> narrows it to the city's luxury and upper-upscale hotels (the closest true peer set), <b>Luxury class</b> is the luxury tier nationwide, and <b>Vietnam South</b> spans all of southern Vietnam — its ADR and RevPAR sit well below the comp set because it includes every class and location, not because anything is wrong. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
+        <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). ${benchSrc==='industry'
+  ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. It is deliberately <b>not</b> taken from the Summary sheet, whose Market / Submarket rows cover wider populations and therefore read much lower.`
+  : benchSrc==='glance'
+  ? `<span class="tag a">Industry sheet not in this file</span> This is a provisional month built from a Weekly STAR, which carries no Industry sheet — the benchmark shown is the <b>industry figure from the file's Glance</b>. It refreshes from the Industry sheet once the official Monthly STAR is dropped.`
+  : benchSrc==='summary'
+  ? `<span class="tag a">Industry sheet not in this file</span> Falling back to the Summary sheet row <b>“${escH(benchName)}”</b>, which is a <b>wider population</b> than the Industry sheet and will read lower — re-drop the Monthly STAR to source it properly.`
+  : `No industry benchmark in this file.`} Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
         <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div></div>
       <div class="panel"><h3>Property scorecard — Occ / ADR / RevPAR by period</h3>
         <table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
@@ -4790,8 +4857,6 @@ function tsInRange(mk){ const from=state.tsFrom||'', to=state.tsTo||'';
   return (!from||mk>=from)&&(!to||mk<=to); }
 window.__setTsDay=v=>{ state.tsDay=v; renderAll(); };
 window.__setMktGran=v=>{ state.mktGran=v; renderMarket(derive()); };
-/* which STR geography fills the snapshot's benchmark column — see BENCH in renderMarket */
-window.__setStarBench=v=>{ state.starBench=v; renderMarket(derive()); };
 function tsDayBtns(){ return [['all','All days'],['wd','Weekday'],['we','Weekend']]
   .map(([k,l])=>`<button class="heatbtn ${(state.tsDay||'all')===k?'on':''}" onclick="__setTsDay('${k}')">${l}</button>`).join(' '); }
 /* ---------- shared month-dropdown builder ----------

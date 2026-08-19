@@ -572,11 +572,19 @@ function parseDetail(name,rows){
     if(!isNo){
       if(dB&&!dD){ group=dB; category=dB; subject=''; subgroup=''; emitted=false; continue; }
       if(dC&&!dD){ category=dC; subject=''; subgroup=''; emitted=false; continue; }
-      /* dòng mô tả KHÔNG đánh số = tên món (bàn, ghế, TV panel…); dòng đánh số bên dưới
-         chỉ ghi kích thước. Giữ lại để biết "overall size 2450x2750mm" là món gì. */
-      if(dD&&!/^(the contractor|notwithstanding|we hereby|allow )/i.test(dD)&&dD.length<=400){
-        if(!emitted&&subject) subgroup=subject;   // dòng trước đó chỉ là tiêu đề nhóm
-        subject=dD; emitted=false;
+      /* Dòng mô tả KHÔNG đánh số có 2 loại, phân biệt theo hình dạng:
+         - TIÊU ĐỀ NHÓM: ngắn, không có dấu ';', không có số — vd "Wardrobe", "Cabinet",
+           "Minibar", "Patition / Screen". Gặp nhóm mới thì phải XÓA tên món cũ, nếu không
+           các hạng mục của Minibar sẽ vẫn mang nhãn Wardrobe.
+         - TÊN MÓN: dài / có ';' / có kích thước — vd "Wardrobe; consisting of timber veneer…". */
+      /* Mô tả món thật có thể rất dài (đã gặp 465 ký tự) nên không giới hạn ngắn;
+         đoạn văn bản mẫu của hồ sơ thầu lọc bằng cụm mở đầu / cụm đặc trưng. */
+      if(dD&&dD.length<=1500
+         &&!/^(the contractor|notwithstanding|we hereby|allow |please note|note:)/i.test(dD)
+         &&!/method of measurement|referred to the specifications|rates and prices shall be deemed/i.test(dD)){
+        const isHead = dD.length<=40 && !/[;:]/.test(dD) && !/\d/.test(dD) && (dD.match(/\S+/g)||[]).length<=5
+          && !/^(to|for|at|in|on|incl|including|with|as|refer)\b/i.test(dD);   // "to shower door…" là mệnh đề nối, không phải nhóm
+        if(isHead){ subgroup=dD; subject=''; } else subject=dD;
       }
       continue;
     }
@@ -589,7 +597,11 @@ function parseDetail(name,rows){
     let total=amt; if(total==null&&qty!=null&&rate!=null) total=qty*rate;
     if(total==null&&!inclFlag&&rate==null) continue;
     items.push({ id:name.replace(/[^A-Za-z0-9]/g,'')+'-r'+r, sheet:name, group, category,
-      subgroup:subgroup||undefined, subject:(subject&&norm(subject)!==norm(desc))?subject:undefined,
+      subgroup:subgroup||undefined,
+      /* tên món; nếu mục này không có dòng tên món riêng thì dùng tiêu đề nhóm
+         (vd "Internal brick / block wall" → "…— 100mm thick") */
+      subject:((subject||subgroup)&&norm(subject||subgroup)!==norm(desc))?(subject||subgroup):undefined,
+      subjIsHead:!subject||undefined,
       no:s(a), desc, qty, unit:s(row[colUnit]), supply:sup, install:ins, rate, total:total||0, incl:inclFlag||undefined });
     emitted=true;
   }
@@ -1695,7 +1707,8 @@ function itemLabel(it){ const d=s(it.desc); let subj=s(it.subject);
     if(subj.length>64) subj=subj.slice(0,64).replace(/[\s,;:]+$/,'')+'…';   // giữ kích thước luôn nhìn thấy
     return subj+' — '+d; }
   return d; }
-function itemCtx(it){ return [s(it.subgroup),s(it.category)||s(it.group)].filter(Boolean).join(' · '); }
+/* Không lặp lại tiêu đề nhóm ở dòng phụ khi nó đã được ghép vào tên hạng mục */
+function itemCtx(it){ return [it.subjIsHead?'':s(it.subgroup),s(it.category)||s(it.group)].filter(Boolean).join(' · '); }
 function fmtQty(v){ if(v==null||v==='') return '—'; const x=+v; if(!isFinite(x)) return s(v); return x.toLocaleString('en-US',{maximumFractionDigits:2}); }
 /* unique picker entries: same description can exist on several sheets/categories with different qty & rate */
 let qcLinkMap=new Map();
