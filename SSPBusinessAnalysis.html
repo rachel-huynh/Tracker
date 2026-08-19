@@ -90,7 +90,13 @@ section.tab.printshow{display:block}
 .kpi .s b.up{color:var(--green)}.kpi .s b.dn{color:var(--red)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(15,30,58,.06)}
 .panel h3{color:var(--navy);font-size:13px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--line);padding-bottom:6px}
-.cols{display:grid;gap:14px}.cols.c2{grid-template-columns:1fr 1fr}.cols.c3{grid-template-columns:1fr 1fr 1fr}
+/* minmax(0,1fr), NOT 1fr: a bare 1fr track is minmax(auto,1fr), so a grid item containing a
+   wide table grows its own track past its share and pushes the whole page into horizontal
+   scroll (the Market tab's 9-column scorecard took its half to 759px of a 1001px row).
+   minmax(0,...) holds the tracks equal and lets each table's own overflow wrapper scroll. */
+.cols{display:grid;gap:14px}
+.cols.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.cols.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:1100px){.cols.c2,.cols.c3{grid-template-columns:1fr}}
 /* ---------- phone layout (≤ ~6.9" portrait) ---------- */
 @media(max-width:640px){
@@ -4134,6 +4140,19 @@ function marketingShareHtml(d){
 function usd(v,dec){ return v==null||!isFinite(v)?na():'$'+v.toLocaleString('en',{maximumFractionDigits:dec??(Math.abs(v)<1000?2:0)}); }
 function starMoney(v,dec){ return v==null||!isFinite(v)?na():(Math.abs(v)>20000?money(v,dec):usd(v,dec)); }
 function chgTd(v,dec=1){ return `<td class="${cls(v)}" data-v="${v==null?'':v}">${v==null?'—':(v>0?'+':'')+n1(v,dec)+'%'}</td>`; }
+/* STR-snapshot cell: value on top, YoY % beneath it, last year beneath that. Stacking is what
+   lets the snapshot sit beside the Property scorecard again — a flat layout needed 12 columns
+   (15 with "+ Last year") and could not fit half the width, whereas this needs 7 and keeps the
+   column count CONSTANT when Last-year is toggled. `ly` undefined = omit the third line;
+   null = render it blank, used on the benchmark columns so rows stay the same height.
+   data-v keeps the value as the sort key, exactly as the old flat cells did. */
+function snapTd(v,chg,ly,fmt){
+  const c=chg==null?'':(chg>0?'+':'')+n1(chg,1)+'%';
+  return `<td data-v="${v??''}" style="line-height:1.25"><div>${fmt(v)}</div>`+
+    `<div class="small ${cls(chg)}">${c||'&nbsp;'}</div>`+
+    (ly!==undefined?`<div class="small" style="color:var(--grey)">${ly==null?'&nbsp;':'LY '+fmt(ly)}</div>`:'')+
+    `</td>`;
+}
 window.__setSnapPer=v=>{ state.snapPer=v; renderMarket(derive()); };
 window.__setCompset=v=>{ state.compset=v; renderMarket(derive()); };
 window.__setStrLy=v=>{ state.strLy=!!v; renderMarket(derive()); };
@@ -4257,14 +4276,17 @@ function renderMarket(d){
     const miv = ind?.metrics?.[met]?.[sp]?.idx ?? ((pv!=null&&mv)? pv/mv*100 : null);
     const mic = ind?.metrics?.[met]?.[sp+'Chg']?.idx;
     const lyP=showLy?lyAt(met,'my'):null, lyC=showLy?lyAt(met,'comp'):null, lyX=showLy?lyAt(met,'idx'):null;
-    snapRows+=`<tr><td>${label}</td><td data-v="${pv??''}">${fmt(pv)}</td>${chgTd(pc)}
-      ${showLy?`<td data-v="${lyP??''}" style="color:var(--grey)">${fmt(lyP)}</td>`:''}
-      <td data-v="${cVal??''}">${fmt(cVal)}</td>${chgTd(cChg)}
-      ${showLy?`<td data-v="${lyC??''}" style="color:var(--grey)">${fmt(lyC)}</td>`:''}
-      <td data-v="${iv??''}">${idx(iv)}</td>${chgTd(ic)}
-      ${showLy?`<td data-v="${lyX??''}" style="color:var(--grey)">${idx(lyX)}</td>`:''}
-      <td data-v="${mv??''}">${fmt(mv)}</td>${chgTd(mc)}
-      <td data-v="${miv??''}">${idx(miv)}</td>${chgTd(mic)}${rankCell(met)}</tr>`;
+    /* value / YoY % / LY stacked per cell — see snapTd. The two benchmark columns have no
+       last-year series in the STAR comp history, so they get a blank third line (null) rather
+       than a missing one, keeping every row the same height. */
+    const L=v=>showLy?v:undefined;
+    snapRows+=`<tr><td>${label}</td>
+      ${snapTd(pv,pc,L(lyP),fmt)}
+      ${snapTd(cVal,cChg,L(lyC),fmt)}
+      ${snapTd(iv,ic,L(lyX),idx)}
+      ${snapTd(mv,mc,showLy?null:undefined,fmt)}
+      ${snapTd(miv,mic,showLy?null:undefined,idx)}
+      ${rankCell(met)}</tr>`;
   }
 
   /* ---------- Property Scorecard: CM / YTD / 3M / 12M, levels + YoY % change ---------- */
@@ -4443,21 +4465,19 @@ function renderMarket(d){
       <table><thead><tr><th></th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead>
       <tbody>${paceHtml}</tbody></table>
       <div class="small" style="margin-top:6px">From the Daily/Weekly STAR pace files dropped in Settings &amp; Data — a running read on the current month before the official Monthly STAR arrives (usually ~day 20). Once that file is dropped, the tab above switches from PROVISIONAL to the official figures and this panel becomes historical context only. Hide this panel any time from <b>Settings &amp; Data → Visible tabs &amp; panels</b>.</div></div>`:''}
-    <!-- Snapshot and scorecard each take a FULL row. The snapshot carries 12 numeric columns
-         (15 with "+ Last year") plus a multi-line caption, so in a half-width cell its columns
-         crushed together and it towered over the 9-column scorecard beside it — the two could
-         not line up. Full width each, so both tables' columns breathe and their rows align. -->
+    <div class="cols c2">
       <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
           <span class="noprint" style="float:right">${lyBtns} &nbsp;|&nbsp; ${spBtns}</span></h3>
-        <table><thead><tr><th></th><th>Property</th><th>% Chg</th>${showLy?'<th>Property LY</th>':''}
-          <th>Comp Set</th><th>% Chg</th>${showLy?'<th>Comp Set LY</th>':''}
-          <th title="Sofitel SSP vs the competitive set (MPI / ARI / RGI)">Index<br><span class="small" style="font-weight:400">vs comp</span></th><th>% Chg</th>${showLy?'<th>Index LY</th>':''}
-          <th title="${escA(benchName)}">${escH(benchShort)}</th><th>% Chg</th>
-          <th title="Sofitel SSP vs ${escA(benchName)} — STR's own index row from the Industry sheet">Index<br><span class="small" style="font-weight:400">vs industry</span></th><th>% Chg</th>
+        <table><thead><tr><th></th>
+          <th>Property</th>
+          <th>Comp set</th>
+          <th title="Sofitel SSP vs the competitive set (MPI / ARI / RGI)">Index<br><span class="small" style="font-weight:400">vs comp</span></th>
+          <th title="${escA(benchName)}">${escH(benchShort)}</th>
+          <th title="Sofitel SSP vs ${escA(benchName)} — STR's own index row from the Industry sheet">Index<br><span class="small" style="font-weight:400">vs industry</span></th>
           <th>Rank</th></tr></thead>
         <tbody>${snapRows}</tbody></table>
         <div class="small" style="margin-top:8px"><b>Competitive set (${compN}):</b><br>${compChips}</div>
-        <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). ${benchSrc==='industry'
+        <div class="small" style="margin-top:6px">Each cell reads <b>value</b>, then its <b>% change vs the same period last year</b> beneath${showLy?', then that period a year ago in grey':''}.${benchSrc==='industry'
   ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. It is deliberately <b>not</b> taken from the Summary sheet, whose Market / Submarket rows cover wider populations and therefore read much lower.`
   : benchSrc==='glance'
   ? `<span class="tag a">Industry sheet not in this file</span> This is a provisional month built from a Weekly STAR, which carries no Industry sheet — the benchmark shown is the <b>industry figure from the file's Glance</b>. It refreshes from the Industry sheet once the official Monthly STAR is dropped.`
@@ -4466,9 +4486,10 @@ function renderMarket(d){
   : `No industry benchmark in this file.`} Two indexes, both 100 = parity: <b>Index vs comp</b> is Sofitel against the ${compN}-property competitive set (STR's MPI / ARI / RGI), <b>Index vs industry</b> is Sofitel against the ${escH(benchShort)} — a broader field, so it usually reads lower on rate. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
         <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div></div>
       <div class="panel"><h3>Property scorecard — Occ / ADR / RevPAR by period</h3>
-        <table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
-        <tbody>${scRows}</tbody></table>
+        <div style="overflow-x:auto"><table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
+        <tbody>${scRows}</tbody></table></div>
         <div class="small" style="margin-top:6px">Top rows = property levels (STR Glance); bottom rows = indexes vs comp set — an index % change &lt; 0 means the market grew faster than we did.</div></div>
+    </div>
     <div class="cols c2">
       <div class="panel"><h3>Index trend ${showLy?'<span class="small">(dashed = same month last year)</span>':''} ${granCtl()}</h3>
         <div class="chartbox" style="margin-top:14px"><canvas id="chIdxTrend"></canvas></div>
