@@ -4228,7 +4228,17 @@ function renderMarket(d){
                  : sum.occ?.submkt   ? 'summary'
                  : gl.cmInd?.occ     ? 'glance' : 'none';
   const benchName=ind?.scope||(benchSrc==='summary'?(st.entityLabels?.submkt||'Submarket'):'Industry');
-  const benchShort=(ind?.scope||'').replace(/^.*Class\s*:\s*/i,'').trim()||'Industry';
+  /* Column header wants to be short — "Ho Chi Minh City Luxury" is too wide (owner request).
+     The city is already implicit everywhere else on this tab, so keep only the STR class and
+     call it a market: "Luxury market". Matched against STR's own class vocabulary, longest
+     first so "Luxury & Upper Upscale" is not truncated to "Luxury". Full scope stays in the
+     column tooltip and is quoted verbatim in the caption. */
+  const STR_CLASSES=['Luxury & Upper Upscale','Upper Upscale','Upper Midscale','Luxury',
+                     'Upscale','Midscale','Economy'];
+  const benchClass=(()=>{ const s=ind?.scope||'';
+    return STR_CLASSES.find(c=>new RegExp(c.replace(/&/g,'&'),'i').test(s))||''; })();
+  const benchShort=benchClass?benchClass+' market'
+                  :((ind?.scope||'').replace(/^.*Class\s*:\s*/i,'').trim()||'Industry');
   let snapRows='';
   for(const [met,label,fmt] of SNAP_MET){
     const pv = sum[met]?.prop?.[sp]     ?? gl[sp]?.[met]?.my;
@@ -4450,7 +4460,7 @@ function renderMarket(d){
   ? `<span class="tag a">Industry sheet not in this file</span> This is a provisional month built from a Weekly STAR, which carries no Industry sheet — the benchmark shown is the <b>industry figure from the file's Glance</b>. It refreshes from the Industry sheet once the official Monthly STAR is dropped.`
   : benchSrc==='summary'
   ? `<span class="tag a">Industry sheet not in this file</span> Falling back to the Summary sheet row <b>“${escH(benchName)}”</b>, which is a <b>wider population</b> than the Industry sheet and will read lower — re-drop the Monthly STAR to source it properly.`
-  : `No industry benchmark in this file.`} Two indexes, both 100 = parity: <b>Index vs comp</b> is Sofitel against the ${compN}-property competitive set (STR's MPI / ARI / RGI), <b>Index vs industry</b> is Sofitel against ${escH(benchShort)} — a broader field, so it usually reads lower on rate. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
+  : `No industry benchmark in this file.`} Two indexes, both 100 = parity: <b>Index vs comp</b> is Sofitel against the ${compN}-property competitive set (STR's MPI / ARI / RGI), <b>Index vs industry</b> is Sofitel against the ${escH(benchShort)} — a broader field, so it usually reads lower on rate. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
         <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div></div>
       <div class="panel"><h3>Property scorecard — Occ / ADR / RevPAR by period</h3>
         <table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
