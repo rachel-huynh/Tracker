@@ -277,6 +277,9 @@ en:{
  anNoData:'Upload at least two versions to build the comparison.', anSaving:'saving', anIncrease:'increase',
  anNote1:'Room and suite figures exclude MEP; MEP for those areas is inside the “MEP systems” line.',
  anUnalloc:'Not broken down by area in the file', anPhysKeys:'physical rooms',
+ reread:'↻ Re-read file', rereadStale:'old reading', rereadTitle:'Re-read this version from its Excel file',
+ rereadHint:'Item grouping, furniture names and area splits are worked out while the file is being read. When the tracker improves that reading, versions loaded earlier keep the old result — press <b>↻ Re-read file</b> on the row and pick the same Excel file. The version keeps its name, date, note and all your estimate edits; only the parsed data is refreshed.',
+ rereadDone:'Re-read', rereadAsk:'Pick the Excel file for this version. Everything you typed (name, date, note, quantity/rate edits, added items) is kept.',
  renamedChip:'renamed / re-coded', renamedTo:'now:', renamedNote:'Items that were only renamed or re-coded between the two versions are shown as one line with the real difference, instead of a “removed” line and an “added” line.',
  anCrNote:'A connecting room (CR) is <b>2 sellable rooms</b> sharing a connecting door that can be closed on request, so it counts as 2 keys: 211 single rooms + 25 CR × 2 = <b>261 keys</b>. Cost per m² is shown next to each figure and is not affected by this rule.',
  anScope:'Room cost includes', anInclCorr:'+ Corridor & lift lobby', anInclMep:'+ MEP', anIdOnly:'ID fit-out only',
@@ -399,6 +402,9 @@ vi:{
  anNoData:'Cần ít nhất hai phiên bản để lập bảng so sánh.', anSaving:'tiết kiệm', anIncrease:'tăng',
  anNote1:'Số liệu phòng và suite không bao gồm MEP; phần MEP của các khu vực đó nằm trong dòng “Hệ thống MEP”.',
  anUnalloc:'Chưa chia theo khu vực trong file', anPhysKeys:'phòng thực tế',
+ reread:'↻ Đọc lại file', rereadStale:'bản đọc cũ', rereadTitle:'Đọc lại phiên bản này từ file Excel',
+ rereadHint:'Việc phân nhóm hạng mục, tên món và tách khu vực được xác định lúc đọc file. Khi app cải tiến phần đọc, các phiên bản nạp trước đó vẫn giữ kết quả cũ — bấm <b>↻ Đọc lại file</b> ở dòng đó rồi chọn đúng file Excel. Phiên bản giữ nguyên tên, ngày, ghi chú và mọi chỉnh sửa dự toán; chỉ dữ liệu đọc từ file được làm mới.',
+ rereadDone:'Đã đọc lại', rereadAsk:'Chọn file Excel cho phiên bản này. Mọi thứ bạn đã nhập (tên, ngày, ghi chú, sửa khối lượng/đơn giá, hạng mục thêm) đều được giữ.',
  renamedChip:'đổi tên / đổi mã', renamedTo:'nay là:', renamedNote:'Hạng mục chỉ đổi tên hoặc đổi mã giữa hai phiên bản được gộp thành MỘT dòng với chênh lệch thật, thay vì một dòng “bị bỏ” và một dòng “thêm mới”.',
  anCrNote:'Phòng thông nhau (CR) là <b>2 phòng bán được</b> dùng chung một cửa thông có thể đóng khi cần, nên tính là 2 keys: 211 phòng đơn + 25 CR × 2 = <b>261 keys</b>. Chi phí/m² hiển thị kèm bên cạnh và không bị ảnh hưởng bởi quy tắc này.',
  anScope:'Chi phí phòng gồm', anInclCorr:'+ Hành lang & sảnh thang', anInclMep:'+ MEP', anIdOnly:'Chỉ ID fit-out',
@@ -483,6 +489,8 @@ function ver(id){ return state.versions.find(v=>v.id===(id||state.activeId)); }
 function activeVer(){ return ver(state.activeId) || state.versions[state.versions.length-1] || null; }
 
 /* ============================== parser ============================== */
+/* Tăng số này mỗi khi cải tiến cách đọc file → phiên bản nạp bằng bản cũ được đánh dấu "cần đọc lại" */
+const PARSE_VER=3;
 function sheetRows(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
 function findHeaderRow(rows,words,maxR){ maxR=maxR||20;
   for(let r=0;r<Math.min(rows.length,maxR);r++){ const row=rows[r]||[]; let hit=0;
@@ -662,7 +670,7 @@ function parseWorkbook(wb,fileName){
   const m=(fileName||'').match(/(\d{2})(\d{2})(\d{2})/g);
   if(m){ const last=m[m.length-1]; const y=+last.slice(0,2),mo=+last.slice(2,4),da=+last.slice(4,6);
     if(mo>=1&&mo<=12&&da>=1&&da<=31) date=`20${last.slice(0,2)}-${last.slice(2,4)}-${last.slice(4,6)}`; }
-  return { id:uid(), name:(fileName||'Version').replace(/\.(xlsx|xlsm|xls)$/i,''), fileName:fileName||'', date, note:'',
+  return { id:uid(), pv:PARSE_VER, name:(fileName||'Version').replace(/\.(xlsx|xlsm|xls)$/i,''), fileName:fileName||'', date, note:'',
     fx:(summary&&summary.fx)||state.fx, summary, items, materials, rooms, ov:{}, newItems:[], warnings, parsedSheets, createdAt:Date.now() };
 }
 
@@ -1465,8 +1473,10 @@ function renderVersions(){
       <td class="num"><b>${money(g)}</b><div style="font-size:11px;color:var(--mut)">${moneyU((g||0)/(v.fx||state.fx))}</div></td>
       <td class="num ${d==null?'':cls(d)}">${d==null?'—':sign(d)+money(d)}</td>
       <td><input value="${esc(v.note)}" style="width:160px" placeholder="…" onchange="App.noteVer('${v.id}',this.value)"></td>
-      <td style="font-size:11.5px;color:var(--mut)">${(v.items||[]).length} items · ${(v.materials||[]).length} mats</td>
-      <td><button class="btn sm danger" onclick="App.delVer('${v.id}')">✕</button></td></tr>`; }).join('');
+      <td style="font-size:11.5px;color:var(--mut)">${(v.items||[]).length} items · ${(v.materials||[]).length} mats
+        ${(v.pv||0)<PARSE_VER?`<br><span class="chip a">${t('rereadStale')}</span>`:''}</td>
+      <td style="white-space:nowrap"><button class="btn sm ${(v.pv||0)<PARSE_VER?'gold':'ghost'}" title="${t('rereadTitle')}" onclick="App.reparseVer('${v.id}')">${t('reread')}</button>
+        <button class="btn sm danger" onclick="App.delVer('${v.id}')">✕</button></td></tr>`; }).join('');
   el.innerHTML=`
   <div class="toolbar"><button class="btn gold" onclick="App.pickXlsx()">⬆ ${t('upload')}</button><span class="help">${t('uploadHint')}</span>
     <span class="sp"></span>
@@ -1474,6 +1484,7 @@ function renderVersions(){
     <button class="btn ghost" onclick="App.tabPdf()">${t('printTab')}</button></div>
   <div class="drop" id="dropzone" style="margin-bottom:16px">${t('dropHint')}</div>
   <div class="panel"><h3>🗂 ${t('verList')}</h3>
+  ${vs.some(v=>(v.pv||0)<PARSE_VER)?`<div class="warnbox">↻ ${t('rereadHint')}</div>`:''}
   ${vs.length?`<div class="tblwrap"><table><thead><tr><th>${t('vActive')}</th><th>${t('vBase')}</th><th>${t('vName')}</th><th>${t('vDate')}</th><th class="num">${t('vTotal')}</th><th class="num">${t('vDelta')}</th><th>${t('vNote')}</th><th></th><th></th></tr></thead><tbody>${rowsH}</tbody></table></div>`:`<div class="help">${t('needOne')}</div>`}
   </div>`;
   wireDrop();
@@ -2286,9 +2297,19 @@ const App={
  pickXlsx(){ if(typeof XLSX==='undefined'){toast(t('libFail'));return;} $('#fileXlsx').click(); },
  readXlsxFile(file){ if(typeof XLSX==='undefined'){toast(t('libFail'));return;}
    const rd=new FileReader();
-   rd.onload=e=>{ try{ const wb=XLSX.read(e.target.result,{type:'array'}); App.reviewVersion(parseWorkbook(wb,file.name)); }
-     catch(err){ toast('Parse error: '+err.message); } };
+   rd.onload=e=>{ try{ const wb=XLSX.read(e.target.result,{type:'array'}); const nv=parseWorkbook(wb,file.name);
+       if(window.__reparseId) App.applyReparse(nv); else App.reviewVersion(nv); }
+     catch(err){ window.__reparseId=null; toast('Parse error: '+err.message); } };
    rd.readAsArrayBuffer(file); },
+ /* Đọc lại file cho MỘT phiên bản đã có: thay dữ liệu đọc từ file, giữ nguyên phần người dùng nhập */
+ reparseVer(id){ window.__reparseId=id; toast(t('rereadAsk')); $('#fileXlsx').click(); },
+ applyReparse(nv){ const id=window.__reparseId; window.__reparseId=null;
+   const old=ver(id); if(!old){ toast('✗'); return; }
+   const keep={id:old.id, name:old.name, date:old.date, note:old.note,
+     ov:old.ov||{}, newItems:old.newItems||[], createdAt:old.createdAt};
+   Object.assign(old, nv, keep);
+   save(); renderAll();
+   toast('✓ '+t('rereadDone')+': '+old.name+' — '+(old.items||[]).length+' items'); },
  reviewVersion(v){
    window.__pendingVer=v;
    const su=v.summary;

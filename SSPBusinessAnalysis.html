@@ -4240,6 +4240,12 @@ function renderMarket(d){
     const mv = ind?.metrics?.[met]?.[sp]?.ind
                ?? sum[met]?.submkt?.[sp] ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
     const mc = ind?.metrics?.[met]?.[sp+'Chg']?.ind ?? sum[met]?.submkt?.[sp+'Chg'];
+    /* SSP vs the industry benchmark. Taken from the Industry sheet's own "Index" row rather
+       than derived, so it matches STR's published figure exactly (STR rounds its inputs
+       differently, so property/industry recomputed here can land a decimal off); the
+       division is only a fallback for a provisional month with no Industry sheet. */
+    const miv = ind?.metrics?.[met]?.[sp]?.idx ?? ((pv!=null&&mv)? pv/mv*100 : null);
+    const mic = ind?.metrics?.[met]?.[sp+'Chg']?.idx;
     const lyP=showLy?lyAt(met,'my'):null, lyC=showLy?lyAt(met,'comp'):null, lyX=showLy?lyAt(met,'idx'):null;
     snapRows+=`<tr><td>${label}</td><td data-v="${pv??''}">${fmt(pv)}</td>${chgTd(pc)}
       ${showLy?`<td data-v="${lyP??''}" style="color:var(--grey)">${fmt(lyP)}</td>`:''}
@@ -4247,7 +4253,8 @@ function renderMarket(d){
       ${showLy?`<td data-v="${lyC??''}" style="color:var(--grey)">${fmt(lyC)}</td>`:''}
       <td data-v="${iv??''}">${idx(iv)}</td>${chgTd(ic)}
       ${showLy?`<td data-v="${lyX??''}" style="color:var(--grey)">${idx(lyX)}</td>`:''}
-      <td data-v="${mv??''}">${fmt(mv)}</td>${chgTd(mc)}${rankCell(met)}</tr>`;
+      <td data-v="${mv??''}">${fmt(mv)}</td>${chgTd(mc)}
+      <td data-v="${miv??''}">${idx(miv)}</td>${chgTd(mic)}${rankCell(met)}</tr>`;
   }
 
   /* ---------- Property Scorecard: CM / YTD / 3M / 12M, levels + YoY % change ---------- */
@@ -4431,8 +4438,10 @@ function renderMarket(d){
           <span class="noprint" style="float:right">${lyBtns} &nbsp;|&nbsp; ${spBtns}</span></h3>
         <table><thead><tr><th></th><th>Property</th><th>% Chg</th>${showLy?'<th>Property LY</th>':''}
           <th>Comp Set</th><th>% Chg</th>${showLy?'<th>Comp Set LY</th>':''}
-          <th>Index</th><th>% Chg</th>${showLy?'<th>Index LY</th>':''}
-          <th title="${escA(benchName)}">${escH(benchShort)}</th><th>% Chg</th><th>Rank</th></tr></thead>
+          <th title="Sofitel SSP vs the competitive set (MPI / ARI / RGI)">Index<br><span class="small" style="font-weight:400">vs comp</span></th><th>% Chg</th>${showLy?'<th>Index LY</th>':''}
+          <th title="${escA(benchName)}">${escH(benchShort)}</th><th>% Chg</th>
+          <th title="Sofitel SSP vs ${escA(benchName)} — STR's own index row from the Industry sheet">Index<br><span class="small" style="font-weight:400">vs industry</span></th><th>% Chg</th>
+          <th>Rank</th></tr></thead>
         <tbody>${snapRows}</tbody></table>
         <div class="small" style="margin-top:8px"><b>Competitive set (${compN}):</b><br>${compChips}</div>
         <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). ${benchSrc==='industry'
@@ -4441,7 +4450,7 @@ function renderMarket(d){
   ? `<span class="tag a">Industry sheet not in this file</span> This is a provisional month built from a Weekly STAR, which carries no Industry sheet — the benchmark shown is the <b>industry figure from the file's Glance</b>. It refreshes from the Industry sheet once the official Monthly STAR is dropped.`
   : benchSrc==='summary'
   ? `<span class="tag a">Industry sheet not in this file</span> Falling back to the Summary sheet row <b>“${escH(benchName)}”</b>, which is a <b>wider population</b> than the Industry sheet and will read lower — re-drop the Monthly STAR to source it properly.`
-  : `No industry benchmark in this file.`} Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
+  : `No industry benchmark in this file.`} Two indexes, both 100 = parity: <b>Index vs comp</b> is Sofitel against the ${compN}-property competitive set (STR's MPI / ARI / RGI), <b>Index vs industry</b> is Sofitel against ${escH(benchShort)} — a broader field, so it usually reads lower on rate. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
         <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div></div>
       <div class="panel"><h3>Property scorecard — Occ / ADR / RevPAR by period</h3>
         <table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
