@@ -723,6 +723,10 @@ const TS_FROM_DEFAULT='2025-01';
 let state = {
   month:null, period:'MTD', cur:'VND', lang:'en', heatMetric:'revpar', benchMetric:'gop',
   snapPer:'cm', dailyBench:'comp',   // Market — STR: snapshot period + daily-table benchmark
+  /* STR benchmark column: the HCMC submarket, which is what the panel's caption always
+     claimed. It previously read "Market: Vietnam South VNM" — all of southern Vietnam,
+     every price class — making market ADR/RevPAR look implausibly low beside the comp set. */
+  starBench:'submkt',
   trendGran:'monthly', trendCmp:true, // Patterns tab: trend-explorer granularity + compare-to-previous-year
   /* Market time-series opens MONTHLY: at the default focus width the daily view packs ~575
      points into the plot and reads as noise (owner request 2026-08-09). Daily is still one
@@ -1378,6 +1382,15 @@ function parseStarMonthly(wb){
         const r=findRow(sg,ere,null,br); if(r<0||r>br+12) continue;
         const nums=(sg[r]||[]).map(num).filter(v=>v!==null);
         if(nums.length>=8) out.summary[mk][ek]={cm:nums[0],cmChg:nums[1],ytd:nums[2],ytdChg:nums[3],r3:nums[4],r3Chg:nums[5],r12:nums[6],r12Chg:nums[7]};
+        /* Keep the row's own wording. These entity rows name a real STR geography — e.g.
+           "Market: Vietnam South VNM" is the whole of southern Vietnam across every price
+           class, which is NOT the HCMC market the UI used to claim it was. Storing the label
+           lets the panel say exactly which benchmark a column is. */
+        out.entityLabels=out.entityLabels||{};
+        if(!out.entityLabels[ek]){
+          const txt=(sg[r]||[]).map(cellStr).find(s=>s&&ere.test(s));
+          if(txt) out.entityLabels[ek]=txt.replace(/\s+/g,' ').trim();
+        }
       }
     }
     /* census: comp set rooms  */
@@ -4138,6 +4151,23 @@ function renderMarket(d){
   const lyAt=(met,ent)=>lyI<0?null:(st.comp?.[met]?.[ent]?.[lyI]??null);
   const lyBtns=`<button class="heatbtn ${showLy?'':'on'}" onclick="__setStrLy(false)">This year</button>
     <button class="heatbtn ${showLy?'on':''}" onclick="__setStrLy(true)" ${lyI<0?'disabled title="No same-month-last-year row in this STAR file\'s comp history"':''}>+ Last year</button>`;
+  /* WHICH benchmark fills the last column. The STAR Summary carries four nested geographies
+     and they are far apart — for Jun-2026 ADR: Vietnam South 2.92M, HCMC submarket 3.32M,
+     HCMC luxury 4.15M, Luxury class 5.22M. The panel used to read the broadest ("Market:
+     Vietnam South VNM", every price class in southern Vietnam) while the caption claimed it
+     was HCMC, which is why market ADR/RevPAR looked implausibly low against a 4.3M comp set.
+     Default is now the HCMC submarket — what the caption always said — and the others stay
+     one click away, each shown under its own name straight from the file. */
+  const BENCH=[['submkt','HCMC submarket'],['subcls','HCMC lux &amp; upper upscale'],
+               ['mclass','Luxury class'],['market','Vietnam South']];
+  const benchEnt=BENCH.some(b=>b[0]===state.starBench)&&sum[SNAP_MET[0][0]]?.[state.starBench]
+                 ? state.starBench
+                 : (BENCH.find(b=>sum[SNAP_MET[0][0]]?.[b[0]])?.[0]||'market');
+  const benchName=st.entityLabels?.[benchEnt]||BENCH.find(b=>b[0]===benchEnt)?.[1]||'Market';
+  const benchBtns=`<span class="noprint" style="float:right;font-weight:400">
+    ${BENCH.filter(([k])=>sum[SNAP_MET[0][0]]?.[k]).map(([k,l])=>
+      `<button class="heatbtn ${benchEnt===k?'on':''}" onclick="__setStarBench('${k}')"
+        title="${escA(st.entityLabels?.[k]||l)}">${l}</button>`).join(' ')}</span>`;
   let snapRows='';
   for(const [met,label,fmt] of SNAP_MET){
     const pv = sum[met]?.prop?.[sp]     ?? gl[sp]?.[met]?.my;
@@ -4146,8 +4176,8 @@ function renderMarket(d){
     const cChg=sum[met]?.comp?.[sp+'Chg'] ?? gl[sp+'Chg']?.[met]?.comp;
     const iv = gl[sp]?.[met]?.idx ?? ((pv!=null&&cVal)?pv/cVal*100:null);
     const ic = gl[sp+'Chg']?.[met]?.idx;
-    const mv = sum[met]?.market?.[sp] ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
-    const mc = sum[met]?.market?.[sp+'Chg'];
+    const mv = sum[met]?.[benchEnt]?.[sp] ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
+    const mc = sum[met]?.[benchEnt]?.[sp+'Chg'];
     const lyP=showLy?lyAt(met,'my'):null, lyC=showLy?lyAt(met,'comp'):null, lyX=showLy?lyAt(met,'idx'):null;
     snapRows+=`<tr><td>${label}</td><td data-v="${pv??''}">${fmt(pv)}</td>${chgTd(pc)}
       ${showLy?`<td data-v="${lyP??''}" style="color:var(--grey)">${fmt(lyP)}</td>`:''}
@@ -4336,13 +4366,15 @@ function renderMarket(d){
     <div class="cols c2">
       <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
           <span class="noprint" style="float:right">${lyBtns} &nbsp;|&nbsp; ${spBtns}</span></h3>
+        <div class="small noprint" style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <span>Benchmark column:</span>${benchBtns}</div>
         <table><thead><tr><th></th><th>Property</th><th>% Chg</th>${showLy?'<th>Property LY</th>':''}
           <th>Comp Set</th><th>% Chg</th>${showLy?'<th>Comp Set LY</th>':''}
           <th>Index</th><th>% Chg</th>${showLy?'<th>Index LY</th>':''}
-          <th>Market</th><th>% Chg</th><th>Rank</th></tr></thead>
+          <th title="${escA(benchName)}">${BENCH.find(b=>b[0]===benchEnt)?.[1]||'Market'}</th><th>% Chg</th><th>Rank</th></tr></thead>
         <tbody>${snapRows}</tbody></table>
         <div class="small" style="margin-top:8px"><b>Competitive set (${compN}):</b><br>${compChips}</div>
-        <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). Market = HCMC market row of the STAR Summary sheet${sum.occ?.market?'':' — not in this file; Industry MTD shown when a weekly/daily STR extract is loaded'}. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
+        <div class="small" style="margin-top:6px">% Chg = vs same period last year (STR). The benchmark column is the STAR Summary row <b>“${escH(benchName)}”</b>${sum.occ?.[benchEnt]?'':' — not in this file; Industry MTD shown when a weekly/daily STR extract is loaded'}. These STR geographies nest and are far apart, so pick the one you mean: <b>HCMC submarket</b> is the whole city across every price class, <b>HCMC lux &amp; upper upscale</b> narrows it to the city's luxury and upper-upscale hotels (the closest true peer set), <b>Luxury class</b> is the luxury tier nationwide, and <b>Vietnam South</b> spans all of southern Vietnam — its ADR and RevPAR sit well below the comp set because it includes every class and location, not because anything is wrong. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
         <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div></div>
       <div class="panel"><h3>Property scorecard — Occ / ADR / RevPAR by period</h3>
         <table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
@@ -4758,6 +4790,8 @@ function tsInRange(mk){ const from=state.tsFrom||'', to=state.tsTo||'';
   return (!from||mk>=from)&&(!to||mk<=to); }
 window.__setTsDay=v=>{ state.tsDay=v; renderAll(); };
 window.__setMktGran=v=>{ state.mktGran=v; renderMarket(derive()); };
+/* which STR geography fills the snapshot's benchmark column — see BENCH in renderMarket */
+window.__setStarBench=v=>{ state.starBench=v; renderMarket(derive()); };
 function tsDayBtns(){ return [['all','All days'],['wd','Weekday'],['we','Weekend']]
   .map(([k,l])=>`<button class="heatbtn ${(state.tsDay||'all')===k?'on':''}" onclick="__setTsDay('${k}')">${l}</button>`).join(' '); }
 /* ---------- shared month-dropdown builder ----------
