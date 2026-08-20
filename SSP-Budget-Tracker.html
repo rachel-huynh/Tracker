@@ -277,6 +277,9 @@ en:{
  anNoData:'Upload at least two versions to build the comparison.', anSaving:'saving', anIncrease:'increase',
  anNote1:'Room and suite figures exclude MEP; MEP for those areas is inside the “MEP systems” line.',
  anUnalloc:'Not broken down by area in the file', anPhysKeys:'physical rooms',
+ cmpArea:'Area', cmpAreaAll:'All areas', cmpAreaRooms:'Guestrooms only', cmpAreaCorr:'Corridor & lift lobby only',
+ cmpAreaStale:'One of the versions was read before the tracker could split lines by area — press <b>↻ Re-read file</b> on it in the Versions tab to compare guestrooms and corridor separately.',
+ colRoomAmt:'Guestrooms', colCorrAmt:'Corridor & lift',
  reread:'↻ Re-read file', rereadStale:'old reading', rereadTitle:'Re-read this version from its Excel file',
  rereadHint:'Item grouping, furniture names and area splits are worked out while the file is being read. When the tracker improves that reading, versions loaded earlier keep the old result — press <b>↻ Re-read file</b> on the row and pick the same Excel file. The version keeps its name, date, note and all your estimate edits; only the parsed data is refreshed.',
  rereadDone:'Re-read', rereadAsk:'Pick the Excel file for this version. Everything you typed (name, date, note, quantity/rate edits, added items) is kept.',
@@ -402,6 +405,9 @@ vi:{
  anNoData:'Cần ít nhất hai phiên bản để lập bảng so sánh.', anSaving:'tiết kiệm', anIncrease:'tăng',
  anNote1:'Số liệu phòng và suite không bao gồm MEP; phần MEP của các khu vực đó nằm trong dòng “Hệ thống MEP”.',
  anUnalloc:'Chưa chia theo khu vực trong file', anPhysKeys:'phòng thực tế',
+ cmpArea:'Khu vực', cmpAreaAll:'Tất cả khu vực', cmpAreaRooms:'Chỉ khối phòng', cmpAreaCorr:'Chỉ hành lang & sảnh thang',
+ cmpAreaStale:'Một trong hai phiên bản được đọc trước khi app tách được tiền theo khu vực — bấm <b>↻ Đọc lại file</b> ở tab Phiên bản để so sánh riêng khối phòng và hành lang.',
+ colRoomAmt:'Khối phòng', colCorrAmt:'Hành lang & thang',
  reread:'↻ Đọc lại file', rereadStale:'bản đọc cũ', rereadTitle:'Đọc lại phiên bản này từ file Excel',
  rereadHint:'Việc phân nhóm hạng mục, tên món và tách khu vực được xác định lúc đọc file. Khi app cải tiến phần đọc, các phiên bản nạp trước đó vẫn giữ kết quả cũ — bấm <b>↻ Đọc lại file</b> ở dòng đó rồi chọn đúng file Excel. Phiên bản giữ nguyên tên, ngày, ghi chú và mọi chỉnh sửa dự toán; chỉ dữ liệu đọc từ file được làm mới.',
  rereadDone:'Đã đọc lại', rereadAsk:'Chọn file Excel cho phiên bản này. Mọi thứ bạn đã nhập (tên, ngày, ghi chú, sửa khối lượng/đơn giá, hạng mục thêm) đều được giữ.',
@@ -490,7 +496,7 @@ function activeVer(){ return ver(state.activeId) || state.versions[state.version
 
 /* ============================== parser ============================== */
 /* Tăng số này mỗi khi cải tiến cách đọc file → phiên bản nạp bằng bản cũ được đánh dấu "cần đọc lại" */
-const PARSE_VER=4;
+const PARSE_VER=5;
 /* Dòng có TỰ nói lên nó là gì không? "SW-17 Bathtub; freestanding type" thì có —
    không được gắn tên món ở trên vào. "overall size 2450x2750mm", "100mm thick",
    "to bathroom floor" thì không — phải mượn tên món của dòng cha. */
@@ -582,6 +588,21 @@ function parseDetail(name,rows){
   let colAmt=colOf(H,c=>norm(c).startsWith('total amount'));
   if(colAmt<0) colAmt=colOf(H,c=>norm(c).startsWith('amount'));
   if(colAmt<0) return null;
+  /* Mỗi dòng BOQ còn có các cột tiền tách theo khu vực (SK-01…PS-02A | Corridor | Lift Lobby |
+     Lift Cabin). Đọc thêm để tách được chi phí KHỐI PHÒNG và HÀNH LANG cho từng dòng. */
+  const colRemark=colOf(H,c=>norm(c).startsWith('remark'));
+  const Hff=[]; { let last=''; for(let c=0;c<H.length;c++){ const h=s(H[c]); if(h) last=h; Hff[c]=last; } }
+  const rateCols=[colSup,colIns,colRate].filter(c=>c>=0);
+  const roomCols=[], corrCols=[];
+  if(colUnit>=0) for(let c=colUnit+1;c<Math.max(H.length,S.length);c++){
+    if(c===colAmt||rateCols.includes(c)) continue;
+    if(colRemark>=0&&c>=colRemark) break;
+    const lbl=s(Hff[c]), code=s(S[c]);
+    if(!lbl&&!code) continue;
+    if(/corridor|lift/i.test(lbl)||/corridor|lift/i.test(code)) corrCols.push(c);
+    else if(/amount|room|suite/i.test(lbl)) roomCols.push(c);
+  }
+  const sumCols=(row,cols)=>{ let t2=null; for(const c of cols){ const v2=n(row[c]); if(v2!=null) t2=(t2||0)+v2; } return t2; };
   const items=[]; let group='',category='',subject='',subgroup='',emitted=false;
   for(let r=hr+2;r<rows.length;r++){
     const row=rows[r]||[]; const a=row[0];
@@ -621,7 +642,8 @@ function parseDetail(name,rows){
          thì mượn tiêu đề nhóm (vd "Internal brick / block wall" → "… — 100mm thick") */
       subject:(needsParent(desc)&&(subject||subgroup)&&norm(subject||subgroup)!==norm(desc))?(subject||subgroup):undefined,
       subjIsHead:(needsParent(desc)&&!subject)||undefined,
-      no:s(a), desc, qty, unit:s(row[colUnit]), supply:sup, install:ins, rate, total:total||0, incl:inclFlag||undefined });
+      no:s(a), desc, qty, unit:s(row[colUnit]), supply:sup, install:ins, rate, total:total||0, incl:inclFlag||undefined,
+      amtRoom:sumCols(row,roomCols), amtCorr:sumCols(row,corrCols) });
     emitted=true;
   }
   return items.length?items:null;
@@ -1508,7 +1530,12 @@ function wireDrop(){ const dz=$('#dropzone'); if(!dz) return;
 }
 
 /* ============================== render: compare ============================== */
-let cmpSel=new Set(), cmpState={a:null,b:null,level:'item',scope:'__all',onlyChanged:true,q:'',sect:'__all'};
+let cmpSel=new Set(), cmpState={a:null,b:null,level:'item',scope:'__all',onlyChanged:true,q:'',sect:'__all',area:'all'};
+/* Giá trị dùng để so sánh: cả dòng, hoặc chỉ phần khối phòng / chỉ phần hành lang */
+function itemAmt(it){ if(!it) return null;
+  if(cmpState.area==='rooms') return it.amtRoom==null?null:it.amtRoom;
+  if(cmpState.area==='corr')  return it.amtCorr==null?null:it.amtCorr;
+  return it.total; }
 function renderCompare(){
   const el=$('#tab-compare');
   if(state.versions.length<2){ el.innerHTML=`<div class="panel"><h3>🔀 ${t('compare')}</h3><div class="help">${t('needTwo')}</div>
@@ -1533,13 +1560,20 @@ function renderCompare(){
     ${cmpState.level==='section'?`<div><label style="font-size:11px;color:var(--mut)">${t('scope')}</label><br>
       <select onchange="App.cmpSet('scope',this.value)"><option value="__all">${t('overall')}</option>${codes.map(c=>`<option value="${esc(c)}" ${cmpState.scope===c?'selected':''}>${esc(c)} — ${esc(roomName(B||A,c))}</option>`).join('')}</select></div>`:''}
     ${cmpState.level==='item'?`<div><label style="font-size:11px;color:var(--mut)">${t('sheet')}</label><br>
-      <select onchange="App.cmpSet('sect',this.value)"><option value="__all">${t('all')}</option>${sects.map(c=>`<option ${cmpState.sect===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>`:''}
+      <select onchange="App.cmpSet('sect',this.value)"><option value="__all">${t('all')}</option>${sects.map(c=>`<option ${cmpState.sect===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+    <div><label style="font-size:11px;color:var(--mut)">${t('cmpArea')}</label><br>
+      <select onchange="App.cmpSet('area',this.value)">
+        <option value="all">${t('cmpAreaAll')}</option>
+        <option value="rooms" ${cmpState.area==='rooms'?'selected':''}>${t('cmpAreaRooms')}</option>
+        <option value="corr" ${cmpState.area==='corr'?'selected':''}>${t('cmpAreaCorr')}</option></select></div>`:''}
     <div style="align-self:end"><label style="font-size:12px"><input type="checkbox" ${cmpState.onlyChanged?'checked':''} onchange="App.cmpSet('onlyChanged',this.checked)"> ${t('onlyChanged')}</label></div>
     <input id="cmpQ" placeholder="${t('search')}" value="${esc(cmpState.q)}" oninput="App.cmpSet('q',this.value)" style="align-self:end;width:200px">
     <span class="sp"></span>
     <button class="btn ghost" style="align-self:end" onclick="App.tabXlsx()">${t('exportTab')}</button>
     <button class="btn ghost" style="align-self:end" onclick="App.tabPdf()">${t('printTab')}</button>
-  </div></div>
+  </div>
+  ${(cmpState.level==='item'&&cmpState.area!=='all'&&((A.pv||0)<5||(B.pv||0)<5))?`<div class="warnbox">↻ ${t('cmpAreaStale')}</div>`:''}
+  </div>
   <div id="cmpBody"></div>`;
   renderCompareBody();
 }
@@ -1592,7 +1626,9 @@ function cmpRows(){
       if(cmpState.sect!=='__all'&&src.sheet!==cmpState.sect) continue;
       rows.push({k,name:itemLabel(src),sub:itemCtx(src),sheet:src.sheet,subject:src.subject||'',desc:src.desc,
         aQty:a?a.qty:null,bQty:b?b.qty:null,aRate:a?a.rate:null,bRate:b?b.rate:null,
-        a:a?a.total:null,b:b?b.total:null,status:!a?'added':(!b?'removed':'')}); }
+        a:a?itemAmt(a):null,b:b?itemAmt(b):null,
+        aRoom:a?a.amtRoom:null,bRoom:b?b.amtRoom:null,aCorr:a?a.amtCorr:null,bCorr:b?b.amtCorr:null,
+        status:!a?'added':(!b?'removed':'')}); }
   } else if(cmpState.level==='room'){
     const gA=Object.fromEntries((A.summary?A.summary.roomBlocks:[]).map(b=>[b.code,b.total]));
     const gB=Object.fromEntries((B.summary?B.summary.roomBlocks:[]).map(b=>[b.code,b.total]));
@@ -2614,7 +2650,9 @@ const App={
        ? [t('item'),t('desc'),t('section'),t('sheet'),
           t('qty')+' A',t('qty')+' B',t('qty')+' Δ',
           t('rate')+' A',t('rate')+' B',t('rate')+' Δ',t('rate')+' Δ%',
-          t('amount')+' A',t('amount')+' B',t('diff'),'Δ%','Status']
+          t('amount')+' A',t('amount')+' B',t('diff'),'Δ%','Status',
+          t('colRoomAmt')+' A',t('colRoomAmt')+' B',t('colRoomAmt')+' Δ',
+          t('colCorrAmt')+' A',t('colCorrAmt')+' B',t('colCorrAmt')+' Δ']
        : [t('name'),t('section'),t('sheet'),'A (VND)','B (VND)',t('diff'),'Δ%','Status']);
      for(const r of rows){
        if(isItem){
@@ -2622,11 +2660,14 @@ const App={
          const dr=(r.aRate!=null&&r.bRate!=null)?r.bRate-r.aRate:'';
          const drp=(r.aRate&&r.bRate!=null)?r.bRate/r.aRate-1:'';
          aoa.push([r.subject||'',(r.desc!==undefined?r.desc:r.name)+(r.status==='renamed'?'  →  '+(r.newDesc||r.newName||''):''),r.sub||'',r.sheet||'',
-           r.aQty,r.bQty,dq, r.aRate,r.bRate,dr,drp, r.a,r.b,r.d,r.dp,r.status||'']);
+           r.aQty,r.bQty,dq, r.aRate,r.bRate,dr,drp, r.a,r.b,r.d,r.dp,r.status||'',
+           r.aRoom,r.bRoom,(r.aRoom!=null&&r.bRoom!=null)?r.bRoom-r.aRoom:'',
+           r.aCorr,r.bCorr,(r.aCorr!=null&&r.bCorr!=null)?r.bCorr-r.aCorr:'']);
        } else aoa.push([r.name,r.sub||'',r.sheet||'',r.a,r.b,r.d,r.dp,r.status||'']);
      }
      add('Compare',aoa, isItem
-       ? [{wch:40},{wch:52},{wch:24},{wch:18},{wch:11},{wch:11},{wch:11},{wch:14},{wch:14},{wch:14},{wch:9},{wch:16},{wch:16},{wch:15},{wch:8},{wch:11}]
+       ? [{wch:40},{wch:52},{wch:24},{wch:18},{wch:11},{wch:11},{wch:11},{wch:14},{wch:14},{wch:14},{wch:9},{wch:16},{wch:16},{wch:15},{wch:8},{wch:11},
+          {wch:16},{wch:16},{wch:15},{wch:16},{wch:16},{wch:15}]
        : [{wch:52},{wch:24},{wch:18},{wch:16},{wch:16},{wch:15},{wch:8},{wch:9}]);
    } else if(state.tab==='estimate'&&v){ const aoa=[[t('sheet'),t('section'),t('item'),'No',t('desc'),t('qty'),t('unit'),t('rate'),'Base total','Adj. total','Δ',t('inc')]];
      for(const it of v.items){ const e=itemEff(v,it); aoa.push([it.sheet,itemCtx(it),it.subject||'',it.no,it.desc,e.qty,it.unit,e.rate,it.total,e.total,e.total-it.total,e.inc?'Y':'N']); }
