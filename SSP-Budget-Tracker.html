@@ -282,6 +282,7 @@ en:{
  anKeysFromSched:'Stated in the “Room schedule” sheet',
  anKeysDiff:'⚠ The two sources disagree. The table uses the figure counted from the estimate summary — check the room-type columns of the summary sheet in this version.',
  anKeysOk:'Both sources agree.', anKeysClick:'click to see the breakdown',
+ noteOpen:'Open in a bigger box', noteT:'Reason / comment', noteHint:'Line breaks are kept and carried into the Excel and PDF report.',
  rec:'🔍 Check totals', recT:'Summary line vs sum of its detail lines', recSummary:'Summary sheet', recDetail:'Sum of detail lines', recGap:'Difference', recLines:'lines',
  recOk:'Every summary line matches the sum of its detail lines exactly.',
  recBad:'Some summary lines do not equal the sum of their detail lines. The difference is inside the Excel file itself — the summary sheet and the detail sheets disagree, or part of the cost sits on a sheet that is hidden in the workbook (listed below). Ask the QS which figure is right.',
@@ -427,6 +428,7 @@ vi:{
  anKeysFromSched:'Ghi trong sheet “Room schedule”',
  anKeysDiff:'⚠ Hai nguồn không khớp nhau. Bảng đang dùng số đếm từ bảng tổng hợp — hãy kiểm tra các cột loại phòng ở sheet tổng hợp của phiên bản này.',
  anKeysOk:'Hai nguồn khớp nhau.', anKeysClick:'bấm để xem chi tiết',
+ noteOpen:'Mở ô lớn hơn', noteT:'Lý do / ghi chú', noteHint:'Xuống dòng được giữ nguyên và đưa vào cả file Excel lẫn PDF.',
  rec:'🔍 Đối chiếu số liệu', recT:'Dòng tổng hợp so với tổng các dòng chi tiết', recSummary:'Sheet tổng hợp', recDetail:'Tổng dòng chi tiết', recGap:'Chênh lệch', recLines:'dòng',
  recOk:'Mọi dòng tổng hợp đều bằng đúng tổng các dòng chi tiết.',
  recBad:'Có dòng tổng hợp không bằng tổng các dòng chi tiết. Chênh lệch nằm trong chính file Excel — sheet tổng hợp và sheet chi tiết không khớp nhau, hoặc một phần chi phí nằm ở sheet đang bị ẩn trong workbook (liệt kê bên dưới). Nên hỏi lại QS số nào đúng.',
@@ -2109,8 +2111,11 @@ function renderAnalysis(){
       <td class="num"><b>${money(r.b)}</b>${unit(r.b,r.keys,r.gfa,fxB)}</td>
       <td class="num ${r.d==null?'':cls(r.d)}">${r.d==null?'—':sign(r.d)+money(r.d)}</td>
       <td class="num ${r.d==null?'':cls(r.d)}">${r.dp==null?'—':sign(r.d)+pct(r.dp)}</td>
-      <td class="noprint"><input value="${esc(note)}" placeholder="${t('anReason')}…" style="width:100%;font-size:11.5px" onchange="App.anNote('${r.id}',this.value)"></td>
-      <td class="onlyprint" style="display:none">${esc(note)}</td></tr>`; };
+      <td class="noprint"><div style="display:flex;gap:4px;align-items:center">
+        <input value="${esc(note)}" title="${esc(note)}" placeholder="${t('anReason')}…" style="flex:1;min-width:0;font-size:11.5px" onchange="App.anNote('${r.id}',this.value)">
+        <button class="btn sm ${note.length>60?'gold':'ghost'}" style="padding:3px 7px" title="${t('noteOpen')}" onclick="App.anNoteEdit('${r.id}')">⤢</button></div>
+        ${note.length>60?`<div style="font-size:10.5px;color:var(--mut);margin-top:2px">${esc(note.slice(0,90))}…</div>`:''}</td>
+      <td class="onlyprint" style="display:none;white-space:pre-line;font-size:11px">${esc(note)}</td></tr>`; };
   const tradePaired=anPair(anTradeRows(A),anTradeRows(B));
   const head=`<tr><th>${t('category')}</th><th class="num">${t('anOrig')}</th><th class="num">${t('anRev')}</th>
     <th class="num">${t('anChange')}</th><th class="num">%</th>
@@ -2671,6 +2676,17 @@ const App={
      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn gold" onclick="closeModal()">OK</button></div>`); },
  anPreset(corr,mep){ anState.corr=!!corr; anState.mep=!!mep; renderAnalysis(); },
  anNote(id,v2){ state.anNotes=state.anNotes||{}; if(s(v2)) state.anNotes[id]=v2; else delete state.anNotes[id]; save(); },
+ anNoteEdit(id){ const cur=(state.anNotes||{})[id]||'';
+   const row=[...(anData(ver(anState.b))||{rows:[]}).rows, ...anTradeRows(ver(anState.b))].find(r=>r.id===id);
+   modal(`<h3>💬 ${t('noteT')}${row?' — '+esc(row.label):''}</h3>
+     <textarea id="anNoteBox" rows="10" style="width:100%;font-size:13px" placeholder="${t('anReason')}…">${esc(cur)}</textarea>
+     <div class="help" style="margin-top:6px">${t('noteHint')}</div>
+     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+       <button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>
+       <button class="btn gold" onclick="App.anNoteSave('${id}')">${t('save')}</button></div>`);
+   setTimeout(()=>{ const b=document.getElementById('anNoteBox'); if(b){ b.focus(); b.setSelectionRange(b.value.length,b.value.length); } },60); },
+ anNoteSave(id){ const b=document.getElementById('anNoteBox'); if(!b) return;
+   App.anNote(id,b.value); closeModal(); renderAnalysis(); },
  // rate studio
  rateSet(k,v2){ rateState[k]=v2; if(k==='q'){ debounceRender(renderRates); } else renderRates(); },
  readQuoteFiles(files){ if(typeof XLSX==='undefined'){ toast(t('libFail')); return; }
