@@ -4384,9 +4384,21 @@ function renderMarket(d){
   const compN=(compRaw!=null?compRaw:(csKind==='new'?4:5))+(st.inclSubject===false?1:0);
   const compSet=(st.compMembers&&st.compMembers.length)?st.compMembers:COMPSET_MEMBERS[csKind];
   const compChips=compSet.map(n=>`<span class="tag ${/sofitel/i.test(n)?'g':''}" style="margin-right:6px">${n}</span>`).join('');
-  const rankOf=met=>{ const r=st.comp?.[met]?.rank; if(!r) return null;
-    for(let i=r.length-1;i>=0;i--){ const v=String(r[i]??'').trim(); if(v){ const n=parseInt(v,10); return isNaN(n)?v:n; } } return null; };
-  const rankCell=met=>{ const rk=rankOf(met); if(rk==null) return '<td>—</td>';
+  /* Rank comes from the Comp sheet's monthly "Rank" row, so it is a CURRENT-MONTH standing.
+     Two faults fixed: it scanned for the LAST non-empty cell (ignoring which month is
+     selected), and it was printed unchanged beside YTD / 3M / 12M figures, where it reads as
+     a year-to-date rank that STR never published. Now indexed by the month, and shown only in
+     the Current-month view. */
+  const rankOf=met=>{
+    const c=st.comp?.[met]; if(!c?.rank) return null;
+    const i=(c.months||[]).indexOf(st.monthKey);
+    const v=String((i>=0?c.rank[i]:null)??'').trim();
+    if(!v) return null;
+    const n=parseInt(v,10); return isNaN(n)?v:n;
+  };
+  const rankCell=met=>{
+    if(sp!=='cm') return `<td title="STR publishes the comp-set rank per month, not for year-to-date or rolling averages — switch to Current month to see it">—</td>`;
+    const rk=rankOf(met); if(rk==null) return '<td>—</td>';
     const n=typeof rk==='number'?rk:parseInt(rk,10);
     const cl2=isNaN(n)?'':(n===1?'pos':n>=compN-1?'neg':'');
     return `<td data-v="${isNaN(n)?'':n}" class="${cl2}"><b>${isNaN(n)?rk:'#'+n+' of '+compN}</b></td>`; };
@@ -4398,7 +4410,8 @@ function renderMarket(d){
   const lyI=(st.comp?.occ?.months||[]).indexOf(lyKey);
   const lyAt=(met,ent)=>lyI<0?null:(st.comp?.[met]?.[ent]?.[lyI]??null);
   const lyBtns=`<button class="heatbtn ${showLy?'':'on'}" onclick="__setStrLy(false)">This year</button>
-    <button class="heatbtn ${showLy?'on':''}" onclick="__setStrLy(true)" ${lyI<0?'disabled title="No same-month-last-year row in this STAR file\'s comp history"':''}>+ Last year</button>`;
+    <button class="heatbtn ${showLy?'on':''}" onclick="__setStrLy(true)"
+      ${(lyI<0&&sp==='cm')?'disabled title="No same-month-last-year row in this STAR file\'s comp history"':''}>+ Last year</button>`;
   /* WHICH benchmark fills the last column. The STAR Summary carries four nested geographies
      and they are far apart — for Jun-2026 ADR: Vietnam South 2.92M, HCMC submarket 3.32M,
      HCMC luxury 4.15M, Luxury class 5.22M. The panel used to read the broadest ("Market:
@@ -4468,7 +4481,20 @@ function renderMarket(d){
     const miv = benchSrc==='subcls' ? ((pv!=null&&mv)? pv/mv*100 : null)
               : (ind?.metrics?.[met]?.[sp]?.idx ?? ((pv!=null&&mv)? pv/mv*100 : null));
     const mic = benchSrc==='subcls' ? null : ind?.metrics?.[met]?.[sp+'Chg']?.idx;
-    const lyP=showLy?lyAt(met,'my'):null, lyC=showLy?lyAt(met,'comp'):null, lyX=showLy?lyAt(met,'idx'):null;
+    /* LY must be on the SAME BASIS as the figure beside it. lyAt() reads the comp history,
+       which is MONTHLY — right for the Current-month view, but next to a YTD / 3M / 12M level
+       it was showing last year's single month. For those periods derive the level from STR's
+       own published % change instead (level ÷ (1+chg)), which is exact and period-correct. */
+    const lyLvl=(cur,chg,ent)=>{
+      if(sp==='cm'){ const v=lyAt(met,ent); if(v!=null) return v; }
+      return (cur!=null&&chg!=null&&chg!==-100)? cur/(1+chg/100) : null;
+    };
+    const lyP=showLy?lyLvl(pv,pc,'my'):null;
+    const lyC=showLy?lyLvl(cVal,cChg,'comp'):null;
+    /* LY index from the LY levels, not from the index's own % change — the two agree, and
+       this stays correct when only one side of the pair is published. */
+    const lyX=showLy? ((sp==='cm'&&lyAt(met,'idx')!=null) ? lyAt(met,'idx')
+                      : ((lyP!=null&&lyC)? lyP/lyC*100 : null)) : null;
     /* value / YoY % / LY stacked per cell — see snapTd. The benchmark and its index carry
        their own last-year level from the Industry sheet's prior-year columns, so every column
        now shows a real LY figure rather than a placeholder. */
@@ -4512,8 +4538,9 @@ function renderMarket(d){
       <td>${pct(b.occ.my/100,1)}</td><td>${starMoney(b.adr.my)}</td><td>${starMoney(b.revpar.my)}</td>
       <td>${pct(b.occ.comp/100,1)}</td><td>${starMoney(b.adr.comp)}</td><td>${starMoney(b.revpar.comp)}</td></tr>`;
   }
-  /* ranking from Comp sheet (latest column) */
-  const rk=m=>{ const c=st.comp?.[m]; return c? c.rank[c.rank.length-1]:null; };
+  /* ranking from the Comp sheet at the SELECTED month — same source as rankCell, so the
+     caption cannot disagree with the table (it used to read the last column regardless) */
+  const rk=m=>rankOf(m);
   /* fair share */
   const fair= d.fairShare!=null? `${pct(d.fairShare,1)} fair vs ${pct(d.actShare,1)} actual — ${d.actShare>d.fairShare?'taking more than fair share of demand':'below fair share of demand'}` : na('Census data missing from STAR Summary');
   /* DOW table */
@@ -4687,7 +4714,7 @@ function renderMarket(d){
   ? `<span class="tag a">Industry sheet not in this file</span> This is a provisional month built from a Weekly STAR, which carries no Industry sheet — the benchmark shown is the <b>industry figure from the file's Glance</b>. It refreshes from the Industry sheet once the official Monthly STAR is dropped.`
   : benchSrc==='summary'
   ? `<span class="tag a">Industry sheet not in this file</span> Falling back to the Summary sheet row <b>“${escH(benchName)}”</b>, which is a <b>wider population</b> than the Industry sheet and will read lower — re-drop the Monthly STAR to source it properly.`
-  : `No industry benchmark in this file.`} Two indexes, both 100 = parity: <b>Index vs comp</b> is Sofitel against the ${compN}-property competitive set (STR's MPI / ARI / RGI), <b>Index vs industry</b> is Sofitel against the ${escH(benchShort)} — a broader field, so it usually reads lower on rate. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom). Rank in comp set — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
+  : `No industry benchmark in this file.`} Two indexes, both 100 = parity: <b>Index vs comp</b> is Sofitel against the ${compN}-property competitive set (STR's MPI / ARI / RGI), <b>Index vs industry</b> is Sofitel against the ${escH(benchShort)} — a broader field, so it usually reads lower on rate. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom) — a <b>monthly</b> figure from the Comp sheet for ${fmtMonthKey(st.monthKey)}, so it is blank on the YTD / 3M / 12M views, which STR does not rank. Rank in ${fmtMonthKey(st.monthKey)} — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
         <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div></div>
       <div class="panel"><h3>Property scorecard — Occ / ADR / RevPAR by period</h3>
         <div style="overflow-x:auto"><table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
