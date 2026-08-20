@@ -292,6 +292,8 @@ en:{
  recBySheet:'Detail lines by sheet', recCats:'Detail categories',
  recSelfGap:'vs its own room columns', recSelfT:'The summary sheet disagrees with itself',
  recSelfHint:'On these lines the TOTAL cell does not equal the sum of the room-type columns on the same row — a hand-typed total or a broken formula in the summary sheet:',
+ recRowT:'Detail lines whose amount is not split into any area', recRowTotal:'Total Amount cell', recRowArea:'Sum of its area columns', recRowNoArea:'no area filled in at all',
+ recRowHint:'These BOQ lines carry an amount in the “Total Amount” column, but the room / corridor / lift columns on the same row do not add up to it. The summary sheet is built from those area columns, so this money never reaches the summary — which is usually the whole reason the summary and the detail sheets disagree.',
  cmpArea:'Area', cmpAreaAll:'All areas', cmpAreaRooms:'Guestrooms only', cmpAreaCorr:'Corridor & lift lobby only',
  cmpAreaStale:'One of the versions was read before the tracker could split lines by area — press <b>↻ Re-read file</b> on it in the Versions tab to compare guestrooms and corridor separately.',
  colRoomAmt:'Guestrooms', colCorrAmt:'Corridor & lift',
@@ -435,6 +437,8 @@ vi:{
  recBySheet:'Dòng chi tiết theo sheet', recCats:'Các nhóm chi tiết',
  recSelfGap:'so với cột phòng của chính nó', recSelfT:'Sheet tổng hợp mâu thuẫn với chính nó',
  recSelfHint:'Ở các dòng này, ô TỔNG không bằng tổng các cột loại phòng trên cùng dòng — dấu hiệu ô tổng bị gõ tay hoặc công thức hỏng trong sheet tổng hợp:',
+ recRowT:'Dòng chi tiết chưa được chia về khu vực nào', recRowTotal:'Ô Total Amount', recRowArea:'Tổng các cột khu vực', recRowNoArea:'bỏ trống toàn bộ cột khu vực',
+ recRowHint:'Các dòng BOQ này có tiền ở cột “Total Amount” nhưng các cột phòng / hành lang / thang trên cùng dòng lại không cộng đủ bằng con số đó. Sheet tổng hợp được dựng từ các cột khu vực đó, nên phần tiền này không bao giờ chạy lên bảng tổng hợp — thường chính là nguyên nhân khiến tổng hợp và chi tiết lệch nhau.',
  cmpArea:'Khu vực', cmpAreaAll:'Tất cả khu vực', cmpAreaRooms:'Chỉ khối phòng', cmpAreaCorr:'Chỉ hành lang & sảnh thang',
  cmpAreaStale:'Một trong hai phiên bản được đọc trước khi app tách được tiền theo khu vực — bấm <b>↻ Đọc lại file</b> ở tab Phiên bản để so sánh riêng khối phòng và hành lang.',
  colRoomAmt:'Khối phòng', colCorrAmt:'Hành lang & thang',
@@ -767,9 +771,19 @@ function reconcileVer(v){
       gap:twin?((it.total||0)-detByCat[twin]):null}); }
   const cats=Object.keys(detByCat).map(c=>({cat:c,total:detByCat[c],n:detCount[c],
     sheets:[...(detSheet[c]||[])]}));
+  /* Kiểm tra từng DÒNG chi tiết: ô "Total Amount" có bằng tổng các cột khu vực của chính dòng đó?
+     Dòng có tiền nhưng bỏ trống hết cột khu vực sẽ KHÔNG được sheet tổng hợp cộng vào → lệch. */
+  const sheetHasArea={};
+  for(const i of (v.items||[])) if(i.amtRoom!=null||i.amtCorr!=null) sheetHasArea[i.sheet]=1;
+  const rowIssues=[];
+  for(const i of (v.items||[])){ if(!sheetHasArea[i.sheet]) continue;
+    const parts=(i.amtRoom||0)+(i.amtCorr||0), g=(i.total||0)-parts;
+    if(Math.abs(g)>1) rowIssues.push({sheet:i.sheet,no:i.no,cat:i.category||i.group,desc:i.desc,
+      total:i.total||0, parts, gap:g, noArea:parts===0}); }
+  rowIssues.sort((a,b)=>Math.abs(b.gap)-Math.abs(a.gap));
   const totalSum=((v.summary||{}).nett)||0;
   const totalDet=(v.items||[]).reduce((x,i)=>x+(i.total||0),0);
-  return {sumLines,cats,bySheet,totalSum,totalDet,gap:totalSum-totalDet,
+  return {sumLines,cats,bySheet,rowIssues,totalSum,totalDet,gap:totalSum-totalDet,
     hidden:(v.hiddenSheets||[]),sheets:(v.parsedSheets||[])};
 }
 
@@ -2449,6 +2463,16 @@ const App={
      <table style="margin-top:8px"><tbody>
        <tr class="total"><td>${t('recTotal')}</td><td class="num">${M(R.totalSum)}</td><td class="num">${M(R.totalDet)}</td>
          <td class="num ${cls(R.gap)}">${Math.abs(R.gap)<1?'0':sign(R.gap)+M(R.gap)+' ('+sign(R.gap)+moneyU(Math.abs(R.gap)/fx)+')'}</td></tr></tbody></table>
+     ${R.rowIssues.length?`<div class="warnbox" style="margin-top:8px"><b>${t('recRowT')} (${R.rowIssues.length})</b><br>${t('recRowHint')}
+       <div class="tblwrap" style="max-height:26vh;margin-top:6px"><table><thead><tr><th>${t('item')}</th>
+         <th class="num">${t('recRowTotal')}</th><th class="num">${t('recRowArea')}</th><th class="num">${t('recGap')}</th></tr></thead><tbody>
+         ${R.rowIssues.slice(0,40).map(x=>`<tr><td>#${esc(x.no)} ${esc(String(x.desc).slice(0,70))}
+           <div style="font-size:11px;color:var(--mut)">${esc(x.cat)} · ${esc(x.sheet)}${x.noArea?' · <b>'+t('recRowNoArea')+'</b>':''}</div></td>
+           <td class="num">${M(x.total)}</td><td class="num">${M(x.parts)}</td>
+           <td class="num pos">${sign(x.gap)}${M(x.gap)}</td></tr>`).join('')}
+         <tr class="total"><td>${t('total')}</td><td></td><td></td>
+           <td class="num pos">${sign(R.rowIssues.reduce((x,y)=>x+y.gap,0))}${M(R.rowIssues.reduce((x,y)=>x+y.gap,0))}</td></tr>
+         </tbody></table></div></div>`:''}
      ${selfBad.length?`<div class="warnbox" style="margin-top:8px"><b>${t('recSelfT')}</b><br>${t('recSelfHint')}<br>
        ${selfBad.map(r=>esc(r.name)+': '+M(r.total)+' ≠ '+M(r.perRoom)+' → <b>'+sign(r.selfGap)+M(r.selfGap)+'</b>').join('<br>')}</div>`:''}
      ${twins.length?`<div class="help" style="margin:10px 0 4px"><b>${t('recTwins')}</b> ${t('recTwinsHint')}</div>
