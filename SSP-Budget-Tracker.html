@@ -282,6 +282,14 @@ en:{
  anKeysFromSched:'Stated in the “Room schedule” sheet',
  anKeysDiff:'⚠ The two sources disagree. The table uses the figure counted from the estimate summary — check the room-type columns of the summary sheet in this version.',
  anKeysOk:'Both sources agree.', anKeysClick:'click to see the breakdown',
+ rec:'🔍 Check totals', recT:'Summary line vs sum of its detail lines', recSummary:'Summary sheet', recDetail:'Sum of detail lines', recGap:'Difference', recLines:'lines',
+ recOk:'Every summary line matches the sum of its detail lines exactly.',
+ recBad:'Some summary lines do not equal the sum of their detail lines. The difference is inside the Excel file itself — the summary sheet and the detail sheets disagree, or part of the cost sits on a sheet that is hidden in the workbook (listed below). Ask the QS which figure is right.',
+ recNoMatch:'no matching detail category', recUnmatched:'Detail categories with no summary line', recHidden:'Sheets hidden in the workbook (not read)', recRead:'Sheets read',
+ recTotal:'Nett construction — summary vs all detail lines',
+ recTwins:'Summary lines that have a detail category with the same name.',
+ recTwinsHint:'A difference here is worth asking the QS about — but note that some summary lines deliberately cover several detail categories, in which case a difference is normal.',
+ recBySheet:'Detail lines by sheet', recCats:'Detail categories',
  cmpArea:'Area', cmpAreaAll:'All areas', cmpAreaRooms:'Guestrooms only', cmpAreaCorr:'Corridor & lift lobby only',
  cmpAreaStale:'One of the versions was read before the tracker could split lines by area — press <b>↻ Re-read file</b> on it in the Versions tab to compare guestrooms and corridor separately.',
  colRoomAmt:'Guestrooms', colCorrAmt:'Corridor & lift',
@@ -415,6 +423,14 @@ vi:{
  anKeysFromSched:'Ghi trong sheet “Room schedule”',
  anKeysDiff:'⚠ Hai nguồn không khớp nhau. Bảng đang dùng số đếm từ bảng tổng hợp — hãy kiểm tra các cột loại phòng ở sheet tổng hợp của phiên bản này.',
  anKeysOk:'Hai nguồn khớp nhau.', anKeysClick:'bấm để xem chi tiết',
+ rec:'🔍 Đối chiếu số liệu', recT:'Dòng tổng hợp so với tổng các dòng chi tiết', recSummary:'Sheet tổng hợp', recDetail:'Tổng dòng chi tiết', recGap:'Chênh lệch', recLines:'dòng',
+ recOk:'Mọi dòng tổng hợp đều bằng đúng tổng các dòng chi tiết.',
+ recBad:'Có dòng tổng hợp không bằng tổng các dòng chi tiết. Chênh lệch nằm trong chính file Excel — sheet tổng hợp và sheet chi tiết không khớp nhau, hoặc một phần chi phí nằm ở sheet đang bị ẩn trong workbook (liệt kê bên dưới). Nên hỏi lại QS số nào đúng.',
+ recNoMatch:'không tìm thấy nhóm chi tiết tương ứng', recUnmatched:'Nhóm chi tiết không có dòng tổng hợp', recHidden:'Sheet bị ẩn trong workbook (không đọc)', recRead:'Sheet đã đọc',
+ recTotal:'Xây dựng thuần — tổng hợp so với toàn bộ dòng chi tiết',
+ recTwins:'Các dòng tổng hợp có nhóm chi tiết trùng tên.',
+ recTwinsHint:'Lệch ở đây là đáng hỏi lại QS — nhưng lưu ý có dòng tổng hợp cố ý gộp nhiều nhóm chi tiết, khi đó lệch là bình thường.',
+ recBySheet:'Dòng chi tiết theo sheet', recCats:'Các nhóm chi tiết',
  cmpArea:'Khu vực', cmpAreaAll:'Tất cả khu vực', cmpAreaRooms:'Chỉ khối phòng', cmpAreaCorr:'Chỉ hành lang & sảnh thang',
  cmpAreaStale:'Một trong hai phiên bản được đọc trước khi app tách được tiền theo khu vực — bấm <b>↻ Đọc lại file</b> ở tab Phiên bản để so sánh riêng khối phòng và hành lang.',
  colRoomAmt:'Khối phòng', colCorrAmt:'Hành lang & thang',
@@ -713,8 +729,35 @@ function parseWorkbook(wb,fileName){
   const m=(fileName||'').match(/(\d{2})(\d{2})(\d{2})/g);
   if(m){ const last=m[m.length-1]; const y=+last.slice(0,2),mo=+last.slice(2,4),da=+last.slice(4,6);
     if(mo>=1&&mo<=12&&da>=1&&da<=31) date=`20${last.slice(0,2)}-${last.slice(2,4)}-${last.slice(4,6)}`; }
-  return { id:uid(), pv:PARSE_VER, name:(fileName||'Version').replace(/\.(xlsx|xlsm|xls)$/i,''), fileName:fileName||'', date, note:'',
+  const hiddenSheets=Object.keys(hidden);
+  return { id:uid(), pv:PARSE_VER, hiddenSheets, name:(fileName||'Version').replace(/\.(xlsx|xlsm|xls)$/i,''), fileName:fileName||'', date, note:'',
     fx:(summary&&summary.fx)||state.fx, summary, items, materials, rooms, ov:{}, newItems:[], warnings, parsedSheets, createdAt:Date.now() };
+}
+
+/* ---------- Đối chiếu: dòng tổng hợp có bằng tổng các dòng chi tiết không? ---------- */
+function reconcileVer(v){
+  /* Không ghép dòng tổng hợp với nhóm chi tiết theo TÊN: một dòng tổng hợp thường gộp
+     nhiều nhóm chi tiết (vd "ACMV system" gồm cả ductwork, water piping…), ghép theo tên
+     sẽ báo lệch giả. Chỉ đối chiếu những gì chắc chắn đúng: tổng cộng, theo sheet,
+     và ghép theo tên CHÍNH XÁC thì hiển thị riêng để tự kiểm. */
+  const detByCat={}, detCount={}, detSheet={};
+  for(const i of (v.items||[])){ const c=norm(i.category||i.group); if(!c) continue;
+    detByCat[c]=(detByCat[c]||0)+(i.total||0); detCount[c]=(detCount[c]||0)+1;
+    (detSheet[c]=detSheet[c]||new Set()).add(i.sheet); }
+  const bySheet={};
+  for(const i of (v.items||[])) bySheet[i.sheet]=(bySheet[i.sheet]||0)+(i.total||0);
+  const sumLines=[];
+  for(const sc of ((v.summary||{}).sections||[])) for(const it of sc.items){
+    const key=norm(it.desc); const twin=(detByCat[key]!==undefined)?key:null;
+    sumLines.push({section:sc.name,name:it.desc,total:it.total||0,
+      twin, twinTotal:twin?detByCat[twin]:null, twinN:twin?detCount[twin]:0,
+      gap:twin?((it.total||0)-detByCat[twin]):null}); }
+  const cats=Object.keys(detByCat).map(c=>({cat:c,total:detByCat[c],n:detCount[c],
+    sheets:[...(detSheet[c]||[])]}));
+  const totalSum=((v.summary||{}).nett)||0;
+  const totalDet=(v.items||[]).reduce((x,i)=>x+(i.total||0),0);
+  return {sumLines,cats,bySheet,totalSum,totalDet,gap:totalSum-totalDet,
+    hidden:(v.hiddenSheets||[]),sheets:(v.parsedSheets||[])};
 }
 
 /* ============================== computed ============================== */
@@ -1518,7 +1561,8 @@ function renderVersions(){
       <td><input value="${esc(v.note)}" style="width:160px" placeholder="…" onchange="App.noteVer('${v.id}',this.value)"></td>
       <td style="font-size:11.5px;color:var(--mut)">${(v.items||[]).length} items · ${(v.materials||[]).length} mats
         ${(v.pv||0)<PARSE_VER?`<br><span class="chip a">${t('rereadStale')}</span>`:''}</td>
-      <td style="white-space:nowrap"><button class="btn sm ${(v.pv||0)<PARSE_VER?'gold':'ghost'}" title="${t('rereadTitle')}" onclick="App.reparseVer('${v.id}')">${t('reread')}</button>
+      <td style="white-space:nowrap"><button class="btn sm ghost" title="${t('recT')}" onclick="App.reconcile('${v.id}')">${t('rec')}</button>
+        <button class="btn sm ${(v.pv||0)<PARSE_VER?'gold':'ghost'}" title="${t('rereadTitle')}" onclick="App.reparseVer('${v.id}')">${t('reread')}</button>
         <button class="btn sm danger" onclick="App.delVer('${v.id}')">✕</button></td></tr>`; }).join('');
   el.innerHTML=`
   <div class="toolbar"><button class="btn gold" onclick="App.pickXlsx()">⬆ ${t('upload')}</button><span class="help">${t('uploadHint')}</span>
@@ -2374,6 +2418,33 @@ const App={
    rd.readAsArrayBuffer(file); },
  /* Đọc lại file cho MỘT phiên bản đã có: thay dữ liệu đọc từ file, giữ nguyên phần người dùng nhập */
  reparseVer(id){ window.__reparseId=id; toast(t('rereadAsk')); $('#fileXlsx').click(); },
+ reconcile(id){ const v=ver(id); if(!v) return; const R=reconcileVer(v);
+   const fx=v.fx||state.fx, M=x=>x==null?'—':money(x,'VND');
+   const twins=R.sumLines.filter(r=>r.twin);
+   const badTwins=twins.filter(r=>Math.abs(r.gap)>1);
+   const gapBad=Math.abs(R.gap)>1;
+   const twinRow=r=>`<tr ${Math.abs(r.gap)>1?'style="background:var(--redbg)"':''}>
+     <td>${esc(r.name)}<div style="font-size:11px;color:var(--mut)">${esc(r.section)} · ${r.twinN} ${t('recLines')}</div></td>
+     <td class="num">${M(r.total)}</td><td class="num">${M(r.twinTotal)}</td>
+     <td class="num ${cls(r.gap)}">${Math.abs(r.gap)<1?'0':sign(r.gap)+M(r.gap)+' <span style="font-size:10.5px">('+sign(r.gap)+moneyU(Math.abs(r.gap)/fx)+')</span>'}</td></tr>`;
+   modal(`<h3>🔍 ${t('recT')} — ${esc(v.name)}</h3>
+     <div class="${(gapBad||badTwins.length)?'warnbox':'okbox'}">${(gapBad||badTwins.length)?t('recBad'):t('recOk')}</div>
+     <table style="margin-top:8px"><tbody>
+       <tr class="total"><td>${t('recTotal')}</td><td class="num">${M(R.totalSum)}</td><td class="num">${M(R.totalDet)}</td>
+         <td class="num ${cls(R.gap)}">${Math.abs(R.gap)<1?'0':sign(R.gap)+M(R.gap)+' ('+sign(R.gap)+moneyU(Math.abs(R.gap)/fx)+')'}</td></tr></tbody></table>
+     ${twins.length?`<div class="help" style="margin:10px 0 4px"><b>${t('recTwins')}</b> ${t('recTwinsHint')}</div>
+       <div class="tblwrap" style="max-height:26vh"><table><thead><tr><th>${t('item')}</th>
+         <th class="num">${t('recSummary')}</th><th class="num">${t('recDetail')}</th><th class="num">${t('recGap')}</th></tr></thead>
+         <tbody>${twins.map(twinRow).join('')}</tbody></table></div>`:''}
+     <div class="help" style="margin:10px 0 4px"><b>${t('recBySheet')}</b></div>
+     <div class="tblwrap" style="max-height:22vh"><table><thead><tr><th>${t('sheet')}</th><th class="num">${t('total')}</th></tr></thead><tbody>
+       ${Object.entries(R.bySheet).map(([k,x])=>`<tr><td>${esc(k)}</td><td class="num">${M(x)}</td></tr>`).join('')}</tbody></table></div>
+     <div class="help" style="margin:10px 0 4px"><b>${t('recCats')}</b></div>
+     <div class="tblwrap" style="max-height:26vh"><table><thead><tr><th>${t('category')}</th><th>${t('sheet')}</th><th class="num">${t('recLines')}</th><th class="num">${t('total')}</th></tr></thead><tbody>
+       ${R.cats.map(c=>`<tr><td>${esc(c.cat)}</td><td style="font-size:11px;color:var(--mut)">${c.sheets.map(esc).join(', ')}</td><td class="num">${c.n}</td><td class="num">${M(c.total)}</td></tr>`).join('')}</tbody></table></div>
+     ${R.hidden.length?`<div class="warnbox" style="margin-top:8px"><b>${t('recHidden')}:</b> ${R.hidden.map(esc).join(' · ')}</div>`:''}
+     <div class="help" style="margin-top:6px"><b>${t('recRead')}:</b> ${R.sheets.map(esc).join(' · ')}</div>
+     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn gold" onclick="closeModal()">OK</button></div>`); },
  applyReparse(nv){ const id=window.__reparseId; window.__reparseId=null;
    const old=ver(id); if(!old){ toast('✗'); return; }
    const keep={id:old.id, name:old.name, date:old.date, note:old.note,
