@@ -415,6 +415,10 @@ const MAP = {
     /* provisional mid-month STR extract ("STR - <Month>.xlsx": Compset+Industry
        daily grids only) — placeholder until the official Monthly STAR (~20th) */
     { type:'strTemp',    all:[/^Compset$/i, /^Industry$/i] },
+    /* CoStar property export (Database\Properties\Hospitality\CostarExport*.xlsx) — the
+       competitive supply list. Single "Properties" sheet, so it cannot collide with the
+       STAR types above (strTemp needs Compset AND Industry; Monthly STAR has "Comp"). */
+    { type:'props',      all:[/^Properties$/i] },
   ],
 
   /* Engineering PDF hot-spot dictionaries (mention counting) */
@@ -1310,6 +1314,43 @@ function parseSegmentation(wb,warns){
   }
   if(!out.rows.length) W(warns,'Segmentation: no data rows parsed');
   return out;
+}
+
+/* ---------- CoStar property export (competitive supply list) ----------
+   Columns are located BY HEADER NAME, never by position: the export carries 45 columns and
+   CoStar reorders/adds them between releases, so a positional read would silently shift every
+   field. Anything not found is simply absent rather than mis-assigned. */
+const PROPS_COLS={
+  name:/^Building Name$/i, rooms:/^Rooms$/i, brand:/^Brand$/i,
+  parent:/^Parent Company$/i, operator:/^Hotel Operator$/i, owner:/^True Owner$/i,
+  market:/^Market$/i, submarket:/^Submarket$/i, cls:/^Class$/i, scale:/^Scale$/i,
+  opType:/^Operation Type$/i, constr:/^Constr Status$/i, opStatus:/^Operation Status$/i,
+  city:/^City$/i, built:/^Year Built$/i, renov:/^Year Renov(ated)?$/i, opened:/^Hotel Open Date$/i,
+};
+function parseProps(wb,warns){
+  const ws=sheetByRe(wb,/^Properties$/i);
+  if(!ws) throw new Error('Properties sheet not found');
+  const gd=grid(ws);
+  const hr=gd.findIndex(r=>(r||[]).some(c=>/^Building Name$/i.test(cellStr(c))));
+  if(hr<0) throw new Error('Properties sheet: "Building Name" header row not found');
+  const hdr=gd[hr]||[];
+  const col={};
+  for(const [k,re] of Object.entries(PROPS_COLS)){
+    const j=hdr.findIndex(c=>re.test(cellStr(c)));
+    if(j>=0) col[k]=j; else if(['name','rooms','cls'].includes(k)) W(warns,'Property export: column missing — '+k);
+  }
+  const rows=[];
+  for(let r=hr+1;r<gd.length;r++){
+    const row=gd[r]||[];
+    const name=col.name!=null?cellStr(row[col.name]):'';
+    if(!name) continue;
+    const o={name};
+    for(const k of Object.keys(col)){ if(k==='name') continue;
+      o[k]= (k==='rooms'||k==='built'||k==='renov') ? num(row[col[k]]) : (cellStr(row[col[k]])||null); }
+    rows.push(o);
+  }
+  if(!rows.length) W(warns,'Property export: no data rows parsed');
+  return {rows};
 }
 
 /* ---------- F&B outlet meal-period blocks ---------- */
@@ -2502,6 +2543,17 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
     }
     else if(type==='budget2026'){ parsed=parseBudget2026(wb); state.store.budget2026=parsed;
       label='2026 Consolidated Budget ingested — used as the 2026 monthly benchmark (Jan-Dec); other years unaffected'; }
+    else if(type==='props'){ const pw=[]; parsed=parseProps(wb,pw);
+      /* MERGE, don't replace: CoStar is exported in slices (the two current files split
+         Luxury-ish chains from Upscale/Independent), so dropping the second must add to the
+         first rather than wipe it. Keyed on name+city+rooms so a re-drop of the same export
+         updates in place instead of duplicating. */
+      const prev=state.store.props?.rows||[];
+      const byKey={};
+      for(const r of prev.concat(parsed.rows)) byKey[(r.name||'')+'|'+(r.city||'')+'|'+(r.rooms??'')]=r;
+      const rows=Object.values(byKey);
+      state.store.props={rows, updated:new Date().toISOString().slice(0,10), warns:pw};
+      label=`Property list: ${parsed.rows.length} hotels in this export · ${rows.length} in the list now`; }
     else if(type==='rf'){ parsed=parseRF(wb); state.store.rf=parsed; label='Rolling forecast: '+(parsed.title||'FY'); }
     else if(type==='cf'){ parsed=parseCF(wb); state.store.cf=parsed; label='Cashflow forecast ingested'; }
     else if(REV_PARSERS[type]){
@@ -4174,6 +4226,8 @@ window.__setSnapPer=v=>{ state.snapPer=v; renderMarket(derive()); };
 window.__setCompset=v=>{ state.compset=v; renderMarket(derive()); };
 window.__setStrLy=v=>{ state.strLy=!!v; renderMarket(derive()); };
 window.__setDailyBench=v=>{ state.dailyBench=v; renderMarket(derive()); };
+/* 'ind' = Industry sheet (HCMC Luxury), 'uu' = Summary SubmarketCollapsedClass (Lux + UU) */
+window.__setStarBench=v=>{ state.starBench=v; renderMarket(derive()); };
 const IDX_NAMES={occ:'MPI',adr:'ARI',revpar:'RGI'};
 /* Day-of-week pattern table — lives on the Patterns & Heatmaps tab (moved off
    Market · STR, where it sat beside the index trend). Built from the selected
@@ -4197,6 +4251,40 @@ function dowTableHtml(){
   return `<div class="panel"><h3>Day-of-week pattern — ${st?.monthKey?fmtMonthKey(st.monthKey):'current month'}</h3>
     <table><thead><tr><th>Day</th><th>My Occ</th><th>Comp Occ</th><th>MPI</th><th>My ADR</th><th>Comp ADR</th><th>ARI</th><th>My RevPAR</th><th>Comp RevPAR</th><th>RGI</th></tr></thead>
     <tbody>${rows||'<tr><td colspan=10>'+na('Day of Week sheet missing')+'</td></tr>'}</tbody></table></div>`;
+}
+/* ---------- competitive supply table (CoStar export) ----------
+   Core columns always shown; the four extras are opt-in because they push the table past the
+   panel width and are reference detail rather than something read every month. Filter and
+   sort come free from the delegated handlers (a .tblflt inside the panel + thead clicks). */
+const PROPS_OPT=[['owner','Owner'],['parent','Parent company'],['constr','Constr status'],['opType','Operation type']];
+window.__togglePropCol=k=>{ const s=new Set(state.propCols||[]);
+  s.has(k)?s.delete(k):s.add(k); state.propCols=[...s]; renderMarket(derive()); };
+function propsTable(){
+  const P=state.store.props;
+  if(!P?.rows?.length) return `<div class="panel"><h3>Competitive supply — hotel list</h3>
+    <div class="small">${na('Drop a CoStar property export (Database\\Properties\\Hospitality\\CostarExport*.xlsx) in Settings &amp; Data')}
+      <div style="margin-top:4px">The export has one <b>Properties</b> sheet; dropping several adds them together, so the Luxury and Upscale slices build one list.</div></div></div>`;
+  const on=new Set(state.propCols||[]);
+  const rows=P.rows;
+  const btns=PROPS_OPT.map(([k,l])=>`<button class="heatbtn ${on.has(k)?'on':''}" onclick="__togglePropCol('${k}')">${l}</button>`).join(' ');
+  const cols=[['name','Hotel'],['brand','Brand'],['rooms','Rooms'],['market','Market'],
+              ['submarket','Submarket'],['cls','Class'],['built','Year built'],['renov','Year reno']]
+             .concat(PROPS_OPT.filter(([k])=>on.has(k)));
+  const isNum=k=>k==='rooms'||k==='built'||k==='renov';
+  const body=rows.map(r=>`<tr>${cols.map(([k])=>{
+      const v=r[k];
+      return `<td data-v="${v??''}"${isNum(k)?'':' style="text-align:left"'}>${v==null||v===''?'–':(k==='rooms'?n1(v,0):v)}</td>`;
+    }).join('')}</tr>`).join('');
+  const tot=rows.reduce((s,r)=>s+(r.rooms||0),0);
+  const classes={}; rows.forEach(r=>{ const c=r.cls||'—'; classes[c]=(classes[c]||0)+1; });
+  const mix=Object.entries(classes).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`${c} ${n}`).join(' · ');
+  return `<div class="panel"><h3>Competitive supply — hotel list
+      <span class="small" style="font-weight:400">(${n1(rows.length,0)} hotels · ${n1(tot,0)} rooms)</span>
+      <input class="tblflt noprint" placeholder="${t('filter')}">
+      <span class="noprint" style="float:right;font-weight:400">${btns}</span></h3>
+    <div style="overflow-x:auto"><table><thead><tr>${cols.map(([,l])=>`<th>${l}</th>`).join('')}</tr></thead>
+    <tbody>${body}</tbody></table></div>
+    <div class="small" style="margin-top:6px">From the CoStar property export${P.updated?' (loaded '+P.updated+')':''}. Click any column header to sort, type in the box to filter — the filter matches the whole row, so "Ho Chi Minh City Luxury" or a brand name both work. The four buttons add <b>owner</b>, <b>parent company</b>, <b>construction status</b> and <b>operation type</b> columns. Class mix: ${mix}. Dropping another export merges into this list rather than replacing it, keyed on hotel + city + rooms.</div></div>`;
 }
 function renderMarket(d){
   const el=$('#tab-market');
@@ -4260,10 +4348,22 @@ function renderMarket(d){
   /* which source actually filled the column, so the caption can name it truthfully rather
      than always claiming the Industry sheet: a Weekly-STAR (provisional) month has no
      Industry sheet, and its Glance still carries an industry benchmark. */
-  const benchSrc = ind?.metrics?.occ ? 'industry'
+  /* Two selectable benchmarks. "Luxury market" is the Industry sheet (the aligned source the
+     owner asked for); "Lux + upper upscale" is the Summary sheet's SubmarketCollapsedClass row,
+     which is the only place that wider peer group exists — the Industry sheet carries a single
+     scope. Sources differ by necessity, so each mode names its own in the caption. */
+  const wantUU = state.starBench==='uu' && !!sum.occ?.subcls;
+  const benchSrc = wantUU            ? 'subcls'
+                 : ind?.metrics?.occ ? 'industry'
                  : sum.occ?.submkt   ? 'summary'
                  : gl.cmInd?.occ     ? 'glance' : 'none';
-  const benchName=ind?.scope||(benchSrc==='summary'?(st.entityLabels?.submkt||'Submarket'):'Industry');
+  const benchName = benchSrc==='subcls' ? (st.entityLabels?.subcls||'Luxury & Upper Upscale')
+                  : ind?.scope||(benchSrc==='summary'?(st.entityLabels?.submkt||'Submarket'):'Industry');
+  const benchBtns=`<span class="noprint" style="float:right;font-weight:400">
+    ${ind?.metrics?.occ?`<button class="heatbtn ${benchSrc!=='subcls'?'on':''}" onclick="__setStarBench('ind')"
+        title="${escA(ind.scope)} — from the Industry sheet">Luxury market</button>`:''}
+    ${sum.occ?.subcls?`<button class="heatbtn ${benchSrc==='subcls'?'on':''}" onclick="__setStarBench('uu')"
+        title="${escA(st.entityLabels?.subcls||'SubmarketCollapsedClass: Luxury & Upper Upscale')} — from the Summary sheet">Lux + upper upscale</button>`:''}</span>`;
   /* Column header wants to be short — "Ho Chi Minh City Luxury" is too wide (owner request).
      The city is already implicit everywhere else on this tab, so keep only the STR class and
      call it a market: "Luxury market". Matched against STR's own class vocabulary, longest
@@ -4271,10 +4371,13 @@ function renderMarket(d){
      column tooltip and is quoted verbatim in the caption. */
   const STR_CLASSES=['Luxury & Upper Upscale','Upper Upscale','Upper Midscale','Luxury',
                      'Upscale','Midscale','Economy'];
-  const benchClass=(()=>{ const s=ind?.scope||'';
-    return STR_CLASSES.find(c=>new RegExp(c.replace(/&/g,'&'),'i').test(s))||''; })();
-  const benchShort=benchClass?benchClass+' market'
-                  :((ind?.scope||'').replace(/^.*Class\s*:\s*/i,'').trim()||'Industry');
+  /* header text must follow the SELECTED benchmark, not always the Industry sheet's scope */
+  const benchShort=(()=>{
+    if(benchSrc==='subcls') return 'Lux + UU market';
+    const s=ind?.scope||'';
+    const c=STR_CLASSES.find(x=>new RegExp(x,'i').test(s));
+    return c?c+' market':(s.replace(/^.*Class\s*:\s*/i,'').trim()||'Industry');
+  })();
   let snapRows='';
   for(const [met,label,fmt] of SNAP_MET){
     const pv = sum[met]?.prop?.[sp]     ?? gl[sp]?.[met]?.my;
@@ -4283,21 +4386,33 @@ function renderMarket(d){
     const cChg=sum[met]?.comp?.[sp+'Chg'] ?? gl[sp+'Chg']?.[met]?.comp;
     const iv = gl[sp]?.[met]?.idx ?? ((pv!=null&&cVal)?pv/cVal*100:null);
     const ic = gl[sp+'Chg']?.[met]?.idx;
-    const mv = ind?.metrics?.[met]?.[sp]?.ind
+    const mv = benchSrc==='subcls' ? (sum[met]?.subcls?.[sp] ?? null)
+             : ind?.metrics?.[met]?.[sp]?.ind
                ?? sum[met]?.submkt?.[sp] ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
-    const mc = ind?.metrics?.[met]?.[sp+'Chg']?.ind ?? sum[met]?.submkt?.[sp+'Chg'];
+    const mc = benchSrc==='subcls' ? (sum[met]?.subcls?.[sp+'Chg'] ?? null)
+             : ind?.metrics?.[met]?.[sp+'Chg']?.ind ?? sum[met]?.submkt?.[sp+'Chg'];
     /* SSP vs the industry benchmark. Taken from the Industry sheet's own "Index" row rather
        than derived, so it matches STR's published figure exactly (STR rounds its inputs
        differently, so property/industry recomputed here can land a decimal off); the
        division is only a fallback for a provisional month with no Industry sheet. */
-    const miv = ind?.metrics?.[met]?.[sp]?.idx ?? ((pv!=null&&mv)? pv/mv*100 : null);
-    const mic = ind?.metrics?.[met]?.[sp+'Chg']?.idx;
+    /* In Lux+UU mode STR publishes no index against that group, so it is computed here.
+       Must NOT fall through to the Industry sheet's idx row — that is the index against a
+       different (narrower) population and would leave the column unchanged when switching. */
+    const miv = benchSrc==='subcls' ? ((pv!=null&&mv)? pv/mv*100 : null)
+              : (ind?.metrics?.[met]?.[sp]?.idx ?? ((pv!=null&&mv)? pv/mv*100 : null));
+    const mic = benchSrc==='subcls' ? null : ind?.metrics?.[met]?.[sp+'Chg']?.idx;
     const lyP=showLy?lyAt(met,'my'):null, lyC=showLy?lyAt(met,'comp'):null, lyX=showLy?lyAt(met,'idx'):null;
     /* value / YoY % / LY stacked per cell — see snapTd. The benchmark and its index carry
        their own last-year level from the Industry sheet's prior-year columns, so every column
        now shows a real LY figure rather than a placeholder. */
-    const mLy = ind?.metrics?.[met]?.[sp+'Ly']?.ind ?? null;
-    const miLy= ind?.metrics?.[met]?.[sp+'Ly']?.idx ?? null;
+    /* The Summary sheet carries no last-year LEVELS, only % changes — so in Lux+UU mode LY is
+       derived exactly from the published change (level ÷ (1+chg)) rather than left blank. */
+    const mLy = benchSrc==='subcls'
+              ? ((mv!=null&&mc!=null&&mc!==-100)? mv/(1+mc/100) : null)
+              : (ind?.metrics?.[met]?.[sp+'Ly']?.ind ?? null);
+    const miLy= benchSrc==='subcls'
+              ? ((pv!=null&&mLy)? (lyP??null)!=null? lyP/mLy*100 : null : null)
+              : (ind?.metrics?.[met]?.[sp+'Ly']?.idx ?? null);
     const L=v=>showLy?v:undefined;
     snapRows+=`<tr><td>${label}</td>
       ${snapTd(pv,pc,L(lyP),fmt)}
@@ -4487,6 +4602,7 @@ function renderMarket(d){
     <div class="cols c2">
       <div class="panel"><h3>STR Snapshot — ${fmtMonthKey(st.monthKey)} ${st.provisional?'<span class="tag a">PROVISIONAL</span>':''}
           <span class="noprint" style="float:right">${lyBtns} &nbsp;|&nbsp; ${spBtns}</span></h3>
+        <div class="small noprint" style="margin-bottom:6px">Benchmark: ${benchBtns}</div>
         <table><thead><tr><th></th>
           <th>Property</th>
           <th>Comp set</th>
@@ -4496,7 +4612,9 @@ function renderMarket(d){
           <th>Rank</th></tr></thead>
         <tbody>${snapRows}</tbody></table>
         <div class="small" style="margin-top:8px"><b>Competitive set (${compN}):</b><br>${compChips}</div>
-        <div class="small" style="margin-top:6px">Each cell reads <b>value</b>, then its <b>% change vs the same period last year</b> beneath${showLy?', then that period a year ago in grey':''}.${benchSrc==='industry'
+        <div class="small" style="margin-top:6px">Each cell reads <b>value</b>, then its <b>% change vs the same period last year</b> beneath${showLy?', then that period a year ago in grey':''}.${benchSrc==='subcls'
+  ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — the city's luxury <i>and</i> upper-upscale hotels, a wider peer group than the Luxury market. This one can only come from the Summary sheet: the Industry sheet carries a single scope. Its last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since the Summary sheet lists changes but not prior-year levels.`
+  : benchSrc==='industry'
   ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. It is deliberately <b>not</b> taken from the Summary sheet, whose Market / Submarket rows cover wider populations and therefore read much lower.`
   : benchSrc==='glance'
   ? `<span class="tag a">Industry sheet not in this file</span> This is a provisional month built from a Weekly STAR, which carries no Industry sheet — the benchmark shown is the <b>industry figure from the file's Glance</b>. It refreshes from the Industry sheet once the official Monthly STAR is dropped.`
@@ -4525,7 +4643,8 @@ function renderMarket(d){
         grey columns = STR weekends (Fri–Sat, daily view). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
     <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold);margin-top:4px">
       <h3 style="margin:0">Operator STR Benchmark</h3></div>
-    ${dailyPanel}`;
+    ${dailyPanel}
+    ${propsTable()}`;
 
   /* weekend-column shading plugin factory (only meaningful on the daily view) */
   const weBandOf=flags=>({id:'weBand',beforeDatasetsDraw(ch){ const {ctx,chartArea,scales:{x}}=ch; if(!chartArea) return;
