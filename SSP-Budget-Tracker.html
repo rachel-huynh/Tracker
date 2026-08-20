@@ -290,6 +290,8 @@ en:{
  recTwins:'Summary lines that have a detail category with the same name.',
  recTwinsHint:'A difference here is worth asking the QS about — but note that some summary lines deliberately cover several detail categories, in which case a difference is normal.',
  recBySheet:'Detail lines by sheet', recCats:'Detail categories',
+ recSelfGap:'vs its own room columns', recSelfT:'The summary sheet disagrees with itself',
+ recSelfHint:'On these lines the TOTAL cell does not equal the sum of the room-type columns on the same row — a hand-typed total or a broken formula in the summary sheet:',
  cmpArea:'Area', cmpAreaAll:'All areas', cmpAreaRooms:'Guestrooms only', cmpAreaCorr:'Corridor & lift lobby only',
  cmpAreaStale:'One of the versions was read before the tracker could split lines by area — press <b>↻ Re-read file</b> on it in the Versions tab to compare guestrooms and corridor separately.',
  colRoomAmt:'Guestrooms', colCorrAmt:'Corridor & lift',
@@ -431,6 +433,8 @@ vi:{
  recTwins:'Các dòng tổng hợp có nhóm chi tiết trùng tên.',
  recTwinsHint:'Lệch ở đây là đáng hỏi lại QS — nhưng lưu ý có dòng tổng hợp cố ý gộp nhiều nhóm chi tiết, khi đó lệch là bình thường.',
  recBySheet:'Dòng chi tiết theo sheet', recCats:'Các nhóm chi tiết',
+ recSelfGap:'so với cột phòng của chính nó', recSelfT:'Sheet tổng hợp mâu thuẫn với chính nó',
+ recSelfHint:'Ở các dòng này, ô TỔNG không bằng tổng các cột loại phòng trên cùng dòng — dấu hiệu ô tổng bị gõ tay hoặc công thức hỏng trong sheet tổng hợp:',
  cmpArea:'Khu vực', cmpAreaAll:'Tất cả khu vực', cmpAreaRooms:'Chỉ khối phòng', cmpAreaCorr:'Chỉ hành lang & sảnh thang',
  cmpAreaStale:'Một trong hai phiên bản được đọc trước khi app tách được tiền theo khu vực — bấm <b>↻ Đọc lại file</b> ở tab Phiên bản để so sánh riêng khối phòng và hành lang.',
  colRoomAmt:'Khối phòng', colCorrAmt:'Hành lang & thang',
@@ -749,8 +753,17 @@ function reconcileVer(v){
   const sumLines=[];
   for(const sc of ((v.summary||{}).sections||[])) for(const it of sc.items){
     const key=norm(it.desc); const twin=(detByCat[key]!==undefined)?key:null;
+    /* Kiểm tra nội bộ sheet tổng hợp: ô TỔNG của dòng có bằng tổng các cột khu vực
+       của chính dòng đó không? Lệch ⇒ ô tổng bị sửa tay / công thức hỏng. */
+    const per=Object.values(it.perRoom||{}).reduce((x,p)=>x+((p||{}).t||0),0);
+    const hasPer=Object.keys(it.perRoom||{}).length>0;
+    // tổng phần chi tiết của nhóm trùng tên, tách theo sheet
+    let twinBySheet=null;
+    if(twin){ twinBySheet={};
+      for(const i of (v.items||[])) if(norm(i.category||i.group)===twin) twinBySheet[i.sheet]=(twinBySheet[i.sheet]||0)+(i.total||0); }
     sumLines.push({section:sc.name,name:it.desc,total:it.total||0,
-      twin, twinTotal:twin?detByCat[twin]:null, twinN:twin?detCount[twin]:0,
+      perRoom:hasPer?per:null, selfGap:hasPer?((it.total||0)-per):null,
+      twin, twinTotal:twin?detByCat[twin]:null, twinN:twin?detCount[twin]:0, twinBySheet,
       gap:twin?((it.total||0)-detByCat[twin]):null}); }
   const cats=Object.keys(detByCat).map(c=>({cat:c,total:detByCat[c],n:detCount[c],
     sheets:[...(detSheet[c]||[])]}));
@@ -2424,14 +2437,20 @@ const App={
    const badTwins=twins.filter(r=>Math.abs(r.gap)>1);
    const gapBad=Math.abs(R.gap)>1;
    const twinRow=r=>`<tr ${Math.abs(r.gap)>1?'style="background:var(--redbg)"':''}>
-     <td>${esc(r.name)}<div style="font-size:11px;color:var(--mut)">${esc(r.section)} · ${r.twinN} ${t('recLines')}</div></td>
-     <td class="num">${M(r.total)}</td><td class="num">${M(r.twinTotal)}</td>
+     <td>${esc(r.name)}<div style="font-size:11px;color:var(--mut)">${esc(r.section)} · ${r.twinN} ${t('recLines')}</div>
+       ${(Math.abs(r.gap)>1&&r.twinBySheet)?`<div style="font-size:11px;color:var(--blue)">${Object.entries(r.twinBySheet).map(([k,x])=>esc(k)+': '+M(x)).join(' · ')}</div>`:''}</td>
+     <td class="num">${M(r.total)}
+       ${(r.selfGap!=null&&Math.abs(r.selfGap)>1)?`<div style="font-size:10.5px" class="pos">${t('recSelfGap')}: ${sign(r.selfGap)}${M(r.selfGap)}</div>`:''}</td>
+     <td class="num">${M(r.twinTotal)}</td>
      <td class="num ${cls(r.gap)}">${Math.abs(r.gap)<1?'0':sign(r.gap)+M(r.gap)+' <span style="font-size:10.5px">('+sign(r.gap)+moneyU(Math.abs(r.gap)/fx)+')</span>'}</td></tr>`;
+   const selfBad=R.sumLines.filter(r=>r.selfGap!=null&&Math.abs(r.selfGap)>1);
    modal(`<h3>🔍 ${t('recT')} — ${esc(v.name)}</h3>
      <div class="${(gapBad||badTwins.length)?'warnbox':'okbox'}">${(gapBad||badTwins.length)?t('recBad'):t('recOk')}</div>
      <table style="margin-top:8px"><tbody>
        <tr class="total"><td>${t('recTotal')}</td><td class="num">${M(R.totalSum)}</td><td class="num">${M(R.totalDet)}</td>
          <td class="num ${cls(R.gap)}">${Math.abs(R.gap)<1?'0':sign(R.gap)+M(R.gap)+' ('+sign(R.gap)+moneyU(Math.abs(R.gap)/fx)+')'}</td></tr></tbody></table>
+     ${selfBad.length?`<div class="warnbox" style="margin-top:8px"><b>${t('recSelfT')}</b><br>${t('recSelfHint')}<br>
+       ${selfBad.map(r=>esc(r.name)+': '+M(r.total)+' ≠ '+M(r.perRoom)+' → <b>'+sign(r.selfGap)+M(r.selfGap)+'</b>').join('<br>')}</div>`:''}
      ${twins.length?`<div class="help" style="margin:10px 0 4px"><b>${t('recTwins')}</b> ${t('recTwinsHint')}</div>
        <div class="tblwrap" style="max-height:26vh"><table><thead><tr><th>${t('item')}</th>
          <th class="num">${t('recSummary')}</th><th class="num">${t('recDetail')}</th><th class="num">${t('recGap')}</th></tr></thead>

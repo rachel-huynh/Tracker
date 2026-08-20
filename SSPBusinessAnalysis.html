@@ -139,7 +139,13 @@ th{background:#f3f5f9;color:#4b5563;text-align:right;padding:5px 7px;font-weight
 th:first-child,td:first-child{text-align:left}
 main table thead th{cursor:pointer;user-select:none}
 th.sa::after{content:' ▲';color:var(--gold2)}th.sd::after{content:' ▼';color:var(--gold2)}
-.tblflt{border:1px solid #cfd6e2;border-radius:5px;padding:3px 8px;font-size:11.5px;margin-left:8px;width:160px;vertical-align:middle}
+.tblflt,.propq{border:1px solid #cfd6e2;border-radius:5px;padding:3px 8px;font-size:11.5px;margin-left:8px;width:160px;vertical-align:middle}
+/* Property list: a reference table of names and places, so every column reads left — and the
+   header must match, since the global `th` rule right-aligns for numeric tables. */
+.proptbl th,.proptbl td{text-align:left}
+.proptbl tr.fltrow th{padding:3px 4px;background:#fff;border-bottom:1px solid var(--line)}
+.proptbl tr.fltrow input,.proptbl tr.fltrow select{width:100%;min-width:64px;box-sizing:border-box;
+  border:1px solid #cfd6e2;border-radius:4px;padding:2px 4px;font-size:10.5px;font-weight:400;color:var(--ink)}
 tr.seggrp td{background:#eef2f8;font-weight:700;color:var(--navy)}
 tr.segsub td{font-weight:600;color:#374151;background:#f7f9fc}
 /* heatmap grids */
@@ -4273,25 +4279,86 @@ function propsTable(){
   const isNum=k=>k==='rooms'||k==='built'||k==='renov';
   const body=rows.map(r=>`<tr>${cols.map(([k])=>{
       const v=r[k];
-      return `<td data-v="${v??''}"${isNum(k)?'':' style="text-align:left"'}>${v==null||v===''?'–':(k==='rooms'?n1(v,0):v)}</td>`;
+      return `<td data-v="${escA(String(v??''))}">${v==null||v===''?'–':(k==='rooms'?n1(v,0):escH(String(v)))}</td>`;
     }).join('')}</tr>`).join('');
+  /* Per-column filter row. A column with few distinct values gets a dropdown (pick exactly);
+     anything wider gets contains-text; the three numeric columns accept a comparison or a
+     range. All of them AND together, and the quick-search box on top of that. Saved values are
+     written back into the controls so a re-render (period switch, column toggle) keeps them. */
+  const F=state.propFilt||{};
+  const fltRow=cols.map(([k],i)=>{
+    if(isNum(k)) return `<th><input data-fcol="${i}" data-fkind="num" value="${escA(F[i]||'')}"
+      placeholder="e.g. &gt;300" title="Accepts 300, &gt;300, &gt;=300, &lt;200, or a range 2010-2020"
+      oninput="__propFilterApply(this)"></th>`;
+    const vals=[...new Set(rows.map(r=>r[k]).filter(v=>v!=null&&v!==''))].map(String).sort((a,b)=>a.localeCompare(b));
+    if(vals.length<=25) return `<th><select data-fcol="${i}" data-fkind="sel" onchange="__propFilterApply(this)">
+      <option value="">(all)</option>${vals.map(v=>`<option value="${escA(v)}" ${F[i]===v?'selected':''}>${escH(v)}</option>`).join('')}</select></th>`;
+    return `<th><input data-fcol="${i}" data-fkind="txt" value="${escA(F[i]||'')}" placeholder="contains…"
+      oninput="__propFilterApply(this)"></th>`;
+  }).join('');
   const tot=rows.reduce((s,r)=>s+(r.rooms||0),0);
   const classes={}; rows.forEach(r=>{ const c=r.cls||'—'; classes[c]=(classes[c]||0)+1; });
   const mix=Object.entries(classes).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`${c} ${n}`).join(' · ');
   return `<div class="panel"><h3>Competitive supply — hotel list
-      <span class="small" style="font-weight:400">(${n1(rows.length,0)} hotels · ${n1(tot,0)} rooms)</span>
-      <input class="tblflt noprint" placeholder="${t('filter')}">
+      <span class="small" style="font-weight:400">(${n1(rows.length,0)} hotels · ${n1(tot,0)} rooms<span class="propcount"></span>)</span>
+      <input class="propq noprint" placeholder="Quick search…" value="${escA(state.propQ||'')}" oninput="__propFilterApply(this)">
       <span class="noprint" style="float:right;font-weight:400">${btns}</span></h3>
-    <div style="overflow-x:auto"><table><thead><tr>${cols.map(([,l])=>`<th>${l}</th>`).join('')}</tr></thead>
+    <div style="overflow-x:auto"><table class="proptbl"><thead>
+      <tr>${cols.map(([,l])=>`<th>${l}</th>`).join('')}</tr>
+      <tr class="fltrow noprint">${fltRow}</tr></thead>
     <tbody>${body}</tbody></table></div>
-    <div class="small" style="margin-top:6px">From the CoStar property export${P.updated?' (loaded '+P.updated+')':''}. Click any column header to sort, type in the box to filter — the filter matches the whole row, so "Ho Chi Minh City Luxury" or a brand name both work. The four buttons add <b>owner</b>, <b>parent company</b>, <b>construction status</b> and <b>operation type</b> columns. Class mix: ${mix}. Dropping another export merges into this list rather than replacing it, keyed on hotel + city + rooms.</div></div>`;
+    <div class="small" style="margin-top:6px">From the CoStar property export${P.updated?' (loaded '+P.updated+')':''}. <b>Click a column header to sort</b>; the row of boxes under the headers filters <b>each column independently and they combine</b> — pick a Class <i>and</i> a Submarket <i>and</i> rooms <code>&gt;300</code> to get only those. Numeric boxes take <code>300</code>, <code>&gt;300</code>, <code>&lt;200</code> or a range <code>2010-2020</code>. The <b>Quick search</b> box matches the whole row and applies on top of the column filters. The four buttons add <b>owner</b>, <b>parent company</b>, <b>construction status</b> and <b>operation type</b>. Class mix: ${mix}. Dropping another export merges into this list rather than replacing it, keyed on hotel + city + rooms.</div></div>`;
+}
+/* Numeric filter grammar: plain number (exact), >N >=N <N <=N, or N-M inclusive range. */
+function propNumMatch(txt,expr){
+  const v=parseFloat(String(txt).replace(/,/g,''));
+  if(!isFinite(v)) return false;
+  const e=expr.replace(/\s+/g,'');
+  let m;
+  if((m=/^(>=|<=|>|<)(-?\d+(?:\.\d+)?)$/.exec(e))){ const n=+m[2];
+    return m[1]==='>'?v>n:m[1]==='<'?v<n:m[1]==='>='?v>=n:v<=n; }
+  if((m=/^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$/.exec(e))){ const a=+m[1],b=+m[2];
+    return v>=Math.min(a,b)&&v<=Math.max(a,b); }
+  if((m=/^(-?\d+(?:\.\d+)?)$/.exec(e))) return v===+m[1];
+  return true;                     // unparseable expression filters nothing rather than everything
+}
+window.__propFilterApply=el=>{
+  const panel=el.closest('.panel'); if(!panel) return;
+  const ctrls=[...panel.querySelectorAll('[data-fcol]')];
+  const q=(panel.querySelector('.propq')?.value||'').trim().toLowerCase();
+  const tests=ctrls.map(c=>({i:+c.dataset.fcol,kind:c.dataset.fkind,v:c.value.trim()})).filter(x=>x.v);
+  const tb=panel.querySelector('tbody'); if(!tb) return;
+  let shown=0;
+  for(const tr of tb.rows){
+    let ok = !q || tr.textContent.toLowerCase().includes(q);
+    if(ok) for(const t of tests){
+      const txt=(tr.cells[t.i]?.textContent||'').trim();
+      const pass = t.kind==='num' ? propNumMatch(txt,t.v)
+                 : t.kind==='sel' ? txt===t.v
+                 : txt.toLowerCase().includes(t.v.toLowerCase());
+      if(!pass){ ok=false; break; }
+    }
+    tr.style.display=ok?'':'none'; if(ok) shown++;
+  }
+  const lbl=panel.querySelector('.propcount');
+  if(lbl) lbl.textContent = shown===tb.rows.length?'':` · ${n1(shown,0)} shown`;
+  /* remember across re-renders */
+  state.propFilt=Object.fromEntries(ctrls.filter(c=>c.value.trim()).map(c=>[c.dataset.fcol,c.value]));
+  state.propQ=q;
+};
+/* re-apply saved filters after renderMarket rebuilds the table */
+function propFilterRestore(){
+  const c=document.querySelector('#tab-market [data-fcol], #tab-market .propq');
+  if(c&&(Object.keys(state.propFilt||{}).length||state.propQ)) __propFilterApply(c);
 }
 function renderMarket(d){
   const el=$('#tab-market');
   /* every panel on this tab reads through starOf()/state.compset, so the top-right
      comp-set switch re-sources the whole page at once */
   const st=starOf(state.month);
-  if(!st){ el.innerHTML=noData(); return; }
+  /* No STAR for this month kills the benchmark panels, but the property list is month-independent
+     reference data — keep it rather than blanking the whole tab. */
+  if(!st){ el.innerHTML=noData()+propsTable(); propFilterRestore(); return; }
   const csKind=st.compsetKind||'cur';
   const csBtns=`<span class="noprint" style="float:right;font-weight:400">
     ${[['cur','Current comp set'],['new','New comp set (after reno)']].map(([k,l])=>
@@ -4645,6 +4712,7 @@ function renderMarket(d){
       <h3 style="margin:0">Operator STR Benchmark</h3></div>
     ${dailyPanel}
     ${propsTable()}`;
+  propFilterRestore();   // the table was just rebuilt — put the column filters back
 
   /* weekend-column shading plugin factory (only meaningful on the daily view) */
   const weBandOf=flags=>({id:'weBand',beforeDatasetsDraw(ch){ const {ctx,chartArea,scales:{x}}=ch; if(!chartArea) return;
@@ -6938,9 +7006,15 @@ function balanceKgrids(){
 
 /* ---------- generic table sort + filter (event delegation survives re-renders) ---------- */
 function parseCellVal(td){
-  if(td.dataset.v!==undefined&&td.dataset.v!=='') return +td.dataset.v;
+  /* data-v may hold TEXT (the property list puts brand/market/owner there). Coercing it with
+     unary + turned those into NaN, and NaN comparisons sort inconsistently — which is why the
+     text columns appeared not to sort at all. Fall back to the string when it is not numeric. */
+  if(td.dataset.v!==undefined&&td.dataset.v!==''){
+    const n=+td.dataset.v;
+    return Number.isNaN(n)? td.dataset.v.trim().toLowerCase() : n;
+  }
   const s=td.textContent.trim();
-  if(!s||s==='—'||/^n\/a$/i.test(s)) return null;
+  if(!s||s==='—'||s==='–'||/^n\/a$/i.test(s)) return null;   // en-dash placeholder counts as empty too
   const m=s.replace(/[$,▲▼+]/g,'').match(/^(-?\d+(?:\.\d+)?)\s*(bn|M|K|%|pts)?/i);
   if(m){ let v=+m[1]; const u=(m[2]||'').toLowerCase();
     if(u==='bn')v*=1e9; else if(u==='m')v*=1e6; else if(u==='k')v*=1e3; return v; }
@@ -6948,6 +7022,9 @@ function parseCellVal(td){
 }
 document.addEventListener('click',e=>{
   const th=e.target.closest('main table thead th'); if(!th) return;
+  /* the property list puts its filter controls in a second thead row — clicking one of those
+     must not also re-sort the table */
+  if(th.parentNode.classList.contains('fltrow')) return;
   const tbl=th.closest('table'); const tb=tbl.tBodies[0]; if(!tb) return;
   const ci=[...th.parentNode.children].indexOf(th);
   const dir=th.classList.contains('sd')?'asc':'desc';
