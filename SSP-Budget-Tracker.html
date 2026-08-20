@@ -277,6 +277,11 @@ en:{
  anNoData:'Upload at least two versions to build the comparison.', anSaving:'saving', anIncrease:'increase',
  anNote1:'Room and suite figures exclude MEP; MEP for those areas is inside the “MEP systems” line.',
  anUnalloc:'Not broken down by area in the file', anPhysKeys:'physical rooms',
+ anKeysT:'Where the key count comes from', anKeysCol:'Room type', anKeysGfa:'GFA m²', anKeysCnt:'Keys', anKeysF:'×',
+ anKeysFromSum:'Counted from the estimate summary (area of each room type ÷ area of one room)',
+ anKeysFromSched:'Stated in the “Room schedule” sheet',
+ anKeysDiff:'⚠ The two sources disagree. The table uses the figure counted from the estimate summary — check the room-type columns of the summary sheet in this version.',
+ anKeysOk:'Both sources agree.', anKeysClick:'click to see the breakdown',
  cmpArea:'Area', cmpAreaAll:'All areas', cmpAreaRooms:'Guestrooms only', cmpAreaCorr:'Corridor & lift lobby only',
  cmpAreaStale:'One of the versions was read before the tracker could split lines by area — press <b>↻ Re-read file</b> on it in the Versions tab to compare guestrooms and corridor separately.',
  colRoomAmt:'Guestrooms', colCorrAmt:'Corridor & lift',
@@ -405,6 +410,11 @@ vi:{
  anNoData:'Cần ít nhất hai phiên bản để lập bảng so sánh.', anSaving:'tiết kiệm', anIncrease:'tăng',
  anNote1:'Số liệu phòng và suite không bao gồm MEP; phần MEP của các khu vực đó nằm trong dòng “Hệ thống MEP”.',
  anUnalloc:'Chưa chia theo khu vực trong file', anPhysKeys:'phòng thực tế',
+ anKeysT:'Số phòng này từ đâu ra', anKeysCol:'Loại phòng', anKeysGfa:'GFA m²', anKeysCnt:'Số phòng', anKeysF:'×',
+ anKeysFromSum:'Đếm từ bảng tổng hợp dự toán (diện tích mỗi loại phòng ÷ diện tích một phòng)',
+ anKeysFromSched:'Ghi trong sheet “Room schedule”',
+ anKeysDiff:'⚠ Hai nguồn không khớp nhau. Bảng đang dùng số đếm từ bảng tổng hợp — hãy kiểm tra các cột loại phòng ở sheet tổng hợp của phiên bản này.',
+ anKeysOk:'Hai nguồn khớp nhau.', anKeysClick:'bấm để xem chi tiết',
  cmpArea:'Khu vực', cmpAreaAll:'Tất cả khu vực', cmpAreaRooms:'Chỉ khối phòng', cmpAreaCorr:'Chỉ hành lang & sảnh thang',
  cmpAreaStale:'Một trong hai phiên bản được đọc trước khi app tách được tiền theo khu vực — bấm <b>↻ Đọc lại file</b> ở tab Phiên bản để so sánh riêng khối phòng và hành lang.',
  colRoomAmt:'Khối phòng', colCorrAmt:'Hành lang & thang',
@@ -1911,6 +1921,25 @@ const AN_GROUPS=[
   {id:'suites',  k:'agSuites',   test:c=>/^(ps|js)/i.test(c)},
   {id:'corridor',k:'agCorridor', test:c=>/corridor|lift/i.test(c)}];
 function anGroupOf(code){ const g=AN_GROUPS.find(x=>x.test(code)); return g?g.id:'other'; }
+/* Chi tiết cách ra số phòng, để đối chiếu khi con số trông lạ */
+function anKeyDetail(v,gid){
+  const fromSum=[], fromSched=[];
+  for(const b of ((v.summary||{}).roomBlocks||[])){
+    if(anGroupOf(b.code)!==gid) continue;
+    const k=roomKeys(v,b.code); if(k==null) continue;
+    const f=keyFactor(b.code);
+    fromSum.push({code:b.code, gfa:b.gfa, base:Math.round(k/f), f, keys:k});
+  }
+  for(const r of (v.rooms||[])){
+    const c=s(r.code); if(!c) continue;
+    const gg=/^(ps|js)/i.test(c)?'suites':(/^(sk|st|gk|gt|cr)/i.test(c)?'rooms':'other');
+    if(gg!==gid) continue;
+    const f=keyFactor(c), base=n(r.keys)||0;
+    fromSched.push({code:c, name:r.name, gfa:r.totalGfa, base, f, keys:base*f});
+  }
+  const sum=a=>a.reduce((x,r)=>x+(r.keys||0),0);
+  return {fromSum, fromSched, totalSum:sum(fromSum), totalSched:sum(fromSched)};
+}
 /* Tính theo cấu trúc slide: chi phí phòng KHÔNG gồm MEP, MEP là 1 dòng cho toàn dự án */
 function anData(v,opt){
   opt=opt||{corr:!!anState.corr,mep:!!anState.mep,gfaCorr:!!anState.gfaCorr};
@@ -2003,7 +2032,7 @@ function renderAnalysis(){
     const cls2=r.grand?'total':(r.strong?'sect':'');
     const note=(state.anNotes||{})[r.id]||'';
     return `<tr class="${cls2}">
-      <td>${esc(r.label)}${r.keys?` <span class="chip n">${r.keys} ${t('anKeys')}</span>`:''}
+      <td>${esc(r.label)}${r.keys?` <span class="chip n noprint" style="cursor:pointer" title="${t('anKeysClick')}" onclick="App.anKeyInfo('${r.id}')">${r.keys} ${t('anKeys')} ⓘ</span><span class="onlyprint" style="display:none"> ${r.keys} ${t('anKeys')}</span>`:''}
         ${r.tag?`<div style="font-size:10.5px;color:var(--blue)">${esc(r.tag)}</div>`:''}</td>
       <td class="num">${r.a==null?'—':money(r.a)}${r.a==null?'':unit(r.a,r.aKeys,r.gfa,fxA)}</td>
       <td class="num"><b>${money(r.b)}</b>${unit(r.b,r.keys,r.gfa,fxB)}</td>
@@ -2510,6 +2539,22 @@ const App={
  // analysis (báo cáo BOD)
  anSet(k,v2){ anState[k]=v2; renderAnalysis(); },
  anToggle(k){ anState[k]=!anState[k]; renderAnalysis(); },
+ anKeyInfo(gid){ const B=ver(anState.b)||activeVer(); if(!B) return;
+   const d=anKeyDetail(B,gid);
+   const tbl=(rows,cols)=>`<div class="tblwrap" style="max-height:34vh"><table><thead><tr>
+     <th>${t('anKeysCol')}</th>${cols?`<th class="num">${t('anKeysGfa')}</th>`:''}<th class="num">${t('anKeysCnt')}</th><th class="num">${t('anKeysF')}</th><th class="num">=</th></tr></thead><tbody>
+     ${rows.map(r=>`<tr><td>${esc(r.code)}${r.name?` <span style="color:var(--mut)">${esc(r.name)}</span>`:''}</td>
+       ${cols?`<td class="num">${r.gfa?Math.round(r.gfa*10)/10:'—'}</td>`:''}
+       <td class="num">${r.base}</td><td class="num">${r.f>1?'<b>2</b>':'1'}</td><td class="num"><b>${r.keys}</b></td></tr>`).join('')}
+     </tbody></table></div>`;
+   const diff=d.totalSum!==d.totalSched&&d.fromSched.length;
+   modal(`<h3>🔑 ${t('anKeysT')} — ${esc(B.name)}</h3>
+     <div class="help" style="margin:8px 0 4px"><b>${t('anKeysFromSum')}</b> → <b>${d.totalSum}</b></div>
+     ${tbl(d.fromSum,true)}
+     ${d.fromSched.length?`<div class="help" style="margin:12px 0 4px"><b>${t('anKeysFromSched')}</b> → <b>${d.totalSched}</b></div>${tbl(d.fromSched,true)}`:''}
+     <div class="${diff?'warnbox':'okbox'}" style="margin-top:10px">${diff?t('anKeysDiff'):t('anKeysOk')}</div>
+     <div class="help" style="margin-top:8px">${t('anCrNote')}</div>
+     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn gold" onclick="closeModal()">OK</button></div>`); },
  anPreset(corr,mep){ anState.corr=!!corr; anState.mep=!!mep; renderAnalysis(); },
  anNote(id,v2){ state.anNotes=state.anNotes||{}; if(s(v2)) state.anNotes[id]=v2; else delete state.anNotes[id]; save(); },
  // rate studio
