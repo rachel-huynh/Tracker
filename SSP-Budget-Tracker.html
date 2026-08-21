@@ -284,7 +284,7 @@ en:{
  anKeysOk:'Both sources agree.', anKeysClick:'click to see the breakdown',
  noteOpen:'Open in a bigger box', noteT:'Reason / comment', noteHint:'Line breaks are kept and carried into the Excel and PDF report.',
  genBtn:'✨ Draft the rationale', genT:'Draft the rationale from the line-item differences',
- genSaving:'Saving', genIncrease:'Increase', genFrom:'$N changed lines', genOther:'and $N other lines',
+ genSaving:'Saving', genIncrease:'Increase', genFrom:'$N changed lines', genOther:'and $N other lines', genLines:'lines',
  genRemoved:'Removed', genAdded:'Added', genRate:'unit rate', genQty:'qty', genSwap:'Changed',
  genMismatch:'⚠ The table above shows $T for this row because it reads the summary sheet, while these bullets add up the detail lines — the two disagree by $D in the file (see 🔍 Check totals).',
  genAsk:'Write a first draft of the reason for every area row, from the actual line-by-line differences between the two versions? Rows where you already wrote something are kept — tick the box below to overwrite them too.',
@@ -437,7 +437,7 @@ vi:{
  anKeysOk:'Hai nguồn khớp nhau.', anKeysClick:'bấm để xem chi tiết',
  noteOpen:'Mở ô lớn hơn', noteT:'Lý do / ghi chú', noteHint:'Xuống dòng được giữ nguyên và đưa vào cả file Excel lẫn PDF.',
  genBtn:'✨ Tự soạn lý do', genT:'Soạn lý do từ chênh lệch từng dòng BOQ',
- genSaving:'Tiết kiệm', genIncrease:'Tăng', genFrom:'$N dòng thay đổi', genOther:'và $N dòng khác',
+ genSaving:'Tiết kiệm', genIncrease:'Tăng', genFrom:'$N dòng thay đổi', genOther:'và $N dòng khác', genLines:'dòng',
  genRemoved:'Bỏ', genAdded:'Thêm', genRate:'đơn giá', genQty:'khối lượng', genSwap:'Đổi',
  genMismatch:'⚠ Bảng ở trên ghi $T cho dòng này vì lấy từ sheet tổng hợp, còn các gạch đầu dòng đây cộng từ dòng chi tiết — hai nguồn lệch nhau $D trong file (xem 🔍 Đối chiếu số liệu).',
  genAsk:'Soạn bản nháp lý do cho tất cả các dòng khu vực, dựa trên chênh lệch thật giữa hai phiên bản? Những dòng bạn đã tự ghi sẽ được giữ nguyên — tick ô bên dưới nếu muốn ghi đè luôn.',
@@ -2120,6 +2120,7 @@ function anPairItems(A,B){
   const mA=keyed(A.items), mB=keyed(B.items), out=[];
   for(const k of new Set([...mA.keys(),...mB.keys()])) out.push({a:mA.get(k)||null,b:mB.get(k)||null});
   return out; }
+function esc0(x){ return s(x); }   // ghi chú là văn bản thuần, không cần escape HTML
 function anGenSummary(A,B,gid,fx,rowDelta){
   const pairs=anPairItems(A,B); const ch=[];
   for(const p of pairs){
@@ -2132,9 +2133,18 @@ function anGenSummary(A,B,gid,fx,rowDelta){
     if(!p.a) kind='added'; else if(!p.b||bv===0) kind='removed';
     else if(rA&&rB&&Math.abs(rB-rA)/rA>0.005) kind='rate';
     else if(qA&&qB&&Math.abs(qB-qA)/qA>0.005) kind='qty';
-    ch.push({d, kind, label:itemLabel(src), cat:src.category||src.group, rA,rB,qA,qB});
+    ch.push({d, kind, label:itemLabel(src), desc:src.desc, subj:src.subject||'',
+      cat:src.category||src.group, sub:src.subgroup||'', rA,rB,qA,qB});
   }
   if(!ch.length) return '';
+  const cut=(x,n2)=>{ const l=s(x); return l.length>n2?l.slice(0,n2).replace(/[\s,;:—-]+$/,'')+'…':l; };
+  /* Tên gốc của món: bỏ phần kích thước để "51-200 Floor rug — overall size 4125x2000mm"
+     và "…4140x2000mm" gom về cùng một món. */
+  const baseName=c=>{ let d=s(c.subj||c.desc);
+    d=d.replace(/\s*[—–-]\s*(overall\s+)?size\b.*$/i,'').replace(/,?\s*(overall\s*)?size\b.*$/i,'')
+       .replace(/,?\s*overall\s+\d.*$/i,'').replace(/\s*\(\s*\d+[x×][^)]*\)\s*$/i,'').replace(/[;:,\s]+$/,'').trim();
+    return d.length>3?d:s(c.desc); };
+  for(const c of ch) c.base=baseName(c);
   /* Gộp cặp "bỏ A / thêm B" cùng loại thành MỘT thay đổi vật liệu (vd đá marble → gạch),
      đúng cách diễn đạt trong slide VE, và cho ra chênh lệch thật thay vì 2 dòng ngược chiều. */
   { const rem=ch.filter(c=>c.kind==='removed'), add=ch.filter(c=>c.kind==='added'), used=new Set();
@@ -2142,24 +2152,46 @@ function anGenSummary(A,B,gid,fx,rowDelta){
       for(const a of add){ if(used.has(a)) continue;
         if(norm(a.cat)!==norm(r.cat)) continue;
         const sim=descSim(r.label,a.label); if(sim>=0.5&&sim>bs){ bs=sim; best=a; } }
-      if(best){ used.add(best); r.kind='swap'; r.to=best.label; r.d=r.d+best.d; best.drop=true; } }
+      if(best){ used.add(best); r.kind='swap'; r.to=best.base; r.d=r.d+best.d; best.drop=true; } }
     for(let i=ch.length-1;i>=0;i--) if(ch[i].drop) ch.splice(i,1); }
-  ch.sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
   const tot=ch.reduce((x,c)=>x+c.d,0);
   const pctTxt=(a,b)=>(a?((b-a)/a*100).toFixed(0)+'%':'');
-  const short=x=>{ const l=s(x.label); return l.length>62?l.slice(0,62).replace(/[\s,;:]+$/,'')+'…':l; };
-  const bullets=[];
-  for(const c of ch.slice(0,8)){
-    const amt=(c.d<0?'−':'+')+moneyU(Math.abs(c.d)/fx);
-    if(c.kind==='swap') bullets.push('• '+t('genSwap')+': '+short(c)+' → '+(s(c.to).length>52?s(c.to).slice(0,52)+'…':s(c.to))+' — '+amt);
-    else if(c.kind==='removed') bullets.push('• '+t('genRemoved')+': '+short(c)+' — '+amt);
-    else if(c.kind==='added') bullets.push('• '+t('genAdded')+': '+short(c)+' — '+amt);
-    else if(c.kind==='rate') bullets.push('• '+short(c)+' — '+t('genRate')+' '+money(c.rA,'VND')+' → '+money(c.rB,'VND')+' ('+pctTxt(c.rA,c.rB)+') — '+amt);
-    else if(c.kind==='qty') bullets.push('• '+short(c)+' — '+t('genQty')+' '+fmtQty(c.qA)+' → '+fmtQty(c.qB)+' ('+pctTxt(c.qA,c.qB)+') — '+amt);
-    else bullets.push('• '+short(c)+' — '+amt);
+  /* Gom các thay đổi cùng loại về một dòng: cùng món (thảm, rèm…) hoặc cùng nhóm FF&E bị bỏ */
+  const groups=new Map();
+  for(const c of ch){
+    const key=(c.kind==='removed'||c.kind==='added')
+      ? c.kind+'|'+norm(c.sub||c.cat)          // bỏ/thêm: gom theo nhóm hạng mục
+      : c.kind+'|'+norm(c.base);               // đổi giá/KL/vật liệu: gom theo món
+    if(!groups.has(key)) groups.set(key,{kind:c.kind,cat:c.sub||c.cat,items:[],d:0});
+    const g=groups.get(key); g.items.push(c); g.d+=c.d;
   }
-  if(ch.length>8){ const rest=ch.slice(8).reduce((x,c)=>x+c.d,0);
-    bullets.push('• '+t('genOther').replace('$N',ch.length-8)+' — '+(rest<0?'−':'+')+moneyU(Math.abs(rest)/fx)); }
+  const gl=[...groups.values()].sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
+  const names=g=>{ const seen=[]; for(const c of g.items){ const b=cut(c.base,44); if(!seen.includes(b)) seen.push(b); }
+    return seen.slice(0,4).join(', ')+(seen.length>4?', …':''); };
+  const nLine=g=>g.items.length>1?' ('+g.items.length+' '+t('genLines')+')':'';
+  const bullets=[];
+  for(const g of gl.slice(0,14)){
+    const amt=(g.d<0?'−':'+')+moneyU(Math.abs(g.d)/fx);
+    const one=g.items[0];
+    if(g.kind==='swap'){
+      bullets.push('• '+t('genSwap')+': '+cut(one.base,52)+' → '+cut(one.to,52)+nLine(g)+' — '+amt);
+    } else if(g.kind==='removed'||g.kind==='added'){
+      const w=g.kind==='removed'?t('genRemoved'):t('genAdded');
+      bullets.push('• '+w+(g.items.length>1?' ('+esc0(g.cat)+')':'')+': '+names(g)+nLine(g)+' — '+amt);
+    } else if(g.kind==='rate'){
+      const ps=g.items.filter(c=>c.rA&&c.rB).map(c=>(c.rB-c.rA)/c.rA*100);
+      const rng=ps.length?(ps.length>1&&Math.abs(Math.max(...ps)-Math.min(...ps))>1
+        ? Math.min(...ps).toFixed(0)+'…'+Math.max(...ps).toFixed(0)+'%' : ps[0].toFixed(0)+'%'):'';
+      bullets.push('• '+cut(one.base,56)+' — '+t('genRate')+' '+rng+
+        (g.items.length===1?' ('+money(one.rA,'VND')+' → '+money(one.rB,'VND')+')':'')+nLine(g)+' — '+amt);
+    } else if(g.kind==='qty'){
+      bullets.push('• '+cut(one.base,56)+' — '+t('genQty')+
+        (g.items.length===1?' '+fmtQty(one.qA)+' → '+fmtQty(one.qB)+' ('+pctTxt(one.qA,one.qB)+')':'')+nLine(g)+' — '+amt);
+    } else bullets.push('• '+cut(one.base,58)+nLine(g)+' — '+amt);
+  }
+  if(gl.length>14){ const rest=gl.slice(14).reduce((x,g)=>x+g.d,0);
+    const nl=gl.slice(14).reduce((x,g)=>x+g.items.length,0);
+    bullets.push('• '+t('genOther').replace('$N',nl)+' — '+(rest<0?'−':'+')+moneyU(Math.abs(rest)/fx)); }
   const head=(tot<0?t('genSaving'):t('genIncrease'))+' '+(tot<0?'−':'+')+moneyU(Math.abs(tot)/fx)+
     ' ('+(tot<0?'−':'+')+money(Math.abs(tot),'VND')+' ₫) · '+t('genFrom').replace('$N',ch.length)+':';
   /* Con số trên là cộng từ các DÒNG CHI TIẾT; nếu bảng (lấy từ sheet tổng hợp) ghi khác
