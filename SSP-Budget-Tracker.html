@@ -283,6 +283,13 @@ en:{
  anKeysDiff:'⚠ The two sources disagree. The table uses the figure counted from the estimate summary — check the room-type columns of the summary sheet in this version.',
  anKeysOk:'Both sources agree.', anKeysClick:'click to see the breakdown',
  noteOpen:'Open in a bigger box', noteT:'Reason / comment', noteHint:'Line breaks are kept and carried into the Excel and PDF report.',
+ genBtn:'✨ Draft the rationale', genT:'Draft the rationale from the line-item differences',
+ genSaving:'Saving', genIncrease:'Increase', genFrom:'$N changed lines', genOther:'and $N other lines',
+ genRemoved:'Removed', genAdded:'Added', genRate:'unit rate', genQty:'qty', genSwap:'Changed',
+ genMismatch:'⚠ The table above shows $T for this row because it reads the summary sheet, while these bullets add up the detail lines — the two disagree by $D in the file (see 🔍 Check totals).',
+ genAsk:'Write a first draft of the reason for every area row, from the actual line-by-line differences between the two versions? Rows where you already wrote something are kept — tick the box below to overwrite them too.',
+ genOverwrite:'Overwrite the notes I already wrote', genDone:'Draft written into $N rows',
+ genNote:'This is a factual first draft (what changed, by how much). Edit it into your own wording before reporting — the tracker cannot know the commercial reason behind a change.',
  rec:'🔍 Check totals', recT:'Summary line vs sum of its detail lines', recSummary:'Summary sheet', recDetail:'Sum of detail lines', recGap:'Difference', recLines:'lines',
  recOk:'Every summary line matches the sum of its detail lines exactly.',
  recBad:'Some summary lines do not equal the sum of their detail lines. The difference is inside the Excel file itself — the summary sheet and the detail sheets disagree, or part of the cost sits on a sheet that is hidden in the workbook (listed below). Ask the QS which figure is right.',
@@ -429,6 +436,13 @@ vi:{
  anKeysDiff:'⚠ Hai nguồn không khớp nhau. Bảng đang dùng số đếm từ bảng tổng hợp — hãy kiểm tra các cột loại phòng ở sheet tổng hợp của phiên bản này.',
  anKeysOk:'Hai nguồn khớp nhau.', anKeysClick:'bấm để xem chi tiết',
  noteOpen:'Mở ô lớn hơn', noteT:'Lý do / ghi chú', noteHint:'Xuống dòng được giữ nguyên và đưa vào cả file Excel lẫn PDF.',
+ genBtn:'✨ Tự soạn lý do', genT:'Soạn lý do từ chênh lệch từng dòng BOQ',
+ genSaving:'Tiết kiệm', genIncrease:'Tăng', genFrom:'$N dòng thay đổi', genOther:'và $N dòng khác',
+ genRemoved:'Bỏ', genAdded:'Thêm', genRate:'đơn giá', genQty:'khối lượng', genSwap:'Đổi',
+ genMismatch:'⚠ Bảng ở trên ghi $T cho dòng này vì lấy từ sheet tổng hợp, còn các gạch đầu dòng đây cộng từ dòng chi tiết — hai nguồn lệch nhau $D trong file (xem 🔍 Đối chiếu số liệu).',
+ genAsk:'Soạn bản nháp lý do cho tất cả các dòng khu vực, dựa trên chênh lệch thật giữa hai phiên bản? Những dòng bạn đã tự ghi sẽ được giữ nguyên — tick ô bên dưới nếu muốn ghi đè luôn.',
+ genOverwrite:'Ghi đè cả những ghi chú tôi đã viết', genDone:'Đã soạn nháp cho $N dòng',
+ genNote:'Đây là bản nháp thuần số liệu (thay đổi cái gì, bao nhiêu). Hãy biên tập lại theo cách diễn đạt của bạn trước khi trình — app không thể biết lý do thương mại đằng sau mỗi thay đổi.',
  rec:'🔍 Đối chiếu số liệu', recT:'Dòng tổng hợp so với tổng các dòng chi tiết', recSummary:'Sheet tổng hợp', recDetail:'Tổng dòng chi tiết', recGap:'Chênh lệch', recLines:'dòng',
  recOk:'Mọi dòng tổng hợp đều bằng đúng tổng các dòng chi tiết.',
  recBad:'Có dòng tổng hợp không bằng tổng các dòng chi tiết. Chênh lệch nằm trong chính file Excel — sheet tổng hợp và sheet chi tiết không khớp nhau, hoặc một phần chi phí nằm ở sheet đang bị ẩn trong workbook (liệt kê bên dưới). Nên hỏi lại QS số nào đúng.',
@@ -532,7 +546,7 @@ function activeVer(){ return ver(state.activeId) || state.versions[state.version
 
 /* ============================== parser ============================== */
 /* Tăng số này mỗi khi cải tiến cách đọc file → phiên bản nạp bằng bản cũ được đánh dấu "cần đọc lại" */
-const PARSE_VER=5;
+const PARSE_VER=6;
 /* Dòng có TỰ nói lên nó là gì không? "SW-17 Bathtub; freestanding type" thì có —
    không được gắn tên món ở trên vào. "overall size 2450x2750mm", "100mm thick",
    "to bathroom floor" thì không — phải mượn tên món của dòng cha. */
@@ -635,10 +649,14 @@ function parseDetail(name,rows){
     if(colRemark>=0&&c>=colRemark) break;
     const lbl=s(Hff[c]), code=s(S[c]);
     if(!lbl&&!code) continue;
-    if(/corridor|lift/i.test(lbl)||/corridor|lift/i.test(code)) corrCols.push(c);
-    else if(/amount|room|suite/i.test(lbl)) roomCols.push(c);
+    if(/corridor|lift/i.test(lbl)||/corridor|lift/i.test(code)) corrCols.push({c,key:/corridor|lift/i.test(lbl)?lbl:code});
+    else if(/amount|room|suite/i.test(lbl)) roomCols.push({c,key:code||lbl});
   }
-  const sumCols=(row,cols)=>{ let t2=null; for(const c of cols){ const v2=n(row[c]); if(v2!=null) t2=(t2||0)+v2; } return t2; };
+  const sumCols=(row,cols)=>{ let t2=null; for(const o of cols){ const v2=n(row[o.c]); if(v2!=null) t2=(t2||0)+v2; } return t2; };
+  /* tiền theo TỪNG mã khu vực (chỉ lưu ô khác 0) để tách chính xác phòng thường / suite / hành lang */
+  const byCode=(row)=>{ const m={};
+    for(const o of roomCols.concat(corrCols)){ const v2=n(row[o.c]); if(v2) m[s(o.key).replace(/\s+/g,' ')]=(m[s(o.key).replace(/\s+/g,' ')]||0)+v2; }
+    return Object.keys(m).length?m:undefined; };
   const items=[]; let group='',category='',subject='',subgroup='',emitted=false;
   for(let r=hr+2;r<rows.length;r++){
     const row=rows[r]||[]; const a=row[0];
@@ -679,7 +697,7 @@ function parseDetail(name,rows){
       subject:(needsParent(desc)&&(subject||subgroup)&&norm(subject||subgroup)!==norm(desc))?(subject||subgroup):undefined,
       subjIsHead:(needsParent(desc)&&!subject)||undefined,
       no:s(a), desc, qty, unit:s(row[colUnit]), supply:sup, install:ins, rate, total:total||0, incl:inclFlag||undefined,
-      amtRoom:sumCols(row,roomCols), amtCorr:sumCols(row,corrCols) });
+      amtRoom:sumCols(row,roomCols), amtCorr:sumCols(row,corrCols), amtByCode:byCode(row) });
     emitted=true;
   }
   return items.length?items:null;
@@ -2081,6 +2099,77 @@ function anPair(rowsA,rowsB){
     const d=(av==null)?null:r.total-av; const dp=(av)?d/Math.abs(av):null;
     return Object.assign({},r,{a:av,b:r.total,d,dp,aKeys:a?a.keys:null}); });
 }
+/* ---------- Tự sinh tóm tắt thay đổi (VE) từ chênh lệch từng dòng BOQ ---------- */
+function anCodeGroup(code){ const c=s(code);
+  if(/corridor|lift/i.test(c)) return 'corridor';
+  if(/^(ps|js)/i.test(c)) return 'suites';
+  if(/^(sk|st|gk|gt|cr)/i.test(c)) return 'rooms';
+  return 'other'; }
+function itemGroupAmt(it,gid){
+  if(!it) return 0;
+  if(gid==='mep') return /mep/i.test(it.sheet)?(it.total||0):0;
+  if(/mep/i.test(it.sheet)) return 0;               // MEP tính riêng ở dòng MEP
+  const m=it.amtByCode;
+  if(!m) return gid==='corridor'?(it.amtCorr||0):(gid==='rooms'?(it.amtRoom||0):0);
+  let t2=0; for(const k in m) if(anCodeGroup(k)===gid) t2+=m[k]||0;
+  return t2; }
+function anPairItems(A,B){
+  const keyed=list=>{ const c={}, m=new Map();
+    for(const i of (list||[])){ const b=norm(i.sheet)+'||'+norm(i.category||i.group)+'||'+norm(i.subject)+'||'+norm(i.desc);
+      c[b]=(c[b]||0)+1; m.set(b+'#'+c[b],i); } return m; };
+  const mA=keyed(A.items), mB=keyed(B.items), out=[];
+  for(const k of new Set([...mA.keys(),...mB.keys()])) out.push({a:mA.get(k)||null,b:mB.get(k)||null});
+  return out; }
+function anGenSummary(A,B,gid,fx,rowDelta){
+  const pairs=anPairItems(A,B); const ch=[];
+  for(const p of pairs){
+    const av=itemGroupAmt(p.a,gid), bv=itemGroupAmt(p.b,gid);
+    if(!av&&!bv) continue;
+    const d=bv-av; if(Math.abs(d)<1) continue;
+    const src=p.b||p.a;
+    const rA=p.a?p.a.rate:null, rB=p.b?p.b.rate:null, qA=p.a?p.a.qty:null, qB=p.b?p.b.qty:null;
+    let kind='other';
+    if(!p.a) kind='added'; else if(!p.b||bv===0) kind='removed';
+    else if(rA&&rB&&Math.abs(rB-rA)/rA>0.005) kind='rate';
+    else if(qA&&qB&&Math.abs(qB-qA)/qA>0.005) kind='qty';
+    ch.push({d, kind, label:itemLabel(src), cat:src.category||src.group, rA,rB,qA,qB});
+  }
+  if(!ch.length) return '';
+  /* Gộp cặp "bỏ A / thêm B" cùng loại thành MỘT thay đổi vật liệu (vd đá marble → gạch),
+     đúng cách diễn đạt trong slide VE, và cho ra chênh lệch thật thay vì 2 dòng ngược chiều. */
+  { const rem=ch.filter(c=>c.kind==='removed'), add=ch.filter(c=>c.kind==='added'), used=new Set();
+    for(const r of rem){ let best=null,bs=0;
+      for(const a of add){ if(used.has(a)) continue;
+        if(norm(a.cat)!==norm(r.cat)) continue;
+        const sim=descSim(r.label,a.label); if(sim>=0.5&&sim>bs){ bs=sim; best=a; } }
+      if(best){ used.add(best); r.kind='swap'; r.to=best.label; r.d=r.d+best.d; best.drop=true; } }
+    for(let i=ch.length-1;i>=0;i--) if(ch[i].drop) ch.splice(i,1); }
+  ch.sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
+  const tot=ch.reduce((x,c)=>x+c.d,0);
+  const pctTxt=(a,b)=>(a?((b-a)/a*100).toFixed(0)+'%':'');
+  const short=x=>{ const l=s(x.label); return l.length>62?l.slice(0,62).replace(/[\s,;:]+$/,'')+'…':l; };
+  const bullets=[];
+  for(const c of ch.slice(0,8)){
+    const amt=(c.d<0?'−':'+')+moneyU(Math.abs(c.d)/fx);
+    if(c.kind==='swap') bullets.push('• '+t('genSwap')+': '+short(c)+' → '+(s(c.to).length>52?s(c.to).slice(0,52)+'…':s(c.to))+' — '+amt);
+    else if(c.kind==='removed') bullets.push('• '+t('genRemoved')+': '+short(c)+' — '+amt);
+    else if(c.kind==='added') bullets.push('• '+t('genAdded')+': '+short(c)+' — '+amt);
+    else if(c.kind==='rate') bullets.push('• '+short(c)+' — '+t('genRate')+' '+money(c.rA,'VND')+' → '+money(c.rB,'VND')+' ('+pctTxt(c.rA,c.rB)+') — '+amt);
+    else if(c.kind==='qty') bullets.push('• '+short(c)+' — '+t('genQty')+' '+fmtQty(c.qA)+' → '+fmtQty(c.qB)+' ('+pctTxt(c.qA,c.qB)+') — '+amt);
+    else bullets.push('• '+short(c)+' — '+amt);
+  }
+  if(ch.length>8){ const rest=ch.slice(8).reduce((x,c)=>x+c.d,0);
+    bullets.push('• '+t('genOther').replace('$N',ch.length-8)+' — '+(rest<0?'−':'+')+moneyU(Math.abs(rest)/fx)); }
+  const head=(tot<0?t('genSaving'):t('genIncrease'))+' '+(tot<0?'−':'+')+moneyU(Math.abs(tot)/fx)+
+    ' ('+(tot<0?'−':'+')+money(Math.abs(tot),'VND')+' ₫) · '+t('genFrom').replace('$N',ch.length)+':';
+  /* Con số trên là cộng từ các DÒNG CHI TIẾT; nếu bảng (lấy từ sheet tổng hợp) ghi khác
+     thì nói rõ, vì đó là do hai sheet trong file chưa khớp nhau. */
+  let tail='';
+  if(rowDelta!=null&&Math.abs(rowDelta-tot)>1000)
+    tail='\n'+t('genMismatch').replace('$T',(rowDelta<0?'−':'+')+moneyU(Math.abs(rowDelta)/fx))
+      .replace('$D',moneyU(Math.abs(rowDelta-tot)/fx));
+  return head+'\n'+bullets.join('\n')+tail;
+}
 function renderAnalysis(){
   const el=$('#tab-analysis');
   const vs=state.versions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -2124,6 +2213,7 @@ function renderAnalysis(){
   el.innerHTML=`
   <div class="panel"><h3>📑 ${t('anT')}
     <span style="margin-left:auto" class="noprint">
+      <button class="btn sm gold" title="${t('genT')}" onclick="App.anGenAsk()">${t('genBtn')}</button>
       <button class="btn sm ghost" onclick="App.tabXlsx()">${t('exportTab')}</button>
       <button class="btn sm ghost" onclick="App.tabPdf()">${t('printTab')}</button></span></h3>
     <div class="help">${t('anTip')}</div>
@@ -2687,6 +2777,26 @@ const App={
    setTimeout(()=>{ const b=document.getElementById('anNoteBox'); if(b){ b.focus(); b.setSelectionRange(b.value.length,b.value.length); } },60); },
  anNoteSave(id){ const b=document.getElementById('anNoteBox'); if(!b) return;
    App.anNote(id,b.value); closeModal(); renderAnalysis(); },
+ anGenAsk(){ const A=ver(anState.a),B=ver(anState.b);
+   if(!A||!B||A.id===B.id){ toast(t('anNoData')); return; }
+   modal(`<h3>✨ ${t('genT')}</h3><div class="help">${t('genAsk')}</div>
+     <div class="okbox" style="margin-top:8px">${t('genNote')}</div>
+     <label style="display:block;margin-top:10px;font-size:13px"><input type="checkbox" id="anGenOv"> ${t('genOverwrite')}</label>
+     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+       <button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>
+       <button class="btn gold" onclick="App.anGenRun()">${t('genBtn')}</button></div>`); },
+ anGenRun(){ const ov=(document.getElementById('anGenOv')||{}).checked;
+   const A=ver(anState.a),B=ver(anState.b); const fx=B.fx||state.fx;
+   closeModal(); state.anNotes=state.anNotes||{};
+   let n=0;
+   const paired=anPair(anData(A).rows,anData(B).rows);
+   for(const gid of ['rooms','suites','corridor','mep']){
+     if(state.anNotes[gid]&&!ov) continue;
+     const pr=paired.find(r=>r.id===gid);
+     const txt=anGenSummary(A,B,gid,fx,pr?pr.d:null);
+     if(txt){ state.anNotes[gid]=txt; n++; }
+   }
+   save(); renderAnalysis(); toast('✨ '+t('genDone').replace('$N',n)); },
  // rate studio
  rateSet(k,v2){ rateState[k]=v2; if(k==='q'){ debounceRender(renderRates); } else renderRates(); },
  readQuoteFiles(files){ if(typeof XLSX==='undefined'){ toast(t('libFail')); return; }
