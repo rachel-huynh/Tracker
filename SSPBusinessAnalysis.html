@@ -2438,6 +2438,20 @@ function industryMonthly(met){
               property ÷ benchmark × 100 (STR publishes no index against them). */
 const IDX_BENCH=[['comp','Comp set'],['ind','HCMC Luxury'],['subcls','Lux &amp; Upper Upscale'],['submkt','HCMC market']];
 window.__setIdxBench=v=>{ state.idxBench=v; renderMarket(derive()); };
+/* Benchmark LEVELS per month for the chosen index benchmark, so the period aggregate can be
+   re-derived from levels rather than from the monthly indexes. */
+function benchLevelsFor(kind){
+  const H=mergedStarHistory();
+  if(kind==='comp') return {occ:i=>H.comp.occ[i], revpar:i=>H.comp.revpar[i]};
+  if(kind==='ind'){ const o=industryMonthly('occ'), r=industryMonthly('revpar');
+    return {occ:(i,mk)=>o[mk]??null, revpar:(i,mk)=>r[mk]??null}; }
+  const ent=kind;                                   // 'subcls' | 'submkt' — Summary levels
+  const lv=met=>{ const m={};
+    for(const mk of Object.keys(state.store.months)){ const s=starOf(mk)?.summary?.[met]?.[ent]?.cm;
+      if(s!=null) m[mk]=s; } return m; };
+  const o=lv('occ'), r=lv('revpar');
+  return {occ:(i,mk)=>o[mk]??null, revpar:(i,mk)=>r[mk]??null};
+}
 function idxTrendSeries(kind){
   const METS=['occ','adr','revpar'];
   const m={};
@@ -2467,6 +2481,28 @@ function idxTrendSeries(kind){
   for(const met of METS) out[met]=months.map(k=>m[k][met]??null);
   out.lyOf=arr=>months.map(k=>{ const i=months.indexOf((+k.slice(0,4)-1)+'-'+k.slice(5,7)); return i>=0?arr[i]:null; });
   return out;
+}
+/* Period ("accumulated") index across a set of months. An index is a RATIO, so it must be
+   re-derived from the underlying levels — averaging the monthly indexes is wrong, and summing
+   them is meaningless. Levels are weighted by DAYS IN MONTH, which is exact for a property of
+   fixed room count (supply = rooms × days) and a close proxy for the benchmark, whose
+   inventory moves slowly. ARI then comes from STR's own identity ARI = RGI ÷ MPI × 100 rather
+   than being weighted separately, which keeps the three mutually consistent.
+   Returns null for a metric when either side is missing for every month. */
+function idxPeriodAgg(months,benchLevels){
+  const H=mergedStarHistory();
+  const days=mk=>{const [y,m]=mk.split('-').map(Number); return new Date(y,m,0).getDate();};
+  const wsum=(pick)=>{ let a=0,b=0,n=0;
+    for(const mk of months){ const i=H.months.indexOf(mk); if(i<0) continue;
+      const my=pick.my(i,mk), bv=pick.bench(i,mk);
+      if(my==null||bv==null) continue;
+      const w=days(mk); a+=my*w; b+=bv*w; n++; }
+    return n&&b? {idx:a/b*100,n} : null;
+  };
+  const occ=wsum({my:i=>H.my.occ[i], bench:(i,mk)=>benchLevels.occ(i,mk)});
+  const rev=wsum({my:i=>H.my.revpar[i], bench:(i,mk)=>benchLevels.revpar(i,mk)});
+  const adr=(occ&&rev)? {idx:rev.idx/occ.idx*100, n:Math.min(occ.n,rev.n)} : null;
+  return {occ,adr,revpar:rev};
 }
 function mergedStarHistory(upto){
   const m={};
@@ -4983,6 +5019,18 @@ function renderMarket(d){
           ${IDX_BENCH.map(([k,l])=>`<button class="heatbtn ${idxBench===k?'on':''}" onclick="__setIdxBench('${k}')"
             ${idxBenchHas[k]?'':'disabled title="Not available in the loaded STAR files"'}>${l}</button>`).join(' ')}</div>
         <div class="chartbox" style="margin-top:4px"><canvas id="chIdxTrend"></canvas></div>
+        ${(()=>{ if(!IB.months.length) return '';
+          const inWin=IB.months.filter(m2=>!(state.tsFrom||state.tsTo)||tsInRange(m2));
+          if(!inWin.length) return '';
+          const A=idxPeriodAgg(inWin,benchLevelsFor(idxBench));
+          const cell=(lbl,o)=>`<span style="display:inline-block;min-width:104px"><b>${lbl}</b>
+            <span style="font-size:14px;font-weight:700;color:var(--${o&&o.idx>=100?'green':'red'})">${o?n1(o.idx,1):'—'}</span></span>`;
+          return `<div class="small" style="margin-top:8px;padding:6px 10px;background:#f3f5f9;border-radius:6px">
+            <b>Whole period ${fmtMonthKey(inWin[0])} – ${fmtMonthKey(inWin[inWin.length-1])}</b>
+            <span style="color:var(--grey)">(${inWin.length} months)</span> &nbsp;
+            ${cell('MPI',A.occ)} ${cell('ARI',A.adr)} ${cell('RGI',A.revpar)}
+            <div style="margin-top:2px;color:var(--grey)">Re-derived from the underlying levels weighted by days in each month — <b>not</b> an average of the monthly indexes, which would over-weight short and low-occupancy months. ARI follows STR's identity ARI = RGI ÷ MPI × 100, so the three stay consistent.</div></div>`;
+        })()}
         <div class="small" style="margin-top:6px">100 = parity with the chosen benchmark. ${
           idxBench==='comp' ? 'Comp set — STR\'s published MPI / ARI / RGI, covering the full merged history.'
           : idxBench==='ind' ? 'HCMC Luxury — the Industry sheet\'s own published index; each Monthly STAR carries 18 months, so the series is as long as your STAR uploads reach.'
