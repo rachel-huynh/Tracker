@@ -2190,13 +2190,14 @@ function anGenSummary(A,B,gid,fx,rowDelta){
     const bag=c.kind==='removed'?g.removed:(c.kind==='added'?g.added:g.changed);
     if(!bag.includes(nm)) bag.push(nm);
   }
-  const part=(arr,word)=>{ if(!arr.length) return '';
-    const shown=arr.slice(0,3).join(', ');
-    return word+' ('+arr.length+'): '+shown+(arr.length>3?', …':''); };
+  /* Mỗi loại thay đổi (đổi / bỏ / thêm) là MỘT DÒNG riêng, có tên bộ môn ở đầu
+     để dòng nào đọc riêng cũng hiểu được (khi xem trong Excel/PDF). */
   const bullets=[];
   for(const key of DISC_ORDER){ const g=byDisc.get(key); if(!g) continue;
-    const bits=[part(g.changed,t('genSwapW')),part(g.removed,t('genRemoved')),part(g.added,t('genAdded'))].filter(Boolean);
-    if(bits.length) bullets.push('• '+t('disc_'+key)+' — '+bits.join('; '));
+    for(const [arr,word] of [[g.changed,t('genSwapW')],[g.removed,t('genRemoved')],[g.added,t('genAdded')]]){
+      if(!arr.length) continue;
+      bullets.push('• '+t('disc_'+key)+' — '+word+' ('+arr.length+'): '+arr.slice(0,4).join(', ')+(arr.length>4?', …':''));
+    }
   }
   const head=(tot<0?t('genSaving'):t('genIncrease'))+' '+(tot<0?'−':'+')+moneyU(Math.abs(tot)/fx)+
     ' ('+(tot<0?'−':'+')+money(Math.abs(tot),'VND')+' ₫) · '+t('genFrom').replace('$N',ch.length)+':';
