@@ -4820,12 +4820,15 @@ function renderMarket(d){
       if(sp==='cm'){ const v=lyAt(met,ent); if(v!=null) return v; }
       return (cur!=null&&chg!=null&&chg!==-100)? cur/(1+chg/100) : null;
     };
-    const lyP=showLy?lyLvl(pv,pc,'my'):null;
-    const lyC=showLy?lyLvl(cVal,cChg,'comp'):null;
+    /* Computed ALWAYS, displayed only when "+ Last year" is on: the benchmark's index % change
+       is derived from these, so gating the computation on showLy would make that change vanish
+       in the This-year view. Display gating is L() at the call site. */
+    const lyP=lyLvl(pv,pc,'my');
+    const lyC=lyLvl(cVal,cChg,'comp');
     /* LY index from the LY levels, not from the index's own % change — the two agree, and
        this stays correct when only one side of the pair is published. */
-    const lyX=showLy? ((sp==='cm'&&lyAt(met,'idx')!=null) ? lyAt(met,'idx')
-                      : ((lyP!=null&&lyC)? lyP/lyC*100 : null)) : null;
+    const lyX=(sp==='cm'&&lyAt(met,'idx')!=null) ? lyAt(met,'idx')
+             : ((lyP!=null&&lyC)? lyP/lyC*100 : null);
     /* value / YoY % / LY stacked per cell — see snapTd. The benchmark and its index carry
        their own last-year level from the Industry sheet's prior-year columns, so every column
        now shows a real LY figure rather than a placeholder. */
@@ -4838,13 +4841,17 @@ function renderMarket(d){
     const miLy= sumEnt
               ? ((lyP!=null&&mLy)? lyP/mLy*100 : null)
               : (ind?.metrics?.[met]?.[sp+'Ly']?.idx ?? null);
+    /* % change of the benchmark index. STR publishes it for the Industry sheet; for the two
+       Summary-sourced benchmarks it does not, so derive it from the index and its own LY —
+       which reduces to (1+propChg)/(1+benchChg)−1, the standard index-change identity. */
+    const micF = mic ?? ((miv!=null&&miLy)? (miv/miLy-1)*100 : null);
     const L=v=>showLy?v:undefined;
     snapRows+=`<tr><td>${label}</td>
       ${snapTd(pv,pc,L(lyP),fmt)}
       ${snapTd(cVal,cChg,L(lyC),fmt)}
       ${snapTd(iv,ic,L(lyX),idx)}
       ${snapTd(mv,mc,L(mLy),fmt)}
-      ${snapTd(miv,mic,L(miLy),idx)}
+      ${snapTd(miv,micF,L(miLy),idx)}
       ${rankCell(met)}</tr>`;
   }
 
