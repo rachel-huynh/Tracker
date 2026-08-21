@@ -425,6 +425,15 @@ const MAP = {
        competitive supply list. Single "Properties" sheet, so it cannot collide with the
        STAR types above (strTemp needs Compset AND Industry; Monthly STAR has "Comp"). */
     { type:'props',      all:[/^Properties$/i] },
+    /* STR monthly full-data extract (STR Report-Monthly full data\*_Fulldata.xlsx): one flat
+       row per month back to 2010, 149 columns. Its sheet is named after the property, so it
+       is identified by its header row instead. */
+    { type:'strFull',    content:wb=>{
+        const ws=wb.Sheets[wb.SheetNames[0]]; if(!ws) return false;
+        const g=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null,range:0});
+        const h=(g[0]||[]).map(c=>String(c??'').trim());
+        return h.includes('Period')&&h.includes('Occ Index')&&h.includes('Comp Set ADR');
+      } },
   ],
 
   /* Engineering PDF hot-spot dictionaries (mention counting) */
@@ -884,7 +893,11 @@ function W(warns,msg){ warns.push(msg); }
 function detectType(wb){
   const names=wb.SheetNames.map(s=>s.trim());
   for(const d of MAP.detect){
-    if(d.all.every(re=>names.some(n=>re.test(n)))) return d.type;
+    /* `all` matches SHEET NAMES; `content` inspects the workbook, for exports whose sheet is
+       named after the property (the STR full-data extract) and so cannot be matched by name */
+    if(d.all&&!d.all.every(re=>names.some(n=>re.test(n)))) continue;
+    if(d.content&&!d.content(wb)) continue;
+    if(d.all||d.content) return d.type;
   }
   return null;
 }
@@ -1320,6 +1333,92 @@ function parseSegmentation(wb,warns){
   }
   if(!out.rows.length) W(warns,'Segmentation: no data rows parsed');
   return out;
+}
+
+/* ---------- STR monthly full-data extract ----------
+   One flat row per month (Jan-2010 → current), 149 columns, covering property and comp set
+   levels, indexes, ranks and % changes for the month plus YTD / 3M / 12M.
+   CURRENCY: the whole export is USD, while every STAR workbook the app parses is VND. Money
+   is therefore stored here AS USD and never silently mixed — see strFullMoneyVND(), which
+   converts only for months with a genuinely known FX rate. Occupancy, indexes, ranks, supply
+   and demand are currency-free and safe to use anywhere. */
+const SF_MAP={
+  occ:'Occ', compOcc:'Comp Set Occ', occIdx:'Occ Index',
+  adr:'ADR', compAdr:'Comp Set ADR', adrIdx:'ADR Index',
+  revpar:'RevPAR', compRevpar:'Comp Set RevPAR', revparIdx:'RevPAR Index',
+  occChg:'Occ % Chg', adrChg:'ADR % Chg', revparChg:'RevPAR % Chg',
+  supply:'Supply', demand:'Demand', revenue:'Revenue',
+  /* ranks — the month plus the three rolling periods the snapshot offers */
+  occRank:'Occ Rank', occRankYtd:'Occ Rank YTD', occRank3:'Occ Rank 3M', occRank12:'Occ Rank 12M',
+  adrRank:'ADR Rank', adrRankYtd:'ADR Rank YTD', adrRank3:'ADR Rank 3M', adrRank12:'ADR Rank 12M',
+  revparRank:'RevPAR Rank', revparRankYtd:'RevPAR Rank YTD', revparRank3:'RevPAR Rank 3M', revparRank12:'RevPAR Rank 12M',
+  /* period levels + indexes, used to cross-check the Summary sheet */
+  occYtd:'Occ YTD', adrYtd:'ADR YTD', revparYtd:'RevPAR YTD',
+  occIdxYtd:'Occ Index YTD', adrIdxYtd:'ADR Index YTD', revparIdxYtd:'RevPAR Index YTD',
+};
+function parseStrFull(wb,warns){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const gd=grid(ws);
+  const H=(gd[0]||[]).map(c=>cellStr(c).trim());
+  const ci=n=>H.indexOf(n);
+  if(ci('Period')<0) throw new Error('STR full data: "Period" column not found');
+  const cur=ci('Currency Code');
+  const col={}; for(const [k,label] of Object.entries(SF_MAP)){ const j=ci(label); if(j>=0) col[k]=j; else W(warns,'STR full data: column missing — '+label); }
+  const months={}; const currencies=new Set();
+  for(let r=1;r<gd.length;r++){
+    const row=gd[r]||[]; const mk=monthKeyFromText(cellStr(row[ci('Period')]));
+    if(!mk) continue;
+    if(cur>=0&&cellStr(row[cur])) currencies.add(cellStr(row[cur]).trim());
+    const o={};
+    for(const k of Object.keys(col)){
+      const raw=row[col[k]];
+      o[k]= /Rank$|Rank\d|Rank[A-Z]/.test(k)||/rank/i.test(k) ? (cellStr(raw)||null) : num(raw);
+    }
+    months[mk]=o;
+  }
+  const keys=Object.keys(months).sort();
+  if(!keys.length) W(warns,'STR full data: no monthly rows parsed');
+  const currency=[...currencies][0]||null;
+  if(currencies.size>1) W(warns,'STR full data: mixed currency codes — '+[...currencies].join(', '));
+  return {months, currency, from:keys[0], to:keys[keys.length-1], count:keys.length};
+}
+/* STR's OWN VND/USD rate, implied by dividing a VND STAR figure by the same figure in the USD
+   extract. Verified on real months: the rate is a WHOLE NUMBER (26,090 / 26,335 / 26,230) and
+   converting the extract's USD back with it reproduces the STAR workbook's VND to ZERO
+   difference on ADR, RevPAR, comp ADR and comp RevPAR — so the extract can safely drive money
+   figures, which it could not if we used the app's own P&L-derived FX.
+   `exact` months are those where both sources exist; other months borrow the nearest such rate
+   (STR moves it only slightly month to month) and are reported as inferred in Data Quality. */
+let _sfRateCache=null, _sfRateStamp='';
+function strFullRates(){
+  const stamp=(state.store.strFull?.updated||'')+'|'+Object.keys(state.store.months).join(',');
+  if(_sfRateCache&&_sfRateStamp===stamp) return _sfRateCache;
+  const SF=state.store.strFull; const exact={};
+  if(SF) for(const mk of Object.keys(state.store.months)){
+    const st=starOf(mk), f=SF.months[mk];
+    if(!st||st.provisional||!f) continue;
+    const vnd=st.summary?.adr?.prop?.cm, usd=f.adr;
+    if(vnd&&usd){ const r=vnd/usd; if(isFinite(r)&&r>1000) exact[mk]=Math.round(r); }
+  }
+  _sfRateStamp=stamp; _sfRateCache={exact}; return _sfRateCache;
+}
+/* Borrowing the nearest rate is only defensible NEAR a month we can pin. STR's VND/USD moves
+   a little month to month but a lot over years: Jan-2010's true rate is about 19,000 against
+   today's ~26,200, so an uncapped search would overstate 2010 money by a third. Beyond this
+   window the extract's money is withheld and the month is left out of the history entirely. */
+const SF_RATE_MAX_MONTHS=18;
+function strFullRate(mk){
+  const {exact}=strFullRates();
+  if(exact[mk]) return {rate:exact[mk],exact:true};
+  const mi=ym=>{const [y,m]=String(ym).split('-').map(Number);return y*12+m;};
+  let best=null,bestD=SF_RATE_MAX_MONTHS+1;
+  for(const k of Object.keys(exact)){ const d=Math.abs(mi(k)-mi(mk)); if(d<bestD){bestD=d;best=exact[k];} }
+  return best? {rate:best,exact:false,monthsAway:bestD} : {rate:null,exact:false};
+}
+function strFullMoneyVND(mk,usd){
+  if(usd==null) return null;
+  const {rate}=strFullRate(mk);
+  return rate? usd*rate : null;
 }
 
 /* ---------- CoStar property export (competitive supply list) ----------
@@ -2315,11 +2414,107 @@ function compsetHasNew(){ return Object.values(state.store.months).some(m=>m&&m.
    back) rather than always jumping to the newest stored file.
    Comp-sheet values win over glance where both exist: they are the same figure for a
    given month, but preferring one source keeps the series internally consistent. */
+/* Monthly INDUSTRY levels, merged from every stored Monthly STAR's Industry sheet (each carries
+   an 18-month window, so the union covers more than any single file). This is the authoritative
+   monthly industry figure — STR weights each day by that day's room supply, whereas averaging
+   the daily grid treats a quiet day like a busy one and lands ~0.8pt out on occupancy. A file's
+   OWN month wins over the same month seen in a neighbouring file's window. */
+function industryMonthly(met){
+  const out={};
+  for(const mk of Object.keys(state.store.months).sort()){
+    const im=starOf(mk)?.industry?.metrics?.[met]; if(!im) continue;
+    const h=im.hist;
+    if(h?.months) h.months.forEach((k,i)=>{ if(k&&h.ind[i]!=null&&out[k]==null) out[k]=h.ind[i]; });
+    if(im.monthKey&&im.cm?.ind!=null) out[im.monthKey]=im.cm.ind;   // own month is definitive
+  }
+  return out;
+}
+/* Monthly MPI / ARI / RGI against a CHOSEN benchmark, for the Index-trend chart.
+   Each benchmark has a different reach, which the caption states rather than hiding:
+     comp   — the merged STAR history, so as long as the full-data extract (2010→now)
+     ind    — the Monthly STAR Industry sheet's own published index, 18 months per file
+     subcls / submkt — the Summary sheet publishes these only for the file's OWN month, so
+              the series is one point per stored Monthly STAR and is computed as
+              property ÷ benchmark × 100 (STR publishes no index against them). */
+const IDX_BENCH=[['comp','Comp set'],['ind','HCMC Luxury'],['subcls','Lux &amp; Upper Upscale'],['submkt','HCMC market']];
+window.__setIdxBench=v=>{ state.idxBench=v; renderMarket(derive()); };
+function idxTrendSeries(kind){
+  const METS=['occ','adr','revpar'];
+  const m={};
+  const put=(mk,met,v)=>{ if(v==null) return; (m[mk]=m[mk]||{})[met]=v; };
+  if(kind==='ind'){
+    for(const mk of Object.keys(state.store.months).sort()){
+      const im=starOf(mk)?.industry?.metrics; if(!im) continue;
+      for(const met of METS){ const h=im[met]?.hist;
+        if(h?.months) h.months.forEach((k,i)=>{ if(k&&m[k]?.[met]==null) put(k,met,h[ 'idx' ][i]); });
+        if(im[met]?.monthKey&&im[met]?.cm?.idx!=null) put(im[met].monthKey,met,im[met].cm.idx);
+      }
+    }
+  }else if(kind==='subcls'||kind==='submkt'){
+    for(const mk of Object.keys(state.store.months).sort()){
+      const s=starOf(mk)?.summary; if(!s) continue;
+      for(const met of METS){
+        const p=s[met]?.prop?.cm, b=s[met]?.[kind]?.cm;
+        if(p!=null&&b) put(mk,met,p/b*100);
+      }
+    }
+  }else{
+    const H=mergedStarHistory();
+    H.months.forEach((mk,i)=>METS.forEach(met=>put(mk,met,H.idx[met][i])));
+  }
+  const months=Object.keys(m).sort();
+  const out={months};
+  for(const met of METS) out[met]=months.map(k=>m[k][met]??null);
+  out.lyOf=arr=>months.map(k=>{ const i=months.indexOf((+k.slice(0,4)-1)+'-'+k.slice(5,7)); return i>=0?arr[i]:null; });
+  return out;
+}
 function mergedStarHistory(upto){
   const m={};
   const slot=k=>(m[k]=m[k]||{my:{},comp:{},idx:{},prov:false});
   const METS=['occ','adr','revpar'];
   const keys=Object.keys(state.store.months).sort();
+  /* MANDATE — but only for what the extract can state without a currency assumption.
+     The extract is one continuous STR restatement (2010→now) and matches the Summary sheet,
+     the Comp history and the daily grids exactly, so OCCUPANCY and the INDEXES take it as
+     authoritative and it is written first.
+     MONEY DOES NOT. The extract is USD; VND needs STR's own monthly rate, which can only be
+     derived for months where a VND STAR file also exists — and those are exactly the months
+     that already have native VND. Borrowing a nearby rate was measured and REJECTED: with an
+     18-month window, Jan-2024 ADR came out 3,409,888 against its true 3,188,356, a 7% error,
+     because the rate moved from ~24,400 to 26,090. So money is taken from the extract ONLY
+     where the rate is exact (a no-op that keeps the rule explicit) and otherwise left to the
+     native VND sources below. Consequence, stated in Data Quality: the history does not
+     extend backwards in VND — the extract lengthens coverage of occupancy and the indexes,
+     not of ADR/RevPAR. */
+  const SF=state.store.strFull;
+  const sfVnd=/VND/i.test(SF?.currency||'');
+  if(SF) for(const mk of Object.keys(SF.months).sort()){
+    if(upto&&mk>upto) continue;
+    const f=SF.months[mk];
+    const s=slot(mk);
+    const put=(met,my,comp,idx)=>{
+      if(s.my[met]==null&&my!=null) s.my[met]=my;
+      if(s.comp[met]==null&&comp!=null) s.comp[met]=comp;
+      if(s.idx[met]==null&&idx!=null) s.idx[met]=idx;
+    };
+    put('occ',f.occ,f.compOcc,f.occIdx);
+    put('adr',null,null,f.adrIdx);
+    put('revpar',null,null,f.revparIdx);
+    if(sfVnd){
+      /* VND edition — money is native, no conversion, so it mandates directly and the history
+         runs the full length of the extract. */
+      put('adr',f.adr,f.compAdr,null);
+      put('revpar',f.revpar,f.compRevpar,null);
+    }else{
+      /* USD edition only — money solely where STR's own rate is derivable (see strFullRate);
+         borrowing a nearby rate was measured at 7% out on Jan-2024 and is refused. */
+      const {rate,exact}=strFullRate(mk);
+      if(exact&&rate){
+        put('adr',    f.adr==null?null:f.adr*rate,       f.compAdr==null?null:f.compAdr*rate,       null);
+        put('revpar', f.revpar==null?null:f.revpar*rate, f.compRevpar==null?null:f.compRevpar*rate, null);
+      }
+    }
+  }
   /* pass 1 — long Comp-sheet histories from the official files */
   for(const mk of keys){
     const c=starOf(mk)?.comp; if(!c?.occ?.months) continue;
@@ -2346,6 +2541,11 @@ function mergedStarHistory(upto){
       if(s.idx[met]==null&&b.idx!=null) s.idx[met]=b.idx;
     }
   }
+  /* Drop months that ended up with no money at all. The extract contributes occupancy and the
+     indexes for every month back to 2010, but VND money only where STR's rate is derivable —
+     keeping the rest would stretch the axis years to the left with the ADR/RevPAR lines blank
+     over that whole stretch. A month with money is a month worth plotting. */
+  for(const k of Object.keys(m)) if(m[k].my.adr==null&&m[k].my.revpar==null) delete m[k];
   const months=Object.keys(m).sort();
   const pull=(grp,met)=>months.map(k=>m[k][grp][met]??null);
   const out={months,prov:months.map(k=>m[k].prov),my:{},comp:{},idx:{}};
@@ -2549,6 +2749,19 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
     }
     else if(type==='budget2026'){ parsed=parseBudget2026(wb); state.store.budget2026=parsed;
       label='2026 Consolidated Budget ingested — used as the 2026 monthly benchmark (Jan-Dec); other years unaffected'; }
+    else if(type==='strFull'){ const fw=[]; parsed=parseStrFull(wb,fw);
+      /* STR exports this extract per currency. Keep each one and PREFER THE VND EDITION: its
+         money needs no conversion, which is what makes the long history usable — the USD
+         edition can only supply money for months where STR's rate is derivable. Dropping the
+         USD file after the VND one therefore must not downgrade the money source. */
+      const prev=state.store.strFull||{};
+      const byCcy={...(prev.byCcy||{})};
+      byCcy[/VND/i.test(parsed.currency||'')?'VND':'USD']=
+        {months:parsed.months,currency:parsed.currency,from:parsed.from,to:parsed.to,count:parsed.count};
+      const pref=byCcy.VND||byCcy.USD;
+      state.store.strFull={...pref, byCcy, warns:fw, updated:new Date().toISOString().slice(0,10)};
+      label=`STR full history: ${parsed.count} months (${fmtMonthKey(parsed.from)} – ${fmtMonthKey(parsed.to)}) in ${parsed.currency||'?'}`
+            +(byCcy.VND&&byCcy.USD?' · VND edition used for money':''); }
     else if(type==='props'){ const pw=[]; parsed=parseProps(wb,pw);
       /* MERGE, don't replace: CoStar is exported in slices (the two current files split
          Luxury-ish chains from Upscale/Independent), so dropping the second must add to the
@@ -4389,7 +4602,29 @@ function renderMarket(d){
      selected), and it was printed unchanged beside YTD / 3M / 12M figures, where it reads as
      a year-to-date rank that STR never published. Now indexed by the month, and shown only in
      the Current-month view. */
-  const rankOf=met=>{
+  /* The STR full-data extract publishes a rank for EVERY period (month, YTD, 3M, 12M), which
+     the Comp sheet does not — so when it is loaded the rank column works on all four views.
+     Without it we fall back to the Comp sheet's monthly rank, which is only valid for the
+     current month. */
+  /* Which index benchmarks the loaded files can actually support — a button for a benchmark
+     with no data would just blank the chart, so it is disabled instead. */
+  const idxBenchHas={
+    comp:true,
+    ind:Object.keys(state.store.months).some(k=>starOf(k)?.industry?.metrics?.occ),
+    subcls:Object.keys(state.store.months).some(k=>starOf(k)?.summary?.occ?.subcls?.cm!=null),
+    submkt:Object.keys(state.store.months).some(k=>starOf(k)?.summary?.occ?.submkt?.cm!=null),
+  };
+  const idxBench=idxBenchHas[state.idxBench]?state.idxBench:'comp';
+  /* built HERE, not beside the chart call — the panel's caption quotes its length, and the
+     template is evaluated before that code runs */
+  const IB=idxTrendSeries(idxBench);
+  const SFm=state.store.strFull?.months?.[st.monthKey];
+  const SF_SUF={cm:'Rank', ytd:'RankYtd', r3:'Rank3', r12:'Rank12'};
+  const rankOf=(met,per)=>{
+    const p=per||sp;
+    const fromFull=SFm?.[met+SF_SUF[p]];
+    if(fromFull){ const n=parseInt(String(fromFull),10); return isNaN(n)?String(fromFull):n; }
+    if(p!=='cm') return null;                       // Comp sheet only ranks the month
     const c=st.comp?.[met]; if(!c?.rank) return null;
     const i=(c.months||[]).indexOf(st.monthKey);
     const v=String((i>=0?c.rank[i]:null)??'').trim();
@@ -4397,8 +4632,8 @@ function renderMarket(d){
     const n=parseInt(v,10); return isNaN(n)?v:n;
   };
   const rankCell=met=>{
-    if(sp!=='cm') return `<td title="STR publishes the comp-set rank per month, not for year-to-date or rolling averages — switch to Current month to see it">—</td>`;
-    const rk=rankOf(met); if(rk==null) return '<td>—</td>';
+    const rk=rankOf(met);
+    if(rk==null) return `<td title="${sp==='cm'?'No rank in this STAR file':'STR publishes a rank for this period only in the monthly full-data extract — drop Sofitel_Saigon_Plaza_Fulldata.xlsx to fill it'}">—</td>`;
     const n=typeof rk==='number'?rk:parseInt(rk,10);
     const cl2=isNaN(n)?'':(n===1?'pos':n>=compN-1?'neg':'');
     return `<td data-v="${isNaN(n)?'':n}" class="${cl2}"><b>${isNaN(n)?rk:'#'+n+' of '+compN}</b></td>`; };
@@ -4540,7 +4775,6 @@ function renderMarket(d){
   }
   /* ranking from the Comp sheet at the SELECTED month — same source as rankCell, so the
      caption cannot disagree with the table (it used to read the last column regardless) */
-  const rk=m=>rankOf(m);
   /* fair share */
   const fair= d.fairShare!=null? `${pct(d.fairShare,1)} fair vs ${pct(d.actShare,1)} actual — ${d.actShare>d.fairShare?'taking more than fair share of demand':'below fair share of demand'}` : na('Census data missing from STAR Summary');
   /* DOW table */
@@ -4670,7 +4904,14 @@ function renderMarket(d){
             for(const e of ['my','comp','ind']){ const v=s2[e]?.[d2-1]; if(v!=null) acc[e].push(v); } } }
         if(!acc.my.length&&!acc.comp.length) continue;
         out2.labels.push(mg==='monthly'?fmtMonthKey(gk):gk.replace('-',' ')); out2.we.push(false);
-        for(const e of ['my','comp','ind']) out2[e].push(acc[e].length?avgA(acc[e]):null);
+        for(const e of ['my','comp']) out2[e].push(acc[e].length?avgA(acc[e]):null);
+        /* INDUSTRY comes from the monthly detail report's Industry sheet, not from averaging
+           the daily grid — that is the published monthly figure, supply-weighted by STR.
+           EXCEPT under a weekday/weekend filter: the Industry sheet has no day split, so there
+           the daily grid is the only source that can answer the question being asked. */
+        const im=industryMonthly(met2);
+        const pub=dayF2==='all' ? groups[gk].map(k=>im[k]).filter(v=>v!=null) : [];
+        out2.ind.push(pub.length? avgA(pub) : (acc.ind.length?avgA(acc.ind):null));
       }
     }
     return out2;
@@ -4714,7 +4955,7 @@ function renderMarket(d){
   ? `<span class="tag a">Industry sheet not in this file</span> This is a provisional month built from a Weekly STAR, which carries no Industry sheet — the benchmark shown is the <b>industry figure from the file's Glance</b>. It refreshes from the Industry sheet once the official Monthly STAR is dropped.`
   : benchSrc==='summary'
   ? `<span class="tag a">Industry sheet not in this file</span> Falling back to the Summary sheet row <b>“${escH(benchName)}”</b>, which is a <b>wider population</b> than the Industry sheet and will read lower — re-drop the Monthly STAR to source it properly.`
-  : `No industry benchmark in this file.`} Two indexes, both 100 = parity: <b>Index vs comp</b> is Sofitel against the ${compN}-property competitive set (STR's MPI / ARI / RGI), <b>Index vs industry</b> is Sofitel against the ${escH(benchShort)} — a broader field, so it usually reads lower on rate. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom) — a <b>monthly</b> figure from the Comp sheet for ${fmtMonthKey(st.monthKey)}, so it is blank on the YTD / 3M / 12M views, which STR does not rank. Rank in ${fmtMonthKey(st.monthKey)} — Occ: <b>${rk('occ')||'—'}</b> · ADR: <b>${rk('adr')||'—'}</b> · RevPAR: <b>${rk('revpar')||'—'}</b> · Fair share: ${fair}</div>
+  : `No industry benchmark in this file.`} Two indexes, both 100 = parity: <b>Index vs comp</b> is Sofitel against the ${compN}-property competitive set (STR's MPI / ARI / RGI), <b>Index vs industry</b> is Sofitel against the ${escH(benchShort)} — a broader field, so it usually reads lower on rate. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom)${SFm?' for the selected period, from the STR monthly full-data extract':` — a <b>monthly</b> figure from the Comp sheet for ${fmtMonthKey(st.monthKey)}, so it is blank on the YTD / 3M / 12M views; drop <b>Sofitel_Saigon_Plaza_Fulldata.xlsx</b> to fill those`}. Rank in ${fmtMonthKey(st.monthKey)} — Occ: <b>${rankOf('occ','cm')||'—'}</b> · ADR: <b>${rankOf('adr','cm')||'—'}</b> · RevPAR: <b>${rankOf('revpar','cm')||'—'}</b> · Fair share: ${fair}</div>
         <div class="small">${st.segAvailable?'':'Segmentation (Transient/Group/Contract) not populated in this STR subscription — segment indexes shown as N/A.'}</div></div>
       <div class="panel"><h3>Property scorecard — Occ / ADR / RevPAR by period</h3>
         <div style="overflow-x:auto"><table><thead><tr><th></th>${SC_PER.map(([,l])=>`<th>${l}</th><th>% Chg</th>`).join('')}</tr></thead>
@@ -4722,15 +4963,22 @@ function renderMarket(d){
         <div class="small" style="margin-top:6px">Top rows = property levels (STR Glance); bottom rows = indexes vs comp set — an index % change &lt; 0 means the market grew faster than we did.</div></div>
     </div>
     <div class="cols c2">
-      <div class="panel"><h3>Index trend ${showLy?'<span class="small">(dashed = same month last year)</span>':''} ${granCtl()}</h3>
-        <div class="chartbox" style="margin-top:14px"><canvas id="chIdxTrend"></canvas></div>
+      <div class="panel"><h3>Index trend vs ${IDX_BENCH.find(b=>b[0]===idxBench)?.[1]||'comp set'} ${showLy?'<span class="small">(dashed = same month last year)</span>':''} ${granCtl()}</h3>
+        <div class="small noprint" style="margin-bottom:6px">Benchmark:
+          ${IDX_BENCH.map(([k,l])=>`<button class="heatbtn ${idxBench===k?'on':''}" onclick="__setIdxBench('${k}')"
+            ${idxBenchHas[k]?'':'disabled title="Not available in the loaded STAR files"'}>${l}</button>`).join(' ')}</div>
+        <div class="chartbox" style="margin-top:4px"><canvas id="chIdxTrend"></canvas></div>
+        <div class="small" style="margin-top:6px">100 = parity with the chosen benchmark. ${
+          idxBench==='comp' ? 'Comp set — STR\'s published MPI / ARI / RGI, covering the full merged history.'
+          : idxBench==='ind' ? 'HCMC Luxury — the Industry sheet\'s own published index; each Monthly STAR carries 18 months, so the series is as long as your STAR uploads reach.'
+          : `${IDX_BENCH.find(b=>b[0]===idxBench)?.[1]} — STR publishes no index against this group, so it is computed as property ÷ benchmark × 100 from the Summary sheet, which states it only for each file's own month: <b>one point per stored Monthly STAR</b> (${IB.months.length} so far).`}</div>
         ${granNote('MPI / ARI / RGI are averaged across the months of each quarter')}</div>
       <div class="panel"><h3>RevPAR positioning matrix — ARI vs MPI (trail = last 12 months · gold = ${fmtMonthKey(st.monthKey)} · red ring = ${fmtMonthKey(lyKey)})</h3><div class="chartbox tall"><canvas id="chQuad"></canvas></div></div>
     </div>
     ${(hasBw||hasRp)?mktCtl:''}
     ${hasRp?`<div class="panel"><h3>RevPAR — ${mg}, ${winLabel}${dayF2!=='all'?' · '+(dayF2==='wd'?'weekdays only':'weekends only'):''} · My Property vs Comp Set vs Industry</h3>
       <div class="chartbox"><canvas id="chDailyCmp"></canvas></div>
-      <div class="small" style="margin-top:6px">From the STAR daily grids — spot exactly which days/periods the comp set or submarket monetised while we did not. Values are STR-denominated; aggregated points are simple day averages.</div></div>`:''}
+      <div class="small" style="margin-top:6px">From the STAR daily grids — spot exactly which days/periods the comp set or submarket monetised while we did not. Values are STR-denominated. My Property and Comp set are day averages when aggregated; <b>Industry uses the published monthly figure from the Monthly STAR's Industry sheet</b>${dayF2!=='all'?' — except under the weekday/weekend filter you have on, where that sheet has no day split and the daily grid is used instead':' (supply-weighted by STR, so it differs slightly from a plain day average)'}.</div></div>`:''}
     ${hasBw?`<div class="panel"><h3>Occupancy bandwidth — ${mg}, ${winLabel}${dayF2!=='all'?' · '+(dayF2==='wd'?'weekdays only':'weekends only'):''}</h3>
       <div class="chartbox"><canvas id="chBand"></canvas></div>
       <div class="small" style="margin-top:6px">Green = Sofitel SSP occupancy; shaded band = comp-set ↔ industry envelope${hasBwInd?'':' (industry rows missing — comp set shown as dashed line only)'};
@@ -4806,9 +5054,9 @@ function renderMarket(d){
      month is provisional. LY series is matched BY MONTH KEY (see mergedStarHistory)
      rather than by shifting 12 array slots — an index is a ratio and must never be
      averaged across months, and key-matching also survives gaps in the union. */
-  const hasIdx=MH.months.length&&MH.idx.revpar.some(v=>v!=null);
-  const gI=hasIdx?granGroup(MH.months,[{data:MH.idx.occ,agg:'avg'},{data:MH.idx.adr,agg:'avg'},{data:MH.idx.revpar,agg:'avg'},
-      {data:MH.lyOf(MH.idx.occ),agg:'avg'},{data:MH.lyOf(MH.idx.adr),agg:'avg'},{data:MH.lyOf(MH.idx.revpar),agg:'avg'}]):null;
+  const hasIdx=IB.months.length&&IB.revpar.some(v=>v!=null);
+  const gI=hasIdx?granGroup(IB.months,[{data:IB.occ,agg:'avg'},{data:IB.adr,agg:'avg'},{data:IB.revpar,agg:'avg'},
+      {data:IB.lyOf(IB.occ),agg:'avg'},{data:IB.lyOf(IB.adr),agg:'avg'},{data:IB.lyOf(IB.revpar),agg:'avg'}]):null;
   if(hasIdx) mkChart('chIdxTrend',{type:'line',data:{labels:gI.labels,datasets:[
       {label:'MPI',data:gI.out[0],borderColor:'#4a7dbd',tension:.3},
       {label:'ARI',data:gI.out[1],borderColor:'#d69e2e',tension:.3},
@@ -6502,6 +6750,66 @@ function renderDQ(d){
     /* LY missing */
     checks.push([d.totalRev.ly!=null,'LY comparatives present','']);
   }
+  /* ---- STR full-data cross-check ----
+     The monthly extract restates the same STR figures the Monthly STAR workbooks carry, so
+     every overlapping month is an independent check on our parsing. Compared on OCCUPANCY and
+     the INDEXES only: those are currency-free, whereas the extract is USD and the STAR files
+     VND, so money would only be measuring the FX rate. */
+  {
+    const SF=state.store.strFull;
+    if(!SF) checks.push([null,'STR full-data extract not loaded — monthly cross-check inactive',
+      'Drop Sofitel_Saigon_Plaza_Fulldata.xlsx to validate every stored month against STR\'s own restatement']);
+    else{
+      /* Compared against ALL THREE of the other STR sources, on currency-free measures only:
+         the monthly-detail Summary sheet, the 18-month Comp history, and the daily-by-month
+         grids averaged over the month. Money is excluded on purpose — the extract is USD and
+         the workbooks VND, so a money comparison would only be measuring the FX rate. */
+      const pairs=[];
+      for(const mk of Object.keys(state.store.months).sort()){
+        const st=starOf(mk), f=SF.months[mk];
+        if(!st||!f||st.provisional) continue;
+        const sm=st.summary;      // NOT `g` — that is the global P&L accessor used above
+        const c=st.comp, ci=c?.occ?.months?.indexOf(mk)??-1, dl=st.daily;
+        const dAvg=(met,ent)=>{ const a=dl?.[met]?.[ent]; if(!a) return null;
+          const v=a.filter(x=>x!=null); return v.length? v.reduce((x,y)=>x+y,0)/v.length : null; };
+        const idxOf=(met,who)=>sm?.[met]?.prop?.cm!=null&&sm?.[met]?.comp?.cm? sm[met].prop.cm/sm[met].comp.cm*100 : null;
+        const cmp=[
+          ['Occupancy vs Summary',      sm?.occ?.prop?.cm, f.occ],
+          ['Comp-set occ vs Summary',   sm?.occ?.comp?.cm, f.compOcc],
+          ['Occupancy vs Comp history', ci>=0?c.occ.my[ci]:null, f.occ],
+          ['Comp-set occ vs Comp hist', ci>=0?c.occ.comp[ci]:null, f.compOcc],
+          ['Occupancy vs daily grid',   dAvg('occ','my'),   f.occ],
+          ['Comp-set occ vs daily grid',dAvg('occ','comp'), f.compOcc],
+          ['Occ index',                 idxOf('occ'),    f.occIdx],
+          ['ADR index',                 idxOf('adr'),    f.adrIdx],
+          ['RevPAR index',              idxOf('revpar'), f.revparIdx],
+        ];
+        for(const [what,a,b] of cmp){ if(a==null||b==null) continue;
+          pairs.push({mk,what,diff:Math.abs(a-b)}); }
+      }
+      if(!pairs.length) checks.push([null,'STR full-data cross-check — no overlapping official months yet',
+        `Extract covers ${fmtMonthKey(SF.from)} – ${fmtMonthKey(SF.to)} (${SF.count} months, ${SF.currency})`]);
+      else{
+        const worst=pairs.reduce((a,b)=>b.diff>a.diff?b:a);
+        const monthsChecked=new Set(pairs.map(p=>p.mk)).size;
+        checks.push([worst.diff<0.05,
+          `STR full-data cross-check — ${monthsChecked} month(s), ${pairs.length} comparisons`,
+          worst.diff<0.05? `all agree (largest gap ${worst.diff.toExponential(1)} on ${worst.what}, ${fmtMonthKey(worst.mk)})`
+                         : `largest gap ${n1(worst.diff,3)} on ${worst.what} in ${fmtMonthKey(worst.mk)} — re-drop that month's Monthly STAR`]);
+        const rates=strFullRates().exact;
+        checks.push([true,'STR full-data history available',
+          `${SF.count} months, ${fmtMonthKey(SF.from)} – ${fmtMonthKey(SF.to)}, ${SF.currency} · ranks for month/YTD/3M/12M now shown on the STR Snapshot`]);
+        /* Be explicit about the two things the extract CANNOT do, so neither is assumed. */
+        checks.push([null,'STR extract carries no INDUSTRY figures',
+          'It restates the property and the comp set only — the industry / submarket-class benchmark still comes from the STAR Industry sheet, and is not cross-checked here']);
+        checks.push(/VND/i.test(SF.currency||'')
+          ? [true,`STR extract is ${SF.currency} — money used natively`,
+             `ADR and RevPAR are taken straight from the extract with no FX conversion, so the merged history runs the full ${SF.count} months (${fmtMonthKey(SF.from)} – ${fmtMonthKey(SF.to)})${SF.byCcy?.USD?'. The USD edition is also loaded and is kept only for reference — VND drives money':''}.`]
+          : [null,`STR extract is ${SF.currency} — VND money not back-filled`,
+             `Drop the <b>VND edition</b> of this export to unlock the full money history. Until then STR's own rate is derivable only for months that also have a VND STAR file (${Object.keys(rates).length}: ${Object.entries(rates).map(([k,v])=>fmtMonthKey(k)+' '+n1(v,0)).join(', ')||'none'}), and those already hold native VND. Borrowing a nearby rate was tested and rejected — it put Jan-2024 ADR 7% out.`]);
+      }
+    }
+  }
   /* ---- document × month coverage matrix — see at a glance what is missing ---- */
   const mkeysAll=Object.keys(state.store.months).sort().reverse();
   const DOCS=[['pnlVND','P&L VND'],['pnlUSD','P&L USD'],['star','Monthly STAR'],['hotstats','HotStats'],['fs','Consolidated FS'],['eng','Engineering PDF']];
@@ -6518,6 +6826,10 @@ function renderDQ(d){
     ['Cashflow forecast',!!state.store.cf,''],
     ['Weekly STAR pace',!!state.store.pace.weekly, state.store.pace.weekly?.label||''],
     ['Daily STAR pace',!!state.store.pace.daily, state.store.pace.daily?.label||''],
+    ['STR full-data history',!!state.store.strFull,
+      state.store.strFull?`${state.store.strFull.count} months, ${fmtMonthKey(state.store.strFull.from)} – ${fmtMonthKey(state.store.strFull.to)}`:''],
+    ['Competitive supply (CoStar)',!!state.store.props,
+      state.store.props?`${n1(state.store.props.rows.length,0)} hotels`:''],
     ...Object.entries(REV_LABELS).map(([k,l])=>[l,!!state.store.rev?.[k],'']),
   ].map(([l,ok,note])=>`<tr><td>${l}</td><td>${ok?'<span class="tag g">loaded</span>':'<span class="tag r">missing</span>'}</td><td class="small">${note}</td></tr>`).join('');
   el.innerHTML=`
