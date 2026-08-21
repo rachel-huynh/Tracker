@@ -285,7 +285,10 @@ en:{
  noteOpen:'Open in a bigger box', noteT:'Reason / comment', noteHint:'Line breaks are kept and carried into the Excel and PDF report.',
  genBtn:'✨ Draft the rationale', genT:'Draft the rationale from the line-item differences',
  genSaving:'Saving', genIncrease:'Increase', genFrom:'$N changed lines', genOther:'and $N other lines', genLines:'lines',
- genRemoved:'Removed', genAdded:'Added', genRate:'unit rate', genQty:'qty', genSwap:'Changed',
+ genRemoved:'removed', genAdded:'added', genRate:'unit rate', genQty:'qty', genSwap:'Changed', genSwapW:'changed',
+ disc_finishing:'Finishing', disc_sanitary:'Sanitaryware', disc_window:'Window / Door', disc_furnishing:'Furnishing',
+ disc_demo:'Demolition', disc_elec:'Electrical', disc_elv:'ELV', disc_hvac:'HVAC (ACMV)', disc_plumb:'Plumbing',
+ disc_fire:'Fire protection', disc_other:'Other',
  genMismatch:'⚠ The table above shows $T for this row because it reads the summary sheet, while these bullets add up the detail lines — the two disagree by $D in the file (see 🔍 Check totals).',
  genAsk:'Write a first draft of the reason for every area row, from the actual line-by-line differences between the two versions? Rows where you already wrote something are kept — tick the box below to overwrite them too.',
  genOverwrite:'Overwrite the notes I already wrote', genDone:'Draft written into $N rows',
@@ -438,7 +441,10 @@ vi:{
  noteOpen:'Mở ô lớn hơn', noteT:'Lý do / ghi chú', noteHint:'Xuống dòng được giữ nguyên và đưa vào cả file Excel lẫn PDF.',
  genBtn:'✨ Tự soạn lý do', genT:'Soạn lý do từ chênh lệch từng dòng BOQ',
  genSaving:'Tiết kiệm', genIncrease:'Tăng', genFrom:'$N dòng thay đổi', genOther:'và $N dòng khác', genLines:'dòng',
- genRemoved:'Bỏ', genAdded:'Thêm', genRate:'đơn giá', genQty:'khối lượng', genSwap:'Đổi',
+ genRemoved:'bỏ', genAdded:'thêm', genRate:'đơn giá', genQty:'khối lượng', genSwap:'Đổi', genSwapW:'đổi',
+ disc_finishing:'Hoàn thiện', disc_sanitary:'Thiết bị vệ sinh', disc_window:'Cửa / Cửa sổ', disc_furnishing:'Nội thất',
+ disc_demo:'Phá dỡ', disc_elec:'Điện', disc_elv:'ELV', disc_hvac:'Điều hòa (ACMV)', disc_plumb:'Cấp thoát nước',
+ disc_fire:'PCCC', disc_other:'Khác',
  genMismatch:'⚠ Bảng ở trên ghi $T cho dòng này vì lấy từ sheet tổng hợp, còn các gạch đầu dòng đây cộng từ dòng chi tiết — hai nguồn lệch nhau $D trong file (xem 🔍 Đối chiếu số liệu).',
  genAsk:'Soạn bản nháp lý do cho tất cả các dòng khu vực, dựa trên chênh lệch thật giữa hai phiên bản? Những dòng bạn đã tự ghi sẽ được giữ nguyên — tick ô bên dưới nếu muốn ghi đè luôn.',
  genOverwrite:'Ghi đè cả những ghi chú tôi đã viết', genDone:'Đã soạn nháp cho $N dòng',
@@ -2121,6 +2127,26 @@ function anPairItems(A,B){
   for(const k of new Set([...mA.keys(),...mB.keys()])) out.push({a:mA.get(k)||null,b:mB.get(k)||null});
   return out; }
 function esc0(x){ return s(x); }   // ghi chú là văn bản thuần, không cần escape HTML
+/* Bộ môn của một dòng BOQ — file QS đã có sẵn nhóm hệ thống ở cột B cho MEP
+   (ELECTRICAL / ELV / ACMV / PLUMBING / FIRE PROTECTION) nên dùng thẳng, khỏi đoán. */
+const DISC_ORDER=['finishing','sanitary','window','furnishing','demo','elec','elv','hvac','plumb','fire','other'];
+function anDiscipline(it){
+  const g=norm(it.group), c=norm(it.category), sh=norm(it.sheet);
+  if(/mep/.test(sh)){
+    if(/fire/.test(g)||/fire protection/.test(c)) return 'fire';
+    if(/elv/.test(g)) return 'elv';
+    if(/acmv|hvac/.test(g)) return 'hvac';
+    if(/plumb/.test(g)) return 'plumb';
+    if(/electric/.test(g)) return 'elec';
+    if(/demolition/.test(g)||/demolition/.test(c)) return 'demo';
+    return 'other';
+  }
+  if(/furniture/.test(sh)) return 'furnishing';
+  if(/doors?\s*&?\s*window/.test(c)) return 'window';
+  if(/sanitaryware/.test(c)) return 'sanitary';
+  if(/demolition/.test(c)) return 'demo';
+  return 'finishing';
+}
 function anGenSummary(A,B,gid,fx,rowDelta){
   const pairs=anPairItems(A,B); const ch=[];
   for(const p of pairs){
@@ -2134,7 +2160,7 @@ function anGenSummary(A,B,gid,fx,rowDelta){
     else if(rA&&rB&&Math.abs(rB-rA)/rA>0.005) kind='rate';
     else if(qA&&qB&&Math.abs(qB-qA)/qA>0.005) kind='qty';
     ch.push({d, kind, label:itemLabel(src), desc:src.desc, subj:src.subject||'',
-      cat:src.category||src.group, sub:src.subgroup||'', rA,rB,qA,qB});
+      cat:src.category||src.group, sub:src.subgroup||'', disc:anDiscipline(src), rA,rB,qA,qB});
   }
   if(!ch.length) return '';
   const cut=(x,n2)=>{ const l=s(x); return l.length>n2?l.slice(0,n2).replace(/[\s,;:—-]+$/,'')+'…':l; };
@@ -2155,43 +2181,23 @@ function anGenSummary(A,B,gid,fx,rowDelta){
       if(best){ used.add(best); r.kind='swap'; r.to=best.base; r.d=r.d+best.d; best.drop=true; } }
     for(let i=ch.length-1;i>=0;i--) if(ch[i].drop) ch.splice(i,1); }
   const tot=ch.reduce((x,c)=>x+c.d,0);
-  const pctTxt=(a,b)=>(a?((b-a)/a*100).toFixed(0)+'%':'');
-  /* Gom các thay đổi cùng loại về một dòng: cùng món (thảm, rèm…) hoặc cùng nhóm FF&E bị bỏ */
-  const groups=new Map();
+  /* Bản rút gọn: mỗi BỘ MÔN một dòng, nêu đổi / bỏ / thêm cái gì — không kèm số tiền từng dòng */
+  const byDisc=new Map();
   for(const c of ch){
-    const key=(c.kind==='removed'||c.kind==='added')
-      ? c.kind+'|'+norm(c.sub||c.cat)          // bỏ/thêm: gom theo nhóm hạng mục
-      : c.kind+'|'+norm(c.base);               // đổi giá/KL/vật liệu: gom theo món
-    if(!groups.has(key)) groups.set(key,{kind:c.kind,cat:c.sub||c.cat,items:[],d:0});
-    const g=groups.get(key); g.items.push(c); g.d+=c.d;
+    if(!byDisc.has(c.disc)) byDisc.set(c.disc,{d:0,changed:[],removed:[],added:[]});
+    const g=byDisc.get(c.disc); g.d+=c.d;
+    const nm=(c.kind==='swap')?(cut(c.base,40)+' → '+cut(c.to,40)):cut(c.base,44);
+    const bag=c.kind==='removed'?g.removed:(c.kind==='added'?g.added:g.changed);
+    if(!bag.includes(nm)) bag.push(nm);
   }
-  const gl=[...groups.values()].sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
-  const names=g=>{ const seen=[]; for(const c of g.items){ const b=cut(c.base,44); if(!seen.includes(b)) seen.push(b); }
-    return seen.slice(0,4).join(', ')+(seen.length>4?', …':''); };
-  const nLine=g=>g.items.length>1?' ('+g.items.length+' '+t('genLines')+')':'';
+  const part=(arr,word)=>{ if(!arr.length) return '';
+    const shown=arr.slice(0,3).join(', ');
+    return word+' ('+arr.length+'): '+shown+(arr.length>3?', …':''); };
   const bullets=[];
-  for(const g of gl.slice(0,14)){
-    const amt=(g.d<0?'−':'+')+moneyU(Math.abs(g.d)/fx);
-    const one=g.items[0];
-    if(g.kind==='swap'){
-      bullets.push('• '+t('genSwap')+': '+cut(one.base,52)+' → '+cut(one.to,52)+nLine(g)+' — '+amt);
-    } else if(g.kind==='removed'||g.kind==='added'){
-      const w=g.kind==='removed'?t('genRemoved'):t('genAdded');
-      bullets.push('• '+w+(g.items.length>1?' ('+esc0(g.cat)+')':'')+': '+names(g)+nLine(g)+' — '+amt);
-    } else if(g.kind==='rate'){
-      const ps=g.items.filter(c=>c.rA&&c.rB).map(c=>(c.rB-c.rA)/c.rA*100);
-      const rng=ps.length?(ps.length>1&&Math.abs(Math.max(...ps)-Math.min(...ps))>1
-        ? Math.min(...ps).toFixed(0)+'…'+Math.max(...ps).toFixed(0)+'%' : ps[0].toFixed(0)+'%'):'';
-      bullets.push('• '+cut(one.base,56)+' — '+t('genRate')+' '+rng+
-        (g.items.length===1?' ('+money(one.rA,'VND')+' → '+money(one.rB,'VND')+')':'')+nLine(g)+' — '+amt);
-    } else if(g.kind==='qty'){
-      bullets.push('• '+cut(one.base,56)+' — '+t('genQty')+
-        (g.items.length===1?' '+fmtQty(one.qA)+' → '+fmtQty(one.qB)+' ('+pctTxt(one.qA,one.qB)+')':'')+nLine(g)+' — '+amt);
-    } else bullets.push('• '+cut(one.base,58)+nLine(g)+' — '+amt);
+  for(const key of DISC_ORDER){ const g=byDisc.get(key); if(!g) continue;
+    const bits=[part(g.changed,t('genSwapW')),part(g.removed,t('genRemoved')),part(g.added,t('genAdded'))].filter(Boolean);
+    if(bits.length) bullets.push('• '+t('disc_'+key)+' — '+bits.join('; '));
   }
-  if(gl.length>14){ const rest=gl.slice(14).reduce((x,g)=>x+g.d,0);
-    const nl=gl.slice(14).reduce((x,g)=>x+g.items.length,0);
-    bullets.push('• '+t('genOther').replace('$N',nl)+' — '+(rest<0?'−':'+')+moneyU(Math.abs(rest)/fx)); }
   const head=(tot<0?t('genSaving'):t('genIncrease'))+' '+(tot<0?'−':'+')+moneyU(Math.abs(tot)/fx)+
     ' ('+(tot<0?'−':'+')+money(Math.abs(tot),'VND')+' ₫) · '+t('genFrom').replace('$N',ch.length)+':';
   /* Con số trên là cộng từ các DÒNG CHI TIẾT; nếu bảng (lấy từ sheet tổng hợp) ghi khác
