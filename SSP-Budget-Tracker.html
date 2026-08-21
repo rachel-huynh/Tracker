@@ -2199,15 +2199,14 @@ function anGenSummary(A,B,gid,fx,rowDelta){
       bullets.push('• '+t('disc_'+key)+' — '+word+' ('+arr.length+'): '+arr.slice(0,4).join(', ')+(arr.length>4?', …':''));
     }
   }
-  const head=(tot<0?t('genSaving'):t('genIncrease'))+' '+(tot<0?'−':'+')+moneyU(Math.abs(tot)/fx)+
-    ' ('+(tot<0?'−':'+')+money(Math.abs(tot),'VND')+' ₫) · '+t('genFrom').replace('$N',ch.length)+':';
+  /* Không lặp lại tổng tiết kiệm ở đầu — cột CHANGE của bảng đã có sẵn con số đó */
   /* Con số trên là cộng từ các DÒNG CHI TIẾT; nếu bảng (lấy từ sheet tổng hợp) ghi khác
      thì nói rõ, vì đó là do hai sheet trong file chưa khớp nhau. */
   let tail='';
   if(rowDelta!=null&&Math.abs(rowDelta-tot)>1000)
     tail='\n'+t('genMismatch').replace('$T',(rowDelta<0?'−':'+')+moneyU(Math.abs(rowDelta)/fx))
       .replace('$D',moneyU(Math.abs(rowDelta-tot)/fx));
-  return head+'\n'+bullets.join('\n')+tail;
+  return bullets.join('\n')+tail;
 }
 function renderAnalysis(){
   const el=$('#tab-analysis');
