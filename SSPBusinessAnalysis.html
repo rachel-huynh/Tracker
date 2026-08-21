@@ -143,6 +143,14 @@ th.sa::after{content:' ▲';color:var(--gold2)}th.sd::after{content:' ▼';color
 /* Property list: a reference table of names and places, so every column reads left — and the
    header must match, since the global `th` rule right-aligns for numeric tables. */
 .proptbl th,.proptbl td{text-align:left}
+/* Engineering issue log is PROSE, not figures: the global td rule (right-aligned, nowrap — right
+   for numeric tables) put each sentence on one endless line, so the table ran far wider than the
+   panel and the text read as truncated. Here it wraps and reads left. */
+.engtbl th,.engtbl td{text-align:left;white-space:normal;vertical-align:top}
+.engtbl td.issue{line-height:1.45;min-width:320px}
+.engtbl .itext.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.engtbl .xmore{color:var(--blue);cursor:pointer;font-weight:600;white-space:nowrap;font-size:10.5px}
+.engtbl .xmore:hover{text-decoration:underline}
 .proptbl tr.fltrow th{padding:3px 4px;background:#fff;border-bottom:1px solid var(--line)}
 .proptbl tr.fltrow input,.proptbl tr.fltrow select{width:100%;min-width:64px;box-sizing:border-box;
   border:1px solid #cfd6e2;border-radius:4px;padding:2px 4px;font-size:10.5px;font-weight:400;color:var(--ink)}
@@ -241,6 +249,8 @@ tr.bad td{background:#fdeeec}
      header — the board pack must carry the whole table. */
   .scrollbox{max-height:none!important;overflow:visible!important}
   section.tab table thead th,.scrollbox tfoot td{position:static!important}
+  /* the board pack must carry the whole issue text, whichever view is on screen */
+  .engtbl .itext.clamp{-webkit-line-clamp:none!important;display:block!important;overflow:visible!important}
 }
 </style>
 </head>
@@ -1347,6 +1357,9 @@ const SF_MAP={
   adr:'ADR', compAdr:'Comp Set ADR', adrIdx:'ADR Index',
   revpar:'RevPAR', compRevpar:'Comp Set RevPAR', revparIdx:'RevPAR Index',
   occChg:'Occ % Chg', adrChg:'ADR % Chg', revparChg:'RevPAR % Chg',
+  /* index % changes — let the LY index be derived directly as idx ÷ (1+chg), instead of
+     needing the same month a year earlier to exist in the series */
+  occIdxChg:'Occ Index % Chg', adrIdxChg:'ADR Index % Chg', revparIdxChg:'RevPAR Index % Chg',
   supply:'Supply', demand:'Demand', revenue:'Revenue',
   /* ranks — the month plus the three rolling periods the snapshot offers */
   occRank:'Occ Rank', occRankYtd:'Occ Rank YTD', occRank3:'Occ Rank 3M', occRank12:'Occ Rank 12M',
@@ -2455,13 +2468,29 @@ function benchLevelsFor(kind){
 function idxTrendSeries(kind){
   const METS=['occ','adr','revpar'];
   const m={};
+  /* LAST-YEAR index, derived from STR's published % changes rather than by looking 12 months
+     back in the series. Matching by key means the first 12 months of any series can never have
+     an LY point — and for the Summary-only benchmarks, which hold one point per stored Monthly
+     STAR, that wiped out nearly the whole dashed line. Two exact identities are used:
+        LYidx = idx ÷ (1 + idxChg)                     where the index's own % chg is published
+        LYidx = idx × (1 + benchChg) ÷ (1 + propChg)   otherwise
+     The second was validated against the 12-month lookup on 9 month/metric pairs: diff 0.000. */
+  const lyM={};
   const put=(mk,met,v)=>{ if(v==null) return; (m[mk]=m[mk]||{})[met]=v; };
+  const putLy=(mk,met,v)=>{ if(v==null||!isFinite(v)) return; (lyM[mk]=lyM[mk]||{})[met]=v; };
+  const fromChg=(idx,pChg,bChg)=>(idx!=null&&pChg!=null&&bChg!=null&&pChg!==-100)
+    ? idx*(1+bChg/100)/(1+pChg/100) : null;
   if(kind==='ind'){
     for(const mk of Object.keys(state.store.months).sort()){
       const im=starOf(mk)?.industry?.metrics; if(!im) continue;
       for(const met of METS){ const h=im[met]?.hist;
         if(h?.months) h.months.forEach((k,i)=>{ if(k&&m[k]?.[met]==null) put(k,met,h[ 'idx' ][i]); });
-        if(im[met]?.monthKey&&im[met]?.cm?.idx!=null) put(im[met].monthKey,met,im[met].cm.idx);
+        if(im[met]?.monthKey&&im[met]?.cm?.idx!=null){
+          put(im[met].monthKey,met,im[met].cm.idx);
+          /* the Industry sheet publishes my/industry/index % changes for the file's own month */
+          putLy(im[met].monthKey,met,
+            fromChg(im[met].cm.idx, im[met].cmChg?.my, im[met].cmChg?.ind));
+        }
       }
     }
   }else if(kind==='subcls'||kind==='submkt'){
@@ -2469,16 +2498,35 @@ function idxTrendSeries(kind){
       const s=starOf(mk)?.summary; if(!s) continue;
       for(const met of METS){
         const p=s[met]?.prop?.cm, b=s[met]?.[kind]?.cm;
-        if(p!=null&&b) put(mk,met,p/b*100);
+        if(p!=null&&b){ const idx=p/b*100;
+          put(mk,met,idx);
+          putLy(mk,met,fromChg(idx,s[met]?.prop?.cmChg,s[met]?.[kind]?.cmChg));
+        }
       }
     }
   }else{
     const H=mergedStarHistory();
     H.months.forEach((mk,i)=>METS.forEach(met=>put(mk,met,H.idx[met][i])));
+    /* the full-data extract publishes the index's own % change for every month */
+    const SF=state.store.strFull?.months;
+    if(SF) for(const mk of Object.keys(SF)){
+      const f=SF[mk];
+      for(const met of METS){
+        const idx=f[met+'Idx'], ch=f[met+'IdxChg'];
+        if(idx!=null&&ch!=null&&ch!==-100) putLy(mk,met,idx/(1+ch/100));
+      }
+    }
   }
   const months=Object.keys(m).sort();
   const out={months};
   for(const met of METS) out[met]=months.map(k=>m[k][met]??null);
+  /* published-change derivation first; the 12-month lookup only fills what it cannot reach */
+  out.ly={};
+  for(const met of METS) out.ly[met]=months.map((k,i)=>{
+    if(lyM[k]?.[met]!=null) return lyM[k][met];
+    const j=months.indexOf((+k.slice(0,4)-1)+'-'+k.slice(5,7));
+    return j>=0?(m[months[j]][met]??null):null;
+  });
   out.lyOf=arr=>months.map(k=>{ const i=months.indexOf((+k.slice(0,4)-1)+'-'+k.slice(5,7)); return i>=0?arr[i]:null; });
   return out;
 }
@@ -5119,7 +5167,7 @@ function renderMarket(d){
      averaged across months, and key-matching also survives gaps in the union. */
   const hasIdx=IB.months.length&&IB.revpar.some(v=>v!=null);
   const gI=hasIdx?granGroup(IB.months,[{data:IB.occ,agg:'avg'},{data:IB.adr,agg:'avg'},{data:IB.revpar,agg:'avg'},
-      {data:IB.lyOf(IB.occ),agg:'avg'},{data:IB.lyOf(IB.adr),agg:'avg'},{data:IB.lyOf(IB.revpar),agg:'avg'}]):null;
+      {data:IB.ly.occ,agg:'avg'},{data:IB.ly.adr,agg:'avg'},{data:IB.ly.revpar,agg:'avg'}]):null;
   if(hasIdx) mkChart('chIdxTrend',{type:'line',data:{labels:gI.labels,datasets:[
       {label:'MPI',data:gI.out[0],borderColor:'#4a7dbd',tension:.3},
       {label:'ARI',data:gI.out[1],borderColor:'#d69e2e',tension:.3},
@@ -6350,14 +6398,20 @@ function renderEng(d){
       .map(x=>x.toUpperCase().replace(/\s+/g,'')))];
     return {c,sys:sys2,loc:loc2};
   });
-  const crit=critItems.length? `<div style="overflow-x:auto"><table><thead>
-      <tr><th style="width:22%">System / category</th><th style="width:12%">Location</th><th>Reported issue</th></tr></thead><tbody>
+  /* Summary clamps each issue to two lines with a per-row expander; Full detail shows every
+     sentence in full. Nothing is ever cut from the DATA — both modes hold the whole text, so
+     the browser's find-in-page and the Excel export still see all of it. */
+  const engFull=!!state.engFull;
+  const CLAMP_OVER=140;                    // only offer more/less when there is something hidden
+  const crit=critItems.length? `<div style="overflow-x:auto"><table class="engtbl"><thead>
+      <tr><th style="width:20%">System / category</th><th style="width:10%">Location</th><th>Reported issue</th></tr></thead><tbody>
       ${critItems.map(it=>`<tr>
         <td>${it.sys.length?it.sys.map(s=>`<span class="tag a" style="margin:1px 2px">${s}</span>`).join(''):'<span class="small" style="color:var(--grey)">unclassified</span>'}</td>
         <td>${it.loc.length?it.loc.map(l=>`<span class="tag" style="margin:1px 2px">${l}</span>`).join(''):'<span class="small" style="color:var(--grey)">—</span>'}</td>
-        <td class="small">${it.c}</td></tr>`).join('')}
+        <td class="issue small"><div class="itext${engFull?'':' clamp'}">${escH(it.c)}</div>${
+          it.c.length>CLAMP_OVER?`<span class="xmore noprint" onclick="__engRow(this)">${engFull?'▾ less':'▸ more'}</span>`:''}</td></tr>`).join('')}
       </tbody></table></div>
-      <div class="small" style="margin-top:6px">System comes from the keyword dictionary behind the mentions chart; location from the report's own floor/area tokens (B1/B2, nF, Roof, Lobby, Club, Bistro, Mezz, Banquet, Pool, Spa, Kitchen). A line can hit more than one of either. "unclassified" means the sentence named no known system — worth reading in full.</div>`
+      <div class="small" style="margin-top:6px">System comes from the keyword dictionary behind the mentions chart; location from the report's own floor/area tokens (B1/B2, nF, Roof, Lobby, Club, Bistro, Mezz, Banquet, Pool, Spa, Kitchen). A line can hit more than one of either. "unclassified" means the sentence named no known system — worth reading in full. <b>Summary</b> clamps each line to two rows with a <b>▸ more</b> expander; <b>Full detail</b> opens them all. Printing always uses the full text.</div>`
     : '<div class="small">No critical-keyword lines detected.</div>';
   const insight= topSys.length? `<div class="alert ${topSys[0][1]>15?'crit':'info'}"><div class="h">Most stressed system: ${topSys[0][0]} (${topSys[0][1]} mentions)</div>
     <div class="d">Top location: <b>${topLocs[0]?.[0]??'—'}</b> (${topLocs[0]?.[1]??0} mentions). Recurring mentions of the same floor/system month after month = ageing asset — cross-check against the renovation scope and FF&E reserve before approving one-off repairs.</div></div>`:'';
@@ -6385,7 +6439,11 @@ function renderEng(d){
         <table><thead><tr><th>Location</th><th>Mentions</th></tr></thead><tbody>${locRows}</tbody></table>
         <div class="small" style="margin-top:4px">Counted from the report text — a proxy for where Engineering effort is going, not a defect count.</div></div>
     </div>
-    <div class="panel"><h3>Critical watchlist — ${fmtMonthKey(key)} — lines flagged by keyword (leak / broken / fail / damage / clog…)</h3>${crit}</div>`;
+    <div class="panel"><h3>Critical watchlist — ${fmtMonthKey(key)} — lines flagged by keyword (leak / broken / fail / damage / clog…)
+        <input class="tblflt noprint" placeholder="${t('filter')}">
+        <span class="noprint" id="engDetailToggle" style="float:right;font-weight:400">
+          <button class="heatbtn ${engFull?'':'on'}" onclick="__setEngFull(false)">Summary</button>
+          <button class="heatbtn ${engFull?'on':''}" onclick="__setEngFull(true)">Full detail</button></span></h3>${crit}</div>`;
   mkChart('chEngWo',{type:'bar',data:{labels:gks.map(gLabel),datasets:[
       {type:'bar',label:'Requested',data:gks.map(gk=>sumOf(gk,e=>e.wo?.total)),backgroundColor:'#0B1F3A'},
       {type:'bar',label:'Completed',data:gks.map(gk=>sumOf(gk,e=>e.wo?.done)),backgroundColor:'#C9A227'},
@@ -7136,6 +7194,14 @@ window.__goTab=t2=>{ const b=document.querySelector('[data-tab="'+t2+'"]'); if(b
    table from a handful of rows to ~300, and the header must freeze in the same frame rather
    than waiting on a requestAnimationFrame that a backgrounded tab never fires. */
 window.__setExpFull=v=>{ state.expFull=!!v; renderExpenses(derive()); balanceKgrids(); applyStickyHeaders(); };
+/* Engineering watchlist: panel-level Summary/Full detail, plus a per-row expander so one long
+   line can be opened without switching the whole table. */
+window.__setEngFull=v=>{ state.engFull=!!v; renderEng(derive()); applyStickyHeaders(); };
+window.__engRow=el=>{
+  const d=el.parentElement.querySelector('.itext'); if(!d) return;
+  const open=d.classList.toggle('clamp')===false;
+  el.textContent=open?'▾ less':'▸ more';
+};
 function renderExpenses(d){
   const el=$('#tab-expenses'); if(!el) return;
   if(!d.ok){ el.innerHTML=noData(); return; }
