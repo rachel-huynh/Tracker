@@ -4667,18 +4667,30 @@ function renderMarket(d){
      owner asked for); "Lux + upper upscale" is the Summary sheet's SubmarketCollapsedClass row,
      which is the only place that wider peer group exists — the Industry sheet carries a single
      scope. Sources differ by necessity, so each mode names its own in the caption. */
-  const wantUU = state.starBench==='uu' && !!sum.occ?.subcls;
-  const benchSrc = wantUU            ? 'subcls'
-                 : ind?.metrics?.occ ? 'industry'
-                 : sum.occ?.submkt   ? 'summary'
-                 : gl.cmInd?.occ     ? 'glance' : 'none';
+  /* Three selectable benchmarks, widening in scope: the Industry sheet's HCMC Luxury, then the
+     Summary sheet's Luxury & Upper Upscale, then the whole HCMC submarket. Only the first comes
+     from the Industry sheet; the other two exist only in the Summary sheet, so each mode names
+     its own source in the caption. `summary` is the automatic fallback to the submarket when no
+     Industry sheet is loaded — same figures as an explicit `submkt` pick, different wording. */
+  const canInd=!!ind?.metrics?.occ, canUU=!!sum.occ?.subcls, canMkt=!!sum.occ?.submkt;
+  const benchSrc = (state.starBench==='uu' &&canUU)  ? 'subcls'
+                 : (state.starBench==='mkt'&&canMkt) ? 'submkt'
+                 : canInd ? 'industry'
+                 : canMkt ? 'summary'
+                 : gl.cmInd?.occ ? 'glance' : 'none';
+  /* both Summary-sourced modes read the same shape, so resolve the entity once */
+  const sumEnt = benchSrc==='subcls' ? 'subcls'
+               : (benchSrc==='submkt'||benchSrc==='summary') ? 'submkt' : null;
   const benchName = benchSrc==='subcls' ? (st.entityLabels?.subcls||'Luxury & Upper Upscale')
-                  : ind?.scope||(benchSrc==='summary'?(st.entityLabels?.submkt||'Submarket'):'Industry');
+                  : sumEnt ? (st.entityLabels?.submkt||'Submarket: Ho Chi Minh City')
+                  : (ind?.scope||'Industry');
   const benchBtns=`<span class="noprint" style="float:right;font-weight:400">
-    ${ind?.metrics?.occ?`<button class="heatbtn ${benchSrc!=='subcls'?'on':''}" onclick="__setStarBench('ind')"
+    ${canInd?`<button class="heatbtn ${benchSrc==='industry'?'on':''}" onclick="__setStarBench('ind')"
         title="${escA(ind.scope)} — from the Industry sheet">Luxury market</button>`:''}
-    ${sum.occ?.subcls?`<button class="heatbtn ${benchSrc==='subcls'?'on':''}" onclick="__setStarBench('uu')"
-        title="${escA(st.entityLabels?.subcls||'SubmarketCollapsedClass: Luxury & Upper Upscale')} — from the Summary sheet">Lux + upper upscale</button>`:''}</span>`;
+    ${canUU?`<button class="heatbtn ${benchSrc==='subcls'?'on':''}" onclick="__setStarBench('uu')"
+        title="${escA(st.entityLabels?.subcls||'SubmarketCollapsedClass: Luxury & Upper Upscale')} — from the Summary sheet">Lux + upper upscale</button>`:''}
+    ${canMkt?`<button class="heatbtn ${(benchSrc==='submkt'||benchSrc==='summary')?'on':''}" onclick="__setStarBench('mkt')"
+        title="${escA(st.entityLabels?.submkt||'Submarket: Ho Chi Minh City')} — the whole city, every price class, from the Summary sheet">HCMC market</button>`:''}</span>`;
   /* Column header wants to be short — "Ho Chi Minh City Luxury" is too wide (owner request).
      The city is already implicit everywhere else on this tab, so keep only the STR class and
      call it a market: "Luxury market". Matched against STR's own class vocabulary, longest
@@ -4689,6 +4701,7 @@ function renderMarket(d){
   /* header text must follow the SELECTED benchmark, not always the Industry sheet's scope */
   const benchShort=(()=>{
     if(benchSrc==='subcls') return 'Lux + UU market';
+    if(sumEnt) return 'HCMC market';
     const s=ind?.scope||'';
     const c=STR_CLASSES.find(x=>new RegExp(x,'i').test(s));
     return c?c+' market':(s.replace(/^.*Class\s*:\s*/i,'').trim()||'Industry');
@@ -4701,21 +4714,20 @@ function renderMarket(d){
     const cChg=sum[met]?.comp?.[sp+'Chg'] ?? gl[sp+'Chg']?.[met]?.comp;
     const iv = gl[sp]?.[met]?.idx ?? ((pv!=null&&cVal)?pv/cVal*100:null);
     const ic = gl[sp+'Chg']?.[met]?.idx;
-    const mv = benchSrc==='subcls' ? (sum[met]?.subcls?.[sp] ?? null)
-             : ind?.metrics?.[met]?.[sp]?.ind
-               ?? sum[met]?.submkt?.[sp] ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
-    const mc = benchSrc==='subcls' ? (sum[met]?.subcls?.[sp+'Chg'] ?? null)
-             : ind?.metrics?.[met]?.[sp+'Chg']?.ind ?? sum[met]?.submkt?.[sp+'Chg'];
+    const mv = sumEnt ? (sum[met]?.[sumEnt]?.[sp] ?? null)
+             : ind?.metrics?.[met]?.[sp]?.ind ?? (sp==='cm'? gl.cmInd?.[met]?.comp : null);
+    const mc = sumEnt ? (sum[met]?.[sumEnt]?.[sp+'Chg'] ?? null)
+             : ind?.metrics?.[met]?.[sp+'Chg']?.ind;
     /* SSP vs the industry benchmark. Taken from the Industry sheet's own "Index" row rather
        than derived, so it matches STR's published figure exactly (STR rounds its inputs
        differently, so property/industry recomputed here can land a decimal off); the
        division is only a fallback for a provisional month with no Industry sheet. */
-    /* In Lux+UU mode STR publishes no index against that group, so it is computed here.
+    /* For either Summary-sourced benchmark STR publishes no index, so it is computed here.
        Must NOT fall through to the Industry sheet's idx row — that is the index against a
-       different (narrower) population and would leave the column unchanged when switching. */
-    const miv = benchSrc==='subcls' ? ((pv!=null&&mv)? pv/mv*100 : null)
+       different population and would leave the column unchanged when switching benchmark. */
+    const miv = sumEnt ? ((pv!=null&&mv)? pv/mv*100 : null)
               : (ind?.metrics?.[met]?.[sp]?.idx ?? ((pv!=null&&mv)? pv/mv*100 : null));
-    const mic = benchSrc==='subcls' ? null : ind?.metrics?.[met]?.[sp+'Chg']?.idx;
+    const mic = sumEnt ? null : ind?.metrics?.[met]?.[sp+'Chg']?.idx;
     /* LY must be on the SAME BASIS as the figure beside it. lyAt() reads the comp history,
        which is MONTHLY — right for the Current-month view, but next to a YTD / 3M / 12M level
        it was showing last year's single month. For those periods derive the level from STR's
@@ -4733,13 +4745,14 @@ function renderMarket(d){
     /* value / YoY % / LY stacked per cell — see snapTd. The benchmark and its index carry
        their own last-year level from the Industry sheet's prior-year columns, so every column
        now shows a real LY figure rather than a placeholder. */
-    /* The Summary sheet carries no last-year LEVELS, only % changes — so in Lux+UU mode LY is
-       derived exactly from the published change (level ÷ (1+chg)) rather than left blank. */
-    const mLy = benchSrc==='subcls'
+    /* The Summary sheet carries no last-year LEVELS, only % changes — so for either
+       Summary-sourced benchmark LY is derived exactly from the published change
+       (level ÷ (1+chg)) rather than left blank. */
+    const mLy = sumEnt
               ? ((mv!=null&&mc!=null&&mc!==-100)? mv/(1+mc/100) : null)
               : (ind?.metrics?.[met]?.[sp+'Ly']?.ind ?? null);
-    const miLy= benchSrc==='subcls'
-              ? ((pv!=null&&mLy)? (lyP??null)!=null? lyP/mLy*100 : null : null)
+    const miLy= sumEnt
+              ? ((lyP!=null&&mLy)? lyP/mLy*100 : null)
               : (ind?.metrics?.[met]?.[sp+'Ly']?.idx ?? null);
     const L=v=>showLy?v:undefined;
     snapRows+=`<tr><td>${label}</td>
@@ -4951,6 +4964,8 @@ function renderMarket(d){
   ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — the city's luxury <i>and</i> upper-upscale hotels, a wider peer group than the Luxury market. This one can only come from the Summary sheet: the Industry sheet carries a single scope. Its last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since the Summary sheet lists changes but not prior-year levels.`
   : benchSrc==='industry'
   ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. It is deliberately <b>not</b> taken from the Summary sheet, whose Market / Submarket rows cover wider populations and therefore read much lower.`
+  : benchSrc==='submkt'
+  ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — <b>the whole city, every price class</b>, so it sits well below the luxury benchmarks and Sofitel usually indexes above 100 against it. Only the Summary sheet carries it. Last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since that sheet lists changes but not prior-year levels.`
   : benchSrc==='glance'
   ? `<span class="tag a">Industry sheet not in this file</span> This is a provisional month built from a Weekly STAR, which carries no Industry sheet — the benchmark shown is the <b>industry figure from the file's Glance</b>. It refreshes from the Industry sheet once the official Monthly STAR is dropped.`
   : benchSrc==='summary'
