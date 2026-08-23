@@ -1068,13 +1068,30 @@ function parseBudget2026(wb){
            ...(ood?{spa:oodAt('rev','spa',m), golf:oodAt('rev','golf',m),
                     laundry:oodAt('rev','laundry',m), comms:oodAt('rev','comms',m),
                     otherOp:oodAt('rev','otherOp',m), misc:oodAt('rev','misc',m)}
-                :{spa:val(29,c)})},
+                /* Lumped fallback: row 29 is ALL of Minor Operated. Zero the siblings
+                   explicitly — leaving them unset would let g() fall through to the
+                   operator's budget for each and add them on top of the lump, the same
+                   double-count B26_COMBINED prevents for the overhead departments. */
+                :{spa:val(29,c), golf:0, laundry:0, comms:0, minibar:0, otherOp:0, misc:0})},
       dp:{rooms:roomsDP, total:deptTotal??((roomsDP??0)+(fnbDP??0)+(minorDP??0)), fnb:fnbDP,
           ...(ood?{spa:oodAt('dp','spa',m), golf:oodAt('dp','golf',m),
                    laundry:oodAt('dp','laundry',m), comms:oodAt('dp','comms',m),
                    otherOp:oodAt('dp','otherOp',m), misc:oodAt('dp','misc',m)}
-               :{spa:minorDP})},
-      undist:{ag:{pay:val(36,c)}, it:{pay:val(37,c)}, sm:{pay:val(38,c)}, energy:{oth:val(39,c)}, pomec:{pay:val(40,c)}},
+               :{spa:minorDP, golf:0, laundry:0, comms:0, minibar:0, otherOp:0, misc:0})},
+      /* Marketing Fees (= the RF/UOL "Corporate Marketing" line) belong INSIDE Sales &
+         Marketing. This sheet keeps them off-block: row 38 is S&M excluding them and row
+         41 Total Overheads likewise excludes them, while the actual and LY sides (the
+         P&L's own S&M department) DO include them. Left as-is the Budget column showed
+         S&M and Overheads ~350M light, the variance vs Forecast read 26.7% instead of
+         3.5%, and the printed cascade didn't close (Dept Profit − Overheads ≠ GOP,
+         because sum.gop below already nets the fee off). Verified on the real workbook:
+         Aug-26 1,557,266,938 + 350,465,754 = 1,907,732,692 and 7,215,193,486 +
+         350,465,754 = 7,565,659,240, both matching the RF dashboard exactly, and
+         dp.total − (row41 + fee) = sum.gop to the dong in every month.
+         Carried under its own key rather than folded into sm.pay/sm.oth so the Expenses
+         tab's "non-payroll S&M" budget (which reads undist.sm.oth) is not falsified. */
+      undist:{ag:{pay:val(36,c)}, it:{pay:val(37,c)}, sm:{pay:val(38,c), mktgFee:mf||null},
+              energy:{oth:val(39,c)}, pomec:{pay:val(40,c)}},
       /* row45 "Net Income from Hotel" = row34 - row41 - mgmt fee - incentive fee, so it
          excludes Marketing Fees for the same reason GOP did — deduct them here too,
          otherwise EBITDA budget stays overstated while GOP is correct. */
@@ -1107,7 +1124,10 @@ const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','s
    Income") has its own budget and is no longer double-counted inside OOD; v5 added the
    `conso` group cascade so the Consolidated tab's Budget column comes from this
    workbook instead of the FS's own (older) budget column; v6 took sum.ebitda from the
-   hotel budget sheet's own "EBITDA" row instead of deriving netIncomeHotel−MarketingFees. */
+   hotel budget sheet's own "EBITDA" row instead of deriving netIncomeHotel−MarketingFees;
+   v7 carries Marketing Fees inside undist.sm as `mktgFee`, so the Budget column's Sales &
+   Marketing and Overheads rows match the RF/UOL definition (which includes Corporate
+   Marketing) and the printed cascade closes to GOP. */
 /* Central Plaza P&L parse version. Bumped when a NEW field is read from the FS block, so
    months ingested by an older build can be spotted and flagged for a re-drop instead of
    silently showing blanks. v2 = added `ybud` (YTD budget, Excel col 11).
@@ -1115,7 +1135,7 @@ const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','s
    literal 0, so it used to be stored as a data row full of N/A). */
 const CP_SCHEMA=3;
 function cpStale(cp){ return !!cp && (cp.__v||1)<CP_SCHEMA; }
-const B26_SCHEMA=6;
+const B26_SCHEMA=7;
 function budget2026Stale(){ const b=state.store.budget2026; return !!b && b.__v!==B26_SCHEMA; }
 function b26StaleBanner(){ return budget2026Stale()
   ? `<div class="panel" style="padding:8px 12px;border-left:4px solid var(--red)"><div class="small">
@@ -1130,6 +1150,39 @@ function budget2026For(mk){ // mk like '2026-04' -> that month's parsed budget o
   return (state.store.budget2026||{})[mm]||null;
 }
 function b26Path(obj,path){ const v=path.split('.').reduce((a,k)=>a?.[k],obj); return v==null?null:v; }
+/* ---------- categories the owner's book supplies as ONE combined figure ----------
+   The budget workbook carries no payroll / non-payroll split for the overhead
+   departments, so parseBudget2026 parks each category's single combined figure under one
+   member of the group (its "carrier") and leaves the siblings unset. g() resolves per
+   PATH, so without this map a group total like UOL_SM = sm.pay + sm.oth takes the owner's
+   COMBINED figure from .pay and then falls through to the OPERATOR's (older, Accor) budget
+   for .oth and adds it on top — double-counting the non-payroll half and blending two
+   budget vintages inside one printed number. Measured on Jul-2026 before the fix:
+   Overheads budget read 10.15 bn instead of 7.65 bn, S&M 2.85 bn instead of 1.99 bn, and
+   the P&L-detail cascade did not close (Dept Profit 20.72 − Overheads 10.15 ≠ GOP 13.07).
+   Any path under a listed prefix that is not a carrier therefore resolves to 0 from the
+   owner's book rather than falling through. Consumers that genuinely want the operator's
+   split (the Expenses tab's non-payroll rows) must ask for it explicitly via gOperatorBud. */
+const B26_COMBINED={
+  'undist.ag':['pay'], 'undist.it':['pay'], 'undist.sm':['pay','mktgFee'],
+  'undist.pomec':['pay'], 'undist.energy':['oth'],
+};
+/* undefined = not a combined-category sibling, resolve normally. 0 = suppress.
+   The carrier check uses the CURRENT month's parse as the proxy for a YTD span: the
+   workbook either carries a category for the whole year or not at all. */
+function b26Suppressed(b26,path){
+  const i=path.lastIndexOf('.'); if(i<0) return undefined;
+  const grp=path.slice(0,i), leaf=path.slice(i+1);
+  const carriers=B26_COMBINED[grp];
+  if(!carriers||carriers.includes(leaf)) return undefined;
+  return carriers.some(k=>b26Path(b26,grp+'.'+k)!=null) ? 0 : undefined;
+}
+/* the operator's (P&L) budget column, bypassing the owner's book entirely */
+function gOperatorBud(pnl,path,per){
+  if(!pnl) return null;
+  const o=path.split('.').reduce((a,k)=>a?.[k],pnl);
+  return o?.[per]?.bud??null;
+}
 function budget2026YTD(mm,path){
   if(path==='stats.occ'){
     let sold=0,avail=0,any=false;
@@ -2881,6 +2934,7 @@ function g(pnl,path,per,fld){
   if(fld==='bud'){
     const b26=budget2026For(pnl.monthKey);
     if(b26){
+      if(b26Suppressed(b26,path)===0) return 0;   // whole category sits on its carrier
       const v = per==='MTD' ? b26Path(b26,path)
               : per==='YTD' ? budget2026YTD(parseInt(pnl.monthKey.slice(5,7),10),path)
               : undefined;
@@ -2905,6 +2959,7 @@ function budgetSrcOf(pnl,path,per){
   if(!pnl) return null;
   const b26=budget2026For(pnl.monthKey);
   if(b26){
+    if(b26Suppressed(b26,path)===0) return 'owner';   // mirrors g(): owner answered, with 0
     const v = per==='MTD' ? b26Path(b26,path)
             : per==='YTD' ? budget2026YTD(parseInt(pnl.monthKey.slice(5,7),10),path)
             : undefined;
@@ -3249,7 +3304,11 @@ const UOL_OOD_DP =['dp.spa','dp.golf','dp.laundry','dp.comms','dp.minibar','dp.o
 /* parsePnl stores each overhead category split into .pay (payroll block) and .oth
    (other-expenses block) — the same pairing the Python builder sums as OVERHEAD_PAIRS.
    Energy exists only in the other-expenses block. */
-const UOL_AG=['undist.ag.pay','undist.ag.oth'], UOL_SM=['undist.sm.pay','undist.sm.oth'],
+/* 'undist.sm.mktgFee' exists ONLY on the budget parse (the budget workbook books
+   Marketing Fees / Corporate Marketing outside its S&M row; the P&L and the rolling
+   forecast both carry them inside their S&M department). pathSum skips missing keys,
+   so the actual/LY sides are unaffected and the budget side stops reading ~350M light. */
+const UOL_AG=['undist.ag.pay','undist.ag.oth'], UOL_SM=['undist.sm.pay','undist.sm.oth','undist.sm.mktgFee'],
       UOL_IT=['undist.it.pay','undist.it.oth'], UOL_PM=['undist.pomec.pay','undist.pomec.oth'],
       UOL_EN=['undist.energy.oth'];
 const UOL_OH=[...UOL_AG,...UOL_SM,...UOL_IT,...UOL_PM,...UOL_EN];
@@ -3377,7 +3436,7 @@ function uolTable(d){
       <tr>${grp(false)}${grp(true)}</tr>
       <tr>${sub(false)}${sub(true)}</tr></thead>
       <tbody>${html}</tbody></table></div>
-    <div class="small" style="margin-top:6px">MTD on the left, YTD on the right. % of TR divides each scenario by <b>its own</b> Total Revenue. Occupancy / ADR / RevPAR and the STR indices carry no % of TR — they aren't revenue amounts. Budget for 2026 months comes from the consolidated 2026 budget (GOP net of Marketing Fees). <b>EBITDA (Hotel)</b>: actual/LY are the P&amp;L's own EBITDA row (struck <i>after</i> the FF&amp;E provision and insurance); budget is the budget workbook's EBITDA row (struck <i>before</i> FF&amp;E) — so the variance carries about one month of FF&amp;E.</div>
+    <div class="small" style="margin-top:6px">MTD on the left, YTD on the right. % of TR divides each scenario by <b>its own</b> Total Revenue. Occupancy / ADR / RevPAR and the STR indices carry no % of TR — they aren't revenue amounts. Budget for 2026 months comes from the consolidated 2026 budget (GOP net of Marketing Fees, which are also added into <b>Sales &amp; Marketing</b> and <b>Overheads</b> — that workbook books them on a separate row, the P&amp;L and rolling forecast carry them inside the S&amp;M department). <b>EBITDA (Hotel)</b>: actual/LY are the P&amp;L's own EBITDA row (struck <i>after</i> the FF&amp;E provision and insurance); budget is the budget workbook's EBITDA row (struck <i>before</i> FF&amp;E) — so the variance carries about one month of FF&amp;E.</div>
     <div class="small" style="margin-top:4px">MPI / ARI / RGI have no budget basis — they are indexes versus the comp set. The Last-Year index comes from the STAR file's own comp history: for MTD, the same calendar month one year earlier; for YTD, rebuilt from that year's raw property-vs-comp levels weighted by days per month (an index is a ratio, so averaging monthly index values would misweight short and low-occupancy months). ARI uses the STR identity ARI = RGI ÷ MPI × 100.
       <a href="#" onclick="__goTab('market');return false" style="color:var(--red);font-weight:700;text-decoration:underline">Full index history, ranks, comp-set members and daily detail are on the Market — STR tab →</a></div></div>`;
 }
@@ -6204,7 +6263,7 @@ function renderForecast(d){
           <tr><th rowspan="2">Line</th>${fwd.map((x,mi)=>`<th colspan="5" style="${msep(mi)}">${fmtMonthKey(x.m)}</th>`).join('')}</tr>
           <tr>${fwd.map((x,mi)=>`<th style="${msep(mi)}">Forecast</th><th>Budget</th><th>vs Bud</th><th>LY</th><th>vs LY</th>`).join('')}</tr></thead>
           <tbody>${body}</tbody></table></div>
-        <div class="small" style="margin-top:6px">Same row hierarchy as the Sofitel <b>P&amp;L detail</b> table, for the next ${fwd.length} forecast month(s). Forecast = <b>${rf.title||'rolling forecast'}</b>; Budget = consolidated 2026 budget; LY = the same calendar month one year earlier from that month's own P&amp;L. Lines with no consolidated-budget equivalent (F&amp;B, OOD, overheads) show a blank Budget but still carry Forecast &amp; LY. <b>EBITDA (Hotel)</b> forecast is the rolling forecast's <b>NET RETURN</b> row, which is the same line the P&amp;L calls EBITDA (verified identical on the overlapping actual month). Note the bases differ: Forecast and LY are struck <i>after</i> the FF&amp;E provision, the budget workbook's EBITDA row <i>before</i> it, so that variance carries about one month of FF&amp;E.</div></div>`;
+        <div class="small" style="margin-top:6px">Same row hierarchy as the Sofitel <b>P&amp;L detail</b> table, for the next ${fwd.length} forecast month(s). Forecast = <b>${rf.title||'rolling forecast'}</b>; Budget = consolidated 2026 budget; LY = the same calendar month one year earlier from that month's own P&amp;L. <b>Sales &amp; Marketing</b> includes Corporate Marketing on all three scenarios: the budget workbook books it as a separate "Marketing Fees" row outside its S&amp;M and Overheads lines, so it is added back here to match the rolling forecast's definition and keep Dept Profit − Overheads = GOP. <b>EBITDA (Hotel)</b> forecast is the rolling forecast's <b>NET RETURN</b> row, which is the same line the P&amp;L calls EBITDA (verified identical on the overlapping actual month). Note the bases differ: Forecast and LY are struck <i>after</i> the FF&amp;E provision, the budget workbook's EBITDA row <i>before</i> it, so that variance carries about one month of FF&amp;E.</div></div>`;
     }
   }
 
@@ -7213,7 +7272,14 @@ function renderExpenses(d){
   const el=$('#tab-expenses'); if(!el) return;
   if(!d.ok){ el.innerHTML=noData(); return; }
   const p=d.p, P=state.period, G=(path,f)=>g(p,path,P,f);
-  const many=(paths,f)=>{ let s=null; for(const pa of paths){ const v=g(p,pa,P,f); if(v!=null) s=(s??0)+v; } return s; };
+  /* These rows ask for the NON-PAYROLL half of a category. The owner's budget workbook
+     has no payroll split at all — it books one combined figure per overhead department,
+     which g() now correctly reports as 0 for the sibling paths (see B26_COMBINED) — so
+     the operator's own budget column is the only source that can answer this question,
+     and asking it directly is right here even though group totals prefer the owner. */
+  const many=(paths,f)=>{ let s=null;
+    for(const pa of paths){ const v=(f==='bud')?gOperatorBud(p,pa,P):g(p,pa,P,f); if(v!=null) s=(s??0)+v; }
+    return s; };
   const F=['act','bud','ly'];
   const totCost={}, F_=(o,f)=>o[f];
   for(const f of F){ const tr=G('rev.totalIncl',f), gp=G('sum.gop',f);
