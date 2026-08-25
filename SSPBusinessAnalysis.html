@@ -1710,8 +1710,24 @@ function parseStarMonthly(wb){
       }
     }
     /* census: comp set rooms  */
-    const cr=findRow(sg,MAP.star.census, null, findRow(sg,/Census\/Sample/i));
+    const cStart=findRow(sg,/Census\/Sample/i);
+    const cr=findRow(sg,MAP.star.census, null, cStart);
     if(cr>=0){ const nums=(sg[cr]||[]).map(num).filter(v=>v!==null); if(nums.length>=2) out.census={props:nums[0],rooms:nums[1]}; }
+    /* Census for EVERY benchmark, not just the comp set. These hotel/room counts are the
+       only thing that settles which population a benchmark actually is, and their absence
+       is what let a real confusion run: "MarketClass: Luxury" holds 62 hotels / 8,794 rooms,
+       which is MORE hotels than the 60 in the whole of HCMC's Luxury & Upper Upscale — so
+       that row cannot be a Ho Chi Minh City figure, it spans all of Vietnam South (565
+       hotels) with the resort destinations in it. Surfaced in the benchmark tooltips and the
+       snapshot caption so the question is answerable on the page. */
+    if(cStart>=0){ out.censusBy={};
+      for(const [ek,ere] of Object.entries(MAP.star.entities)){
+        const r=findRow(sg,ere,null,cStart); if(r<0||r>cStart+12) continue;
+        const nums=(sg[r]||[]).map(num).filter(v=>v!==null);
+        if(nums.length>=2) out.censusBy[ek]={props:nums[0],rooms:nums[1],
+          sampleProps:nums[2]??null, sampleRooms:nums[3]??null};
+      }
+    }
   } else W(warns,'STAR Summary sheet missing');
 
   /* Comp: 18-month history per metric: months row then My/Comp/Index/Rank rows */
@@ -2039,7 +2055,13 @@ function parseHotStats(wb){
       if(/^n\/?a$/i.test(s)) return null;
       const m=s.match(/^-?\d+(\.\d+)?%?$/); return m? parseFloat(s):null; };
     const take=(st)=>({you:hn(row[st]),comp:hn(row[st+1]),idx:hn(row[st+2])});
-    out.rows[key]={ basis,
+    /* Is this line a PERCENTAGE? The basis column does not always say so — "Occupancy %"
+       carries basis "PAR", so a basis-only test sent it down the money path: it printed as
+       "74" instead of "73.9%" in VND and, far worse, as "$0" in USD because 73.9 was divided
+       by the exchange rate. HotStats writes these cells as text ending in "%", so read it
+       from the source cell and fall back to the basis. */
+    const isPct = (typeof row[c0]==='string' && /%\s*$/.test(row[c0].trim())) || /%/.test(basis||'');
+    out.rows[key]={ basis, pct:isPct,
       mtd:{ ty:take(c0), ly:take(c0+3), vr:take(c0+6) },
       ytd:{ ty:take(y0), ly:take(y0+3), vr:take(y0+6) } };
   }
@@ -4996,13 +5018,16 @@ function renderMarket(d){
      "Luxury market", which invites a comparison with CoStar's Summary row "MarketClass:
      Luxury" — a different population (all of Vietnam South, resorts included, YTD ADR
      ~₫6.4M against HCMC Luxury's ~₫5.1M). Same reason the whole-city option says HCMC. */
+  /* hotel/room counts per benchmark — the only unambiguous statement of what each one covers */
+  const cens=st.censusBy||{};
+  const censTxt=ek=>{ const c=cens[ek]; return c? ` (${n1(c.props,0)} hotels · ${n1(c.rooms,0)} rooms)` : ''; };
   const benchBtns=`<span class="noprint" style="float:right;font-weight:400">
     ${canInd?`<button class="heatbtn ${benchSrc==='industry'?'on':''}" onclick="__setStarBench('ind')"
-        title="${escA(ind.scope)} — from the Industry sheet. Not shown on CoStar's Summary tab: it is the Ho Chi Minh City × Luxury intersection.">HCMC Luxury</button>`:''}
+        title="${escA(ind.scope)} — from the Industry sheet. Not on CoStar's Summary tab: it is the Ho Chi Minh City × Luxury intersection, a subset of the ${cens.subcls?n1(cens.subcls.props,0)+' ':''}hotels in HCMC Luxury &amp; Upper Upscale.">HCMC Luxury</button>`:''}
     ${canUU?`<button class="heatbtn ${benchSrc==='subcls'?'on':''}" onclick="__setStarBench('uu')"
-        title="${escA(st.entityLabels?.subcls||SUM_FALLBACK.subcls)} — from the Summary sheet">Lux + upper upscale</button>`:''}
+        title="${escA(st.entityLabels?.subcls||SUM_FALLBACK.subcls)}${censTxt('subcls')} — from the Summary sheet">Lux + upper upscale</button>`:''}
     ${canMkt?`<button class="heatbtn ${(benchSrc==='submkt'||benchSrc==='summary')?'on':''}" onclick="__setStarBench('mkt')"
-        title="${escA(st.entityLabels?.submkt||SUM_FALLBACK.submkt)} — the whole city, every price class, from the Summary sheet">HCMC market</button>`:''}</span>`;
+        title="${escA(st.entityLabels?.submkt||SUM_FALLBACK.submkt)}${censTxt('submkt')} — the whole city, every price class, from the Summary sheet">HCMC market</button>`:''}</span>`;
   /* Column header follows the SELECTED benchmark and always carries the geography. The old
      text was derived by matching STR's class vocabulary against the Industry scope, which
      reduced "Submarket Class: Ho Chi Minh City Luxury" to the bare "Luxury market" and lost
@@ -5281,7 +5306,7 @@ function renderMarket(d){
         <div class="small" style="margin-top:6px">Each cell reads <b>value</b>, then its <b>% change vs the same period last year</b> beneath${showLy?', then that period a year ago in grey':''}.${benchSrc==='subcls'
   ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — the city's luxury <i>and</i> upper-upscale hotels, a wider peer group than the Luxury market. This one can only come from the Summary sheet: the Industry sheet carries a single scope. Its last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since the Summary sheet lists changes but not prior-year levels.`
   : benchSrc==='industry'
-  ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. <b>This row has no equivalent on CoStar's Summary tab</b>: it is the Ho Chi Minh City × Luxury intersection — narrower than “Submarket: Ho Chi Minh City”, which is every price class in the city, and narrower than “SubmarketCollapsedClass: Luxury &amp; Upper Upscale”, which adds the upper-upscale hotels. Both of those are on the buttons above; comparing this column against either will not tie. Its scope is set in the STR subscription, so it changes there rather than here.`
+  ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. <b>This row has no equivalent on CoStar's Summary tab</b>: it is the Ho Chi Minh City × Luxury intersection — narrower than “Submarket: Ho Chi Minh City”${censTxt('submkt')}, every price class in the city, and narrower than “SubmarketCollapsedClass: Luxury &amp; Upper Upscale”${censTxt('subcls')}, which adds the upper-upscale hotels. Both are on the buttons above. ${cens.mclass&&cens.subcls?`<b>Do not compare it with CoStar's “MarketClass: Luxury”</b> — that row covers <b>${n1(cens.mclass.props,0)} hotels · ${n1(cens.mclass.rooms,0)} rooms</b>, i.e. MORE hotels than the ${n1(cens.subcls.props,0)} in the whole of HCMC's luxury <i>and</i> upper-upscale field, so it cannot be a city figure: it spans the entire Vietnam South market${censTxt('market')} with the resort destinations in it, which is why its rate reads far higher. `:''}This column's scope is set in the STR subscription, so it changes there rather than here.`
   : benchSrc==='submkt'
   ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — <b>the whole city, every price class</b>, so it sits well below the luxury benchmarks and Sofitel usually indexes above 100 against it. Only the Summary sheet carries it. Last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since that sheet lists changes but not prior-year levels.`
   : benchSrc==='glance'
@@ -5435,8 +5460,10 @@ function renderBench(d){
     for(const k of keys){ if(state.store.months[k].hotstats){ hs=state.store.months[k].hotstats; hsMonth=k; break; } } }
   if(!hs){ el.innerHTML=noData(); return; }
   const per=state.period==='YTD'?'ytd':'mtd';
-  const fmtV=(v,basis)=>{ if(v==null) return na();
-    if(/%/.test(basis||'')) return n1(v)+'%';
+  /* `pct` comes from the parse (the source cell's own "%"); the label test is the fallback
+     for months parsed before that field existed, so no re-drop is needed. */
+  const fmtV=(v,basis,pct)=>{ if(v==null) return na();
+    if(pct||/%/.test(basis||'')) return n1(v)+'%';
     if(/PAR|POR/.test(basis||'')) return money(v);
     return n1(v); };
   const lines=BENCH_LINES;
@@ -5449,9 +5476,10 @@ function renderBench(d){
     /* HotStats cost indexes are printed as comp/you so >100 = cheaper than comp on some rows;
        we colour on you-vs-comp value directly to stay unambiguous */
     const better = ty.you==null||ty.comp==null? null : (isCost? ty.you<=ty.comp : ty.you>=ty.comp);
-    rows+=`<tr><td>${label}</td><td>${fmtV(ty.you,r.basis)}</td><td>${fmtV(ty.comp,r.basis)}</td>
+    const isPct = r.pct ?? /%\s*$/.test(label);
+    rows+=`<tr><td>${label}</td><td>${fmtV(ty.you,r.basis,isPct)}</td><td>${fmtV(ty.comp,r.basis,isPct)}</td>
       <td class="${better==null?'':better?'pos':'neg'}">${idx(ty.idx)}</td>
-      <td>${fmtV(r[per]?.ly?.you,r.basis)}</td><td>${fmtV(r[per]?.ly?.comp,r.basis)}</td>
+      <td>${fmtV(r[per]?.ly?.you,r.basis,isPct)}</td><td>${fmtV(r[per]?.ly?.comp,r.basis,isPct)}</td>
       <td>${better==null?'':better?'<span class="tag g">WIN</span>':'<span class="tag r">LOSE</span>'}</td>
       <td class="small">${r.basis||''}</td></tr>`;
   }
@@ -5467,7 +5495,11 @@ function renderBench(d){
     `<optgroup label="${s}">${BENCH_LINES.filter(l=>l[0]===s).map(l=>
       `<option value="${l[1]}" ${l[1]===mk4?'selected':''}>${l[2]}</option>`).join('')}</optgroup>`).join('')}</select>`;
   const tSeries=monthsH.map(k=>state.store.months[k].hotstats.rows[mk4]?.[per]?.ty||{});
-  const tBasis=state.store.months[monthsH[monthsH.length-1]]?.hotstats.rows[mk4]?.basis||'';
+  const tRow=state.store.months[monthsH[monthsH.length-1]]?.hotstats.rows[mk4];
+  const tBasis=tRow?.basis||'';
+  /* same percentage test as the cascade table — the chart's y-axis was money-formatting the
+     Occupancy line for exactly the same reason */
+  const tPct = tRow?.pct ?? /%\s*$/.test(selLine?.[2]||'');
   const idxVals=tSeries.map(x=>x.idx).filter(v=>v!=null);
   let verdict='';
   if(idxVals.length>=2){
@@ -5512,7 +5544,7 @@ function renderBench(d){
     <div style="overflow-x:auto"><table><thead><tr><th>Line</th><th>You</th><th>Comp</th><th>Index</th><th>You LY</th><th>Comp LY</th><th>Verdict</th><th>Basis</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="small" style="margin-top:8px">${leak}</div></div>`;
 
-  const fmtTick=v=>/%/.test(tBasis)?n1(v)+'%':(/PAR|POR/.test(tBasis)?money(v,1):n1(v));
+  const fmtTick=v=>(tPct||/%/.test(tBasis))?n1(v)+'%':(/PAR|POR/.test(tBasis)?money(v,1):n1(v));
   const gB=granGroup(monthsH,[{data:tSeries.map(x=>x.you??null),agg:'avg'},
                               {data:tSeries.map(x=>x.comp??null),agg:'avg'},
                               {data:tSeries.map(x=>x.idx??null),agg:'avg'}]);
