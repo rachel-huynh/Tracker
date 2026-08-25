@@ -552,15 +552,19 @@ function activeVer(){ return ver(state.activeId) || state.versions[state.version
 
 /* ============================== parser ============================== */
 /* Tăng số này mỗi khi cải tiến cách đọc file → phiên bản nạp bằng bản cũ được đánh dấu "cần đọc lại" */
-const PARSE_VER=6;
+const PARSE_VER=7;
 /* Dòng có TỰ nói lên nó là gì không? "SW-17 Bathtub; freestanding type" thì có —
    không được gắn tên món ở trên vào. "overall size 2450x2750mm", "100mm thick",
    "to bathroom floor" thì không — phải mượn tên món của dòng cha. */
 function needsParent(d){ d=s(d); if(!d) return false;
+  /* Kích thước/đường kính ("DN20", "D27", "Ø25", "size 1500x2700") LUÔN cần tên món ở trên —
+     phải xét TRƯỚC mã vật liệu, vì "DN20" trông giống mã nhưng thực ra là cỡ ống. */
+  const isSize=/^(overall\s+)?size\b/i.test(d)||/^[\d(]\s*\d*\s*[x×]/i.test(d)||/^\d+\s*mm\b/i.test(d)||/^overall\b/i.test(d)
+    ||/^(dn|ø|d)\s?\d+/i.test(d)||/^\d+(\.\d+)?$/.test(d);
+  if(isSize) return true;
   /* Mở đầu bằng mã vật liệu/thiết bị (SW-06, IR-10, WC-02, 51-200…) là đã tự đủ nghĩa,
      dù tên rất ngắn như "SW-09 Bidet" hay "SW-06 P-trap". */
   if(/^([A-Za-z]{2,3}[-\s]?\d{2,}|\d{2,}[-\s]\d{2,})/.test(d)) return false;
-  const isSize=/^(overall\s+)?size\b/i.test(d)||/^[\d(]\s*\d*\s*[x×]/i.test(d)||/^\d+\s*mm\b/i.test(d)||/^overall\b/i.test(d);
   const isCont=/^(to|for|at|in|on|incl|including|with|as|type\s*\d)\b/i.test(d);
   const words=(d.match(/[A-Za-zÀ-ỹ]{3,}/g)||[]).length;
   return isSize||isCont||words<=1; }
@@ -663,15 +667,22 @@ function parseDetail(name,rows){
   const byCode=(row)=>{ const m={};
     for(const o of roomCols.concat(corrCols)){ const v2=n(row[o.c]); if(v2) m[s(o.key).replace(/\s+/g,' ')]=(m[s(o.key).replace(/\s+/g,' ')]||0)+v2; }
     return Object.keys(m).length?m:undefined; };
-  const items=[]; let group='',category='',subject='',subgroup='',emitted=false;
+  const items=[]; let group='',category='',subject='',subgroup='';
+  let pending=[];   // các dòng tiêu đề chưa đánh số kể từ hạng mục gần nhất
+  const looksLikeItemCode=x=>/^([A-Za-z]{2,3}[-\s]?\d{2,}|\d{2,}[-\s]\d{2,})/.test(s(x));
+  /* Một NHÓM phải là nhãn ngắn gọn ("Wardrobe", "Minibar", "Wall finishes"), không phải
+     cả đoạn mô tả sản phẩm — nếu không danh sách nhóm sẽ đầy những câu dài vô nghĩa. */
+  const looksLikeGroup=x=>{ const d=s(x).replace(/[;:,.\s]+$/,'');
+    return d.length<=40 && !/[;:]/.test(d) && !/\d/.test(d) && (d.match(/\S+/g)||[]).length<=5
+      && !/^(to|for|at|in|on|incl|including|with|as|refer)\b/i.test(d) && !looksLikeItemCode(d); };
   for(let r=hr+2;r<rows.length;r++){
     const row=rows[r]||[]; const a=row[0];
     const dD=s(row[3])||s(row[4]); const dB=s(row[1]), dC=s(row[2]);
     const amt=n(row[colAmt]);
     const isNo = (typeof a==='number') || (/^\d+(\.\d+)?$/.test(s(a)));
     if(!isNo){
-      if(dB&&!dD){ group=dB; category=dB; subject=''; subgroup=''; emitted=false; continue; }
-      if(dC&&!dD){ category=dC; subject=''; subgroup=''; emitted=false; continue; }
+      if(dB&&!dD){ group=dB; category=dB; subject=''; subgroup=''; pending=[]; continue; }
+      if(dC&&!dD){ category=dC; subject=''; subgroup=''; pending=[]; continue; }
       /* Dòng mô tả KHÔNG đánh số có 2 loại, phân biệt theo hình dạng:
          - TIÊU ĐỀ NHÓM: ngắn, không có dấu ';', không có số — vd "Wardrobe", "Cabinet",
            "Minibar", "Patition / Screen". Gặp nhóm mới thì phải XÓA tên món cũ, nếu không
@@ -682,14 +693,22 @@ function parseDetail(name,rows){
       if(dD&&dD.length<=1500
          &&!/^(the contractor|notwithstanding|we hereby|allow |please note|note:)/i.test(dD)
          &&!/method of measurement|referred to the specifications|rates and prices shall be deemed/i.test(dD)){
-        const isHead = dD.length<=40 && !/[;:]/.test(dD) && !/\d/.test(dD) && (dD.match(/\S+/g)||[]).length<=5
-          && !/^(to|for|at|in|on|incl|including|with|as|refer)\b/i.test(dD);   // "to shower door…" là mệnh đề nối, không phải nhóm
-        if(isHead){ subgroup=dD; subject=''; } else subject=dD;
+        pending.push(dD);   // phân cấp ở dưới, theo VỊ TRÍ chứ không theo độ dài chuỗi
       }
       continue;
     }
     const desc=dD||dC||dB; if(!desc) continue;
     if(/^(the contractor|notwithstanding)/i.test(desc)) continue;
+    /* Phân cấp theo cấu trúc: dòng tiêu đề NGAY TRƯỚC các dòng đánh số là TÊN MÓN;
+       nếu có 2 dòng tiêu đề liên tiếp thì dòng trên là NHÓM (vd "Wardrobe" / "Cabinet").
+       Nhờ vậy "Gate valve" và "Pressure-independent balancing control valve" là hai món
+       ngang cấp, không cái nào nuốt cái nào. */
+    if(pending.length){
+      subject=pending[pending.length-1];
+      if(pending.length>=2){ const cand=pending[pending.length-2];
+        if(looksLikeGroup(cand)) subgroup=s(cand).replace(/[;:,.\s]+$/,''); }
+      pending=[];
+    }
     const qty=colQty>=0?n(row[colQty]):null;
     const rate=colRate>=0?n(row[colRate]):null;
     const sup=colSup>=0?n(row[colSup]):null, ins=colIns>=0?n(row[colIns]):null;
@@ -698,13 +717,12 @@ function parseDetail(name,rows){
     if(total==null&&!inclFlag&&rate==null) continue;
     items.push({ id:name.replace(/[^A-Za-z0-9]/g,'')+'-r'+r, sheet:name, group, category,
       subgroup:subgroup||undefined,
-      /* CHỈ gắn tên món cha cho dòng không tự đủ nghĩa; nếu không có dòng tên món riêng
-         thì mượn tiêu đề nhóm (vd "Internal brick / block wall" → "… — 100mm thick") */
-      subject:(needsParent(desc)&&(subject||subgroup)&&norm(subject||subgroup)!==norm(desc))?(subject||subgroup):undefined,
-      subjIsHead:(needsParent(desc)&&!subject)||undefined,
+      /* LUÔN ghi nhận tên món cha thật (để phân loại / breakdown không bao giờ sai);
+         việc có ghép vào nhãn hiển thị hay không do needsParent quyết định riêng. */
+      subject:((subject||subgroup)&&norm(subject||subgroup)!==norm(desc))?(subject||subgroup):undefined,
+      subjIsHead:(norm(subject||subgroup)===norm(subgroup))||undefined,
       no:s(a), desc, qty, unit:s(row[colUnit]), supply:sup, install:ins, rate, total:total||0, incl:inclFlag||undefined,
       amtRoom:sumCols(row,roomCols), amtCorr:sumCols(row,corrCols), amtByCode:byCode(row) });
-    emitted=true;
   }
   return items.length?items:null;
 }
@@ -1863,6 +1881,8 @@ let veState={q:'',study:'__all',status:'__all',sort:'new'};
    để biết đó là món nội thất nào. */
 /* subject chỉ được gán khi dòng thật sự cần cha (xem needsParent lúc đọc file),
    nên ở đây chỉ việc ghép, có rút gọn để kích thước luôn nhìn thấy */
+/* Tên dùng để hiển thị & gom nhóm: chỉ mượn tên cha khi dòng không tự đủ nghĩa */
+function itemName(it){ const d=s(it.desc); return (needsParent(d)&&s(it.subject))?s(it.subject):d; }
 function itemLabel(it){ const d=s(it.desc); let subj=s(it.subject);
   if(!subj||!needsParent(d)) return d;
   if(subj.length>64) subj=subj.slice(0,64).replace(/[\s,;:]+$/,'')+'…';
@@ -2166,7 +2186,7 @@ function anGenSummary(A,B,gid,fx,rowDelta){
   const cut=(x,n2)=>{ const l=s(x); return l.length>n2?l.slice(0,n2).replace(/[\s,;:—-]+$/,'')+'…':l; };
   /* Tên gốc của món: bỏ phần kích thước để "51-200 Floor rug — overall size 4125x2000mm"
      và "…4140x2000mm" gom về cùng một món. */
-  const baseName=c=>{ let d=s(c.subj||c.desc);
+  const baseName=c=>{ let d=s(needsParent(c.desc)?(c.subj||c.desc):c.desc);
     d=d.replace(/\s*[—–-]\s*(overall\s+)?size\b.*$/i,'').replace(/,?\s*(overall\s*)?size\b.*$/i,'')
        .replace(/,?\s*overall\s+\d.*$/i,'').replace(/\s*\(\s*\d+[x×][^)]*\)\s*$/i,'').replace(/[;:,\s]+$/,'').trim();
     return d.length>3?d:s(c.desc); };
