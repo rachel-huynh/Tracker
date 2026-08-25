@@ -1697,7 +1697,27 @@ function parseStarMonthly(wb){
       for(const [ek,ere] of Object.entries(MAP.star.entities)){
         const r=findRow(sg,ere,null,br); if(r<0||r>br+12) continue;
         const nums=(sg[r]||[]).map(num).filter(v=>v!==null);
-        if(nums.length>=8) out.summary[mk][ek]={cm:nums[0],cmChg:nums[1],ytd:nums[2],ytdChg:nums[3],r3:nums[4],r3Chg:nums[5],r12:nums[6],r12Chg:nums[7]};
+        if(nums.length>=8){
+          /* STR writes a literal 0 — not a blank — wherever a figure does not exist yet, and
+             the Summary sheet is full of them near the start of a population's history:
+               · the comp set's series begins Jan-2024, so every 2024 month has % Chg = 0
+                 (no prior year) and the Running 3 / 12 Month LEVELS are 0 until the window
+                 fills (R3 real from Mar-2024, R12 from Dec-2024);
+               · a prior-year Running 12 Month needs 24 months, so `r12Chg` stays 0 through
+                 ALL of 2025 even though its level is real.
+             Read literally these produce a comp column showing "0%" with the last-year line
+             echoing the current value — which is what put a false 0% and a false LY on every
+             2025 Run-12M view and on all of 2024. Occupancy, ADR and RevPAR of a live
+             population are never genuinely 0, and an exact 0.000…% change is not something
+             continuous market data produces, so a 0 in any of these eight cells means "not
+             published". (A closed hotel is reported as absent, not as a 0.) */
+          const z=x=>x===0?null:x;
+          const o={cm:z(nums[0]),cmChg:z(nums[1]),ytd:z(nums[2]),ytdChg:z(nums[3]),
+                   r3:z(nums[4]),r3Chg:z(nums[5]),r12:z(nums[6]),r12Chg:z(nums[7])};
+          /* a missing level makes its own % change meaningless too */
+          for(const p of ['cm','ytd','r3','r12']) if(o[p]==null) o[p+'Chg']=null;
+          out.summary[mk][ek]=o;
+        }
         /* Keep the row's own wording. These entity rows name a real STR geography — e.g.
            "Market: Vietnam South VNM" is the whole of southern Vietnam across every price
            class, which is NOT the HCMC market the UI used to claim it was. Storing the label
@@ -2772,33 +2792,41 @@ function mergedStarHistory(upto){
      not of ADR/RevPAR. */
   const SF=state.store.strFull;
   const sfVnd=/VND/i.test(SF?.currency||'');
-  if(SF) for(const mk of Object.keys(SF.months).sort()){
-    if(upto&&mk>upto) continue;
-    const f=SF.months[mk];
-    const s=slot(mk);
-    const put=(met,my,comp,idx)=>{
-      if(s.my[met]==null&&my!=null) s.my[met]=my;
-      if(s.comp[met]==null&&comp!=null) s.comp[met]=comp;
-      if(s.idx[met]==null&&idx!=null) s.idx[met]=idx;
-    };
-    put('occ',f.occ,f.compOcc,f.occIdx);
-    put('adr',null,null,f.adrIdx);
-    put('revpar',null,null,f.revparIdx);
-    if(sfVnd){
-      /* VND edition — money is native, no conversion, so it mandates directly and the history
-         runs the full length of the extract. */
-      put('adr',f.adr,f.compAdr,null);
-      put('revpar',f.revpar,f.compRevpar,null);
-    }else{
-      /* USD edition only — money solely where STR's own rate is derivable (see strFullRate);
-         borrowing a nearby rate was measured at 7% out on Jan-2024 and is refused. */
-      const {rate,exact}=strFullRate(mk);
-      if(exact&&rate){
-        put('adr',    f.adr==null?null:f.adr*rate,       f.compAdr==null?null:f.compAdr*rate,       null);
-        put('revpar', f.revpar==null?null:f.revpar*rate, f.compRevpar==null?null:f.compRevpar*rate, null);
+  /* The extract covers ONE comp-set definition. Its `comp` levels and its MPI/ARI/RGI are
+     therefore comp-set-DEPENDENT, and writing them first made them win over every Monthly
+     STAR under first-writer-wins — so the comp-set switch silently stopped changing the
+     positioning matrix, the index trend and the benchmark charts, even though it re-sourced
+     the tables. The property's OWN levels are comp-set-independent, so the mandate still
+     applies to them and they are written FIRST; the comp side is written LAST, filling only
+     the months where the selected variant has no STAR file of its own. */
+  const sfPass=side=>{ if(!SF) return;
+    for(const mk of Object.keys(SF.months).sort()){
+      if(upto&&mk>upto) continue;
+      const f=SF.months[mk], s=slot(mk);
+      const put=(met,my,comp,idx)=>{
+        if(side==='my'){ if(s.my[met]==null&&my!=null) s.my[met]=my; return; }
+        if(s.comp[met]==null&&comp!=null) s.comp[met]=comp;
+        if(s.idx[met]==null&&idx!=null) s.idx[met]=idx;
+      };
+      put('occ',f.occ,f.compOcc,f.occIdx);
+      put('adr',null,null,f.adrIdx);
+      put('revpar',null,null,f.revparIdx);
+      if(sfVnd){
+        /* VND edition — money is native, no conversion, so it mandates directly and the
+           history runs the full length of the extract. */
+        put('adr',f.adr,f.compAdr,null);
+        put('revpar',f.revpar,f.compRevpar,null);
+      }else{
+        /* USD edition only — money solely where STR's own rate is derivable (see
+           strFullRate); borrowing a nearby rate was measured 7% out on Jan-2024 and refused. */
+        const {rate,exact}=strFullRate(mk);
+        if(exact&&rate){
+          put('adr',    f.adr==null?null:f.adr*rate,       f.compAdr==null?null:f.compAdr*rate,       null);
+          put('revpar', f.revpar==null?null:f.revpar*rate, f.compRevpar==null?null:f.compRevpar*rate, null);
+        }
       }
-    }
-  }
+    } };
+  sfPass('my');
   /* pass 1 — long Comp-sheet histories from the official files */
   for(const mk of keys){
     const c=starOf(mk)?.comp; if(!c?.occ?.months) continue;
@@ -2825,6 +2853,10 @@ function mergedStarHistory(upto){
       if(s.idx[met]==null&&b.idx!=null) s.idx[met]=b.idx;
     }
   }
+  /* NOW the extract's comp side, filling only what the selected comp-set variant could not
+     supply — so the long history still reaches back to 2010 while every month that has a
+     Monthly STAR of the chosen variant reflects THAT comp set. */
+  sfPass('comp');
   /* Drop months that ended up with no money at all. The extract contributes occupancy and the
      indexes for every month back to 2010, but VND money only where STR's rate is derivable —
      keeping the rest would stretch the axis years to the left with the ADR/RevPAR lines blank
