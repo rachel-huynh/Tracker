@@ -1124,10 +1124,11 @@ const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','s
    Income") has its own budget and is no longer double-counted inside OOD; v5 added the
    `conso` group cascade so the Consolidated tab's Budget column comes from this
    workbook instead of the FS's own (older) budget column; v6 took sum.ebitda from the
-   hotel budget sheet's own "EBITDA" row instead of deriving netIncomeHotel−MarketingFees;
-   v7 carries Marketing Fees inside undist.sm as `mktgFee`, so the Budget column's Sales &
-   Marketing and Overheads rows match the RF/UOL definition (which includes Corporate
-   Marketing) and the printed cascade closes to GOP. */
+   hotel budget sheet's own "EBITDA" row instead of deriving netIncomeHotel−MarketingFees.
+   A v7 was briefly declared for Marketing Fees moving inside undist.sm and for the lumped-OOD
+   siblings being zeroed, then WITHDRAWN: both are recoverable from a v6 parse (see b26Path
+   and b26Suppressed), so bumping would have fired the red re-drop banner for a difference the
+   reader already handles. Only bump when the old parse genuinely cannot answer. */
 /* Central Plaza P&L parse version. Bumped when a NEW field is read from the FS block, so
    months ingested by an older build can be spotted and flagged for a re-drop instead of
    silently showing blanks. v2 = added `ybud` (YTD budget, Excel col 11).
@@ -1135,7 +1136,7 @@ const B26_NON_MONEY=new Set(['stats.occ','stats.roomsAvail','stats.roomsSold','s
    literal 0, so it used to be stored as a data row full of N/A). */
 const CP_SCHEMA=3;
 function cpStale(cp){ return !!cp && (cp.__v||1)<CP_SCHEMA; }
-const B26_SCHEMA=7;
+const B26_SCHEMA=6;
 function budget2026Stale(){ const b=state.store.budget2026; return !!b && b.__v!==B26_SCHEMA; }
 function b26StaleBanner(){ return budget2026Stale()
   ? `<div class="panel" style="padding:8px 12px;border-left:4px solid var(--red)"><div class="small">
@@ -1149,7 +1150,18 @@ function budget2026For(mk){ // mk like '2026-04' -> that month's parsed budget o
   const mm=parseInt(mk.slice(5,7),10);
   return (state.store.budget2026||{})[mm]||null;
 }
-function b26Path(obj,path){ const v=path.split('.').reduce((a,k)=>a?.[k],obj); return v==null?null:v; }
+/* ---------- tolerant read of older stored parses ----------
+   Parsing happens ONCE, at drop time: the store keeps the parsed RESULT, not the workbook.
+   So a parser change never reaches months already stored, and the tempting answer is "re-drop
+   the file". Prefer this instead wherever the old shape still carries the information — it
+   costs the owner nothing and stops the same class of bug recurring.
+   Marketing Fees moved under `undist.sm.mktgFee`, but every parse since v2 already stored the
+   identical number as a month-level `mktgFee` (it was needed for the GOP deduction), so it is
+   fully recoverable from an older parse and no re-upload is required. */
+function b26Path(obj,path){
+  if(path==='undist.sm.mktgFee') return obj?.undist?.sm?.mktgFee ?? obj?.mktgFee ?? null;
+  const v=path.split('.').reduce((a,k)=>a?.[k],obj); return v==null?null:v;
+}
 /* ---------- categories the owner's book supplies as ONE combined figure ----------
    The budget workbook carries no payroll / non-payroll split for the overhead
    departments, so parseBudget2026 parks each category's single combined figure under one
@@ -1170,12 +1182,22 @@ const B26_COMBINED={
 /* undefined = not a combined-category sibling, resolve normally. 0 = suppress.
    The carrier check uses the CURRENT month's parse as the proxy for a YTD span: the
    workbook either carries a category for the whole year or not at all. */
+/* the non-carrier OOD members, derived from the parser's own list so the two cannot drift
+   ('spa' is the carrier the lumped fallback writes to; 'minibar' has no budget row at all) */
+const B26_OOD_SIBS=B26_OOD.map(([k])=>k).filter(k=>k!=='spa').concat('minibar');
 function b26Suppressed(b26,path){
   const i=path.lastIndexOf('.'); if(i<0) return undefined;
   const grp=path.slice(0,i), leaf=path.slice(i+1);
   const carriers=B26_COMBINED[grp];
-  if(!carriers||carriers.includes(leaf)) return undefined;
-  return carriers.some(k=>b26Path(b26,grp+'.'+k)!=null) ? 0 : undefined;
+  if(carriers) return carriers.includes(leaf) ? undefined
+              : (carriers.some(k=>b26Path(b26,grp+'.'+k)!=null) ? 0 : undefined);
+  /* Same guard for an OLDER parse that lumped Minor Operated onto `spa` and left its five
+     siblings unset — without this they fall through to the operator's budget and are added
+     on top of a lump that already contains them. A current parse writes explicit zeros, so
+     `.golf` is 0 rather than null there and this rule correctly stays out of the way. */
+  if((grp==='rev'||grp==='dp')&&B26_OOD_SIBS.includes(leaf)
+     && b26Path(b26,grp+'.spa')!=null && b26Path(b26,grp+'.golf')==null) return 0;
+  return undefined;
 }
 /* the operator's (P&L) budget column, bypassing the owner's book entirely */
 function gOperatorBud(pnl,path,per){
@@ -1546,12 +1568,18 @@ function strFxPeriod(mk,per,who){
   const [y,m]=mk.split('-').map(Number);
   const n = per==='ytd' ? m : per==='r3' ? 3 : per==='r12' ? 12 : 0;
   if(!n) return one;
-  const field = who==='comp' ? 'compRevenue' : 'revenue';
+  /* Weights only need to be PROPORTIONAL — the blend is Σw ÷ Σ(w/rate), so any constant
+     factor cancels. That makes an extract parsed before `compRevenue` was mapped fully
+     self-healing: RevPAR × days is revenue ÷ rooms, and the comp set's room count is fixed
+     across the window, so it drops straight out and the blend is identical. No re-upload. */
+  const dim=k=>new Date(+k.slice(0,4),+k.slice(5,7),0).getDate();
+  const w=(f,k)=>who==='comp' ? (f.compRevenue ?? (f.compRevpar>0? f.compRevpar*dim(k) : null))
+                              : (f.revenue     ?? (f.revpar>0?     f.revpar*dim(k)     : null));
   let vnd=0, usd=0;
   for(let i=0;i<n;i++){
     const t=y*12+(m-1)-i, k=Math.floor(t/12)+'-'+String(t%12+1).padStart(2,'0');
-    /* an extract parsed before compRevenue was mapped simply falls back to prop weights */
-    const rev=SF[k]?.[field]??SF[k]?.revenue, r=strFxOf(k);
+    const f=SF[k]; if(!f) continue;
+    const rev=w(f,k), r=strFxOf(k);
     if(rev>0&&r){ vnd+=rev; usd+=rev/r; }
   }
   return usd>0 ? vnd/usd : one;
