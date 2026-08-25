@@ -1414,6 +1414,9 @@ const SF_MAP={
      needing the same month a year earlier to exist in the series */
   occIdxChg:'Occ Index % Chg', adrIdxChg:'ADR Index % Chg', revparIdxChg:'RevPAR Index % Chg',
   supply:'Supply', demand:'Demand', revenue:'Revenue',
+  /* comp-set revenue is the weight for the comp column's period FX blend — its YTD rate is
+     a slightly different blend from the property's, since the two earn in different months */
+  compRevenue:'Comp Set Revenue',
   /* ranks — the month plus the three rolling periods the snapshot offers */
   occRank:'Occ Rank', occRankYtd:'Occ Rank YTD', occRank3:'Occ Rank 3M', occRank12:'Occ Rank 12M',
   adrRank:'ADR Rank', adrRankYtd:'ADR Rank YTD', adrRank3:'ADR Rank 3M', adrRank12:'ADR Rank 12M',
@@ -1457,11 +1460,40 @@ function parseStrFull(wb,warns){
    (STR moves it only slightly month to month) and are reported as inferred in Data Quality. */
 let _sfRateCache=null, _sfRateStamp='';
 function strFullRates(){
-  const stamp=(state.store.strFull?.updated||'')+'|'+Object.keys(state.store.months).join(',');
+  const SF=state.store.strFull;
+  const stamp=(SF?.updated||'')+'|'+Object.keys(SF?.byCcy||{}).join('')+'|'+Object.keys(state.store.months).join(',');
   if(_sfRateCache&&_sfRateStamp===stamp) return _sfRateCache;
-  const SF=state.store.strFull; const exact={};
+  const exact={};
+  /* BEST SOURCE — the two editions of the extract against each other. When both are stored
+     this pins every month STR publishes (199 of them, 2010→now) with no STAR file involved
+     and no borrowing, which the STAR-based derivation below can never do: it only reaches
+     the handful of months with a Monthly STAR on file.
+     Verified across all 199 months of the real pair: the six single-month money columns
+     (ADR, RevPAR, Revenue and their comp-set twins) imply ONE rate to a spread of exactly
+     0.0000, and it is a whole number every time — Jul-26 26,279 · Jun-26 26,230 · May-26
+     26,255 · Apr-26 26,355 · Mar-26 26,335 · Feb-26 26,040 · Jan-26 25,880.
+     The multi-period columns (YTD / 3M / 12M) are deliberately EXCLUDED: STR converts each
+     month at its own rate and then aggregates, so their implied rate is a blend and lands
+     up to ~240 off. Confirmed exactly — rebuilding Jul-26 YTD USD revenue as the sum of
+     per-month conversions reproduces the published figure to the dollar (0 difference),
+     whereas converting the YTD VND total at a single rate is $22,524 (0.34%) out. */
+  const B=SF?.byCcy||{};
+  if(B.VND?.months&&B.USD?.months){
+    for(const mk of Object.keys(B.VND.months)){
+      const v=B.VND.months[mk], u=B.USD.months[mk]; if(!u) continue;
+      const rs=['adr','revpar','compAdr','compRevpar','revenue']
+        .map(k=>(v?.[k]>0&&u?.[k]>0)? v[k]/u[k] : null).filter(r=>r&&isFinite(r)&&r>1000);
+      if(!rs.length) continue;
+      const mn=Math.min(...rs), mx=Math.max(...rs), R=Math.round((mn+mx)/2);
+      /* agreement guard: a blended or mismatched pair would spread far more than a dong */
+      if(mx-mn<1) exact[mk]=R;
+    }
+  }
+  /* Fallback for months the pair cannot answer: a stored VND Monthly STAR against the USD
+     extract. Only fills gaps — never overrides a rate the two editions already pinned. */
   if(SF) for(const mk of Object.keys(state.store.months)){
-    const st=starOf(mk), f=SF.months[mk];
+    if(exact[mk]) continue;
+    const st=starOf(mk), f=B.USD?.months?.[mk]||(/USD/i.test(SF.currency||'')?SF.months[mk]:null);
     if(!st||st.provisional||!f) continue;
     const vnd=st.summary?.adr?.prop?.cm, usd=f.adr;
     if(vnd&&usd){ const r=vnd/usd; if(isFinite(r)&&r>1000) exact[mk]=Math.round(r); }
@@ -1485,6 +1517,44 @@ function strFullMoneyVND(mk,usd){
   if(usd==null) return null;
   const {rate}=strFullRate(mk);
   return rate? usd*rate : null;
+}
+/* ---------- TWO SEPARATE FX BOOKS, NEVER BLENDED (owner rule) ----------
+   STR publishes its own VND/USD rate and the hotel's monthly report carries another. A STR
+   figure must convert at STR's rate so it reproduces the STR report; a P&L / FS figure must
+   convert at the hotel's rate (fxOf) so it reproduces the monthly report. They differ by a
+   few dong per dollar, so a figure converted at the other book's rate ties to neither
+   source. Everything STAR-sourced goes through starMoney() below; everything hotel-sourced
+   keeps using money() / moneyM(). Nothing may cross. */
+function strFxOf(mk){ const {rate}=strFullRate(mk); return rate||null; }
+/* A PERIOD figure (YTD / 3M / 12M) is not converted at a single rate: STR converts each
+   month at that month's own rate and then aggregates, so the rate implied by a period total
+   is a revenue-weighted blend. Rebuilt here from the extract's own monthly revenue, which
+   makes it EXACT for the property's periods — verified on Jul-26 YTD, where it reproduces
+   STR's published USD revenue to the dollar — and a close read for the comp set and
+   industry, whose revenue weights STR does not publish. Converting a YTD total at the
+   current month's single rate instead lands ~0.34% out.
+   `who` selects the revenue weights: 'prop' for the property's own columns, 'comp' for the
+   competitive set's — the two blends differ slightly because the two earn in different
+   months. Both are then exact against STR's published USD extract. Benchmark columns
+   (industry / submarket) have no published revenue, so they fall back to the property's
+   weights; the residual there is ~0.02%, and STR publishes no USD figure to check against. */
+function strFxPeriod(mk,per,who){
+  const one=strFxOf(mk);
+  if(!per||per==='cm'||!/^\d{4}-\d{2}$/.test(mk||'')) return one;
+  /* weights must be VND revenue, so this needs the VND edition specifically */
+  const SF=state.store.strFull?.byCcy?.VND?.months; if(!SF) return one;
+  const [y,m]=mk.split('-').map(Number);
+  const n = per==='ytd' ? m : per==='r3' ? 3 : per==='r12' ? 12 : 0;
+  if(!n) return one;
+  const field = who==='comp' ? 'compRevenue' : 'revenue';
+  let vnd=0, usd=0;
+  for(let i=0;i<n;i++){
+    const t=y*12+(m-1)-i, k=Math.floor(t/12)+'-'+String(t%12+1).padStart(2,'0');
+    /* an extract parsed before compRevenue was mapped simply falls back to prop weights */
+    const rev=SF[k]?.[field]??SF[k]?.revenue, r=strFxOf(k);
+    if(rev>0&&r){ vnd+=rev; usd+=rev/r; }
+  }
+  return usd>0 ? vnd/usd : one;
 }
 
 /* ---------- CoStar property export (competitive supply list) ----------
@@ -2789,10 +2859,20 @@ async function loadStore(){
   await odRestoreHandle();
 }
 let _odT=null;
+/* Rolling history window. This was 24 and dated from when the store lived in localStorage,
+   whose quota it existed to protect; the store moved to IndexedDB long ago and no longer
+   needs anywhere near that tight a bound. At 24 it silently deleted the oldest months on
+   every save — dropping a 31-month STAR backfill down to Aug-2024 with no message, which is
+   exactly how it was found. Five years covers the STAR files STR itself publishes (an
+   18-month window per file) and the P&L archive going back to 2021. */
+const MAX_MONTHS=60;
 function saveStore(){
-  /* rolling 24-month window */
   const keys=Object.keys(state.store.months).sort();
-  while(keys.length>24){ delete state.store.months[keys.shift()]; }
+  const dropped=[];
+  while(keys.length>MAX_MONTHS){ const k=keys.shift(); dropped.push(k); delete state.store.months[k]; }
+  /* never prune silently — the point of the window is to bound storage, not to lose data
+     without telling anyone */
+  if(dropped.length) toast(`History window is ${MAX_MONTHS} months — dropped ${dropped.length} oldest month(s): ${dropped.map(fmtMonthKey).join(', ')}. Back up first if you need them.`,true);
   IDB.set('store',state.store).then(ok=>{ if(!ok) toast('Local save failed — download a Backup JSON now',true); });
   clearTimeout(_odT); _odT=setTimeout(()=>odWrite(false),2000);   // mirror to the connected folder
 }
@@ -4569,7 +4649,19 @@ function marketingShareHtml(d){
    Magnitude decides: hotel ADR/RevPAR in VND is always >20k, in USD always <20k.
    VND values go through money() so the VND/USD display toggle works on them. */
 function usd(v,dec){ return v==null||!isFinite(v)?na():'$'+v.toLocaleString('en',{maximumFractionDigits:dec??(Math.abs(v)<1000?2:0)}); }
-function starMoney(v,dec){ return v==null||!isFinite(v)?na():(Math.abs(v)>20000?money(v,dec):usd(v,dec)); }
+/* STAR money. Values arrive either native-USD (small) or native-VND (large) depending on
+   which edition of the file was dropped. In USD display mode this converts at STR's OWN
+   rate — never the hotel's fxOf, which is what money() would have applied — so the figure
+   reproduces the STR report. `rate` lets a caller pass the period-blended rate for a
+   YTD / 3M / 12M cell; omitted, it uses the selected month's rate. */
+function starMoney(v,dec,rate){
+  if(v==null||!isFinite(v)) return na();
+  if(Math.abs(v)<=20000) return usd(v,dec);            // already USD in the source file
+  if(state.cur!=='USD') return moneyFmt(v,dec);
+  const r=rate??strFxOf(state.month);
+  return r? moneyFmt(v/r,dec)
+          : na('STR publishes no VND/USD rate for this month — drop both the USD and VND editions of the full-data extract to convert STAR figures at STR\'s own rate');
+}
 function chgTd(v,dec=1){ return `<td class="${cls(v)}" data-v="${v==null?'':v}">${v==null?'—':(v>0?'+':'')+n1(v,dec)+'%'}</td>`; }
 /* STR-snapshot cell: value on top, YoY % beneath it, last year beneath that. Stacking is what
    lets the snapshot sit beside the Property scorecard again — a flat layout needed 12 columns
@@ -4728,7 +4820,14 @@ function renderMarket(d){
   const sp=state.snapPer||'cm';
   const spBtns=[['cm','Current month'],['ytd','YTD'],['r3','Run 3M'],['r12','Run 12M']]
     .map(([k,l])=>`<button class="heatbtn ${sp===k?'on':''}" onclick="__setSnapPer('${k}')">${l}</button>`).join(' ');
-  const SNAP_MET=[['occ','Occupancy',v=>v==null?na():n1(v,1)+'%'],['adr','ADR',v=>starMoney(v)],['revpar','RevPAR',v=>starMoney(v)]];
+  /* Money formatters take the PERIOD, because STR's blended rate differs per period. The
+     snapshot shows one period at a time (defaults to `sp`); the Property scorecard prints
+     all four side by side and passes each column's own period — binding a single rate here
+     would silently convert its YTD / 3M / 12M columns at the current month's rate. */
+  const starFmt=(per,who)=>v=>starMoney(v,null,strFxPeriod(st.monthKey||state.month,per??sp,who));
+  const SNAP_MET=[['occ','Occupancy',()=>v=>v==null?na():n1(v,1)+'%'],
+                  ['adr','ADR',starFmt],
+                  ['revpar','RevPAR',starFmt]];
   /* current rank in the comp set (latest non-empty value of the STAR Comp "Rank" row) */
   /* STR's own "N of X" rank text counts the WHOLE competitive set including us, so the
      census "Competitive Set: Competitors" figure is already the right denominator —
@@ -4815,42 +4914,49 @@ function renderMarket(d){
      from the Industry sheet; the other two exist only in the Summary sheet, so each mode names
      its own source in the caption. `summary` is the automatic fallback to the submarket when no
      Industry sheet is loaded — same figures as an explicit `submkt` pick, different wording. */
-  const canInd=!!ind?.metrics?.occ, canUU=!!sum.occ?.subcls, canMkt=!!sum.occ?.submkt;
-  const benchSrc = (state.starBench==='uu' &&canUU)  ? 'subcls'
-                 : (state.starBench==='mkt'&&canMkt) ? 'submkt'
+  const canInd=!!ind?.metrics?.occ, canUU=!!sum.occ?.subcls, canMkt=!!sum.occ?.submkt,
+        canMC=!!sum.occ?.mclass;
+  const benchSrc = (state.starBench==='uu'   &&canUU)  ? 'subcls'
+                 : (state.starBench==='mkt'  &&canMkt) ? 'submkt'
+                 : (state.starBench==='vnlux'&&canMC)  ? 'mclass'
                  : canInd ? 'industry'
                  : canMkt ? 'summary'
                  : gl.cmInd?.occ ? 'glance' : 'none';
-  /* both Summary-sourced modes read the same shape, so resolve the entity once */
+  /* every Summary-sourced mode reads the same shape, so resolve the entity once */
   const sumEnt = benchSrc==='subcls' ? 'subcls'
+               : benchSrc==='mclass' ? 'mclass'
                : (benchSrc==='submkt'||benchSrc==='summary') ? 'submkt' : null;
-  const benchName = benchSrc==='subcls' ? (st.entityLabels?.subcls||'Luxury & Upper Upscale')
-                  : sumEnt ? (st.entityLabels?.submkt||'Submarket: Ho Chi Minh City')
+  const SUM_FALLBACK={subcls:'SubmarketCollapsedClass: Luxury & Upper Upscale',
+                      mclass:'MarketClass: Luxury', submkt:'Submarket: Ho Chi Minh City'};
+  const benchName = sumEnt ? (st.entityLabels?.[sumEnt]||SUM_FALLBACK[sumEnt])
                   : (ind?.scope||'Industry');
+  /* Button labels name the GEOGRAPHY as well as the class. The first option used to read
+     "Luxury market", which invites a comparison with CoStar's Summary row "MarketClass:
+     Luxury" — a different population (all of Vietnam South, resorts included, YTD ADR
+     ~₫6.4M against HCMC Luxury's ~₫5.1M). Same reason the whole-city option says HCMC. */
   const benchBtns=`<span class="noprint" style="float:right;font-weight:400">
     ${canInd?`<button class="heatbtn ${benchSrc==='industry'?'on':''}" onclick="__setStarBench('ind')"
-        title="${escA(ind.scope)} — from the Industry sheet">Luxury market</button>`:''}
+        title="${escA(ind.scope)} — from the Industry sheet. Not shown on CoStar's Summary tab: it is the Ho Chi Minh City × Luxury intersection.">HCMC Luxury</button>`:''}
     ${canUU?`<button class="heatbtn ${benchSrc==='subcls'?'on':''}" onclick="__setStarBench('uu')"
-        title="${escA(st.entityLabels?.subcls||'SubmarketCollapsedClass: Luxury & Upper Upscale')} — from the Summary sheet">Lux + upper upscale</button>`:''}
+        title="${escA(st.entityLabels?.subcls||SUM_FALLBACK.subcls)} — from the Summary sheet">Lux + upper upscale</button>`:''}
+    ${canMC?`<button class="heatbtn ${benchSrc==='mclass'?'on':''}" onclick="__setStarBench('vnlux')"
+        title="${escA(st.entityLabels?.mclass||SUM_FALLBACK.mclass)} — the luxury class across the whole Vietnam South market, resort destinations included, so its rate runs well above the city's. This is CoStar's &quot;MarketClass: Luxury&quot; row.">VN South Luxury</button>`:''}
     ${canMkt?`<button class="heatbtn ${(benchSrc==='submkt'||benchSrc==='summary')?'on':''}" onclick="__setStarBench('mkt')"
-        title="${escA(st.entityLabels?.submkt||'Submarket: Ho Chi Minh City')} — the whole city, every price class, from the Summary sheet">HCMC market</button>`:''}</span>`;
-  /* Column header wants to be short — "Ho Chi Minh City Luxury" is too wide (owner request).
-     The city is already implicit everywhere else on this tab, so keep only the STR class and
-     call it a market: "Luxury market". Matched against STR's own class vocabulary, longest
-     first so "Luxury & Upper Upscale" is not truncated to "Luxury". Full scope stays in the
-     column tooltip and is quoted verbatim in the caption. */
-  const STR_CLASSES=['Luxury & Upper Upscale','Upper Upscale','Upper Midscale','Luxury',
-                     'Upscale','Midscale','Economy'];
-  /* header text must follow the SELECTED benchmark, not always the Industry sheet's scope */
-  const benchShort=(()=>{
-    if(benchSrc==='subcls') return 'Lux + UU market';
-    if(sumEnt) return 'HCMC market';
-    const s=ind?.scope||'';
-    const c=STR_CLASSES.find(x=>new RegExp(x,'i').test(s));
-    return c?c+' market':(s.replace(/^.*Class\s*:\s*/i,'').trim()||'Industry');
-  })();
+        title="${escA(st.entityLabels?.submkt||SUM_FALLBACK.submkt)} — the whole city, every price class, from the Summary sheet">HCMC market</button>`:''}</span>`;
+  /* Column header follows the SELECTED benchmark and always carries the geography. The old
+     text was derived by matching STR's class vocabulary against the Industry scope, which
+     reduced "Submarket Class: Ho Chi Minh City Luxury" to the bare "Luxury market" and lost
+     the one word that distinguishes it from the Vietnam-South luxury row. Full scope stays
+     in the column tooltip and is quoted verbatim in the caption. */
+  const benchShort = benchSrc==='subcls' ? 'Lux + UU market'
+                   : benchSrc==='mclass' ? 'VN South Luxury'
+                   : sumEnt               ? 'HCMC market'
+                   : 'HCMC Luxury';
   let snapRows='';
-  for(const [met,label,fmt] of SNAP_MET){
+  for(const [met,label,mkFmt] of SNAP_MET){
+    /* one formatter per column family: the property and the comp set carry slightly
+       different period FX blends, and the benchmark falls back to the property's weights */
+    const fmt=mkFmt(), fmtC=mkFmt(sp,'comp');
     const pv = sum[met]?.prop?.[sp]     ?? gl[sp]?.[met]?.my;
     const pc = sum[met]?.prop?.[sp+'Chg'] ?? gl[sp+'Chg']?.[met]?.my;
     const cVal=sum[met]?.comp?.[sp]     ?? gl[sp]?.[met]?.comp;
@@ -4907,7 +5013,7 @@ function renderMarket(d){
     const L=v=>showLy?v:undefined;
     snapRows+=`<tr><td>${label}</td>
       ${snapTd(pv,pc,L(lyP),fmt)}
-      ${snapTd(cVal,cChg,L(lyC),fmt)}
+      ${snapTd(cVal,cChg,L(lyC),fmtC)}
       ${snapTd(iv,ic,L(lyX),idx)}
       ${snapTd(mv,mc,L(mLy),fmt)}
       ${snapTd(miv,micF,L(miLy),idx)}
@@ -4917,10 +5023,10 @@ function renderMarket(d){
   /* ---------- Property Scorecard: CM / YTD / 3M / 12M, levels + YoY % change ---------- */
   const SC_PER=[['cm','Current Month'],['ytd','Year to Date'],['r3','3 Month Avg'],['r12','12 Month Avg']];
   let scRows='';
-  for(const [met,label,fmt] of SNAP_MET){
+  for(const [met,label,mkFmt] of SNAP_MET){
     scRows+=`<tr><td>${label}</td>`+SC_PER.map(([k])=>{
       const v=sum[met]?.prop?.[k] ?? gl[k]?.[met]?.my, c=sum[met]?.prop?.[k+'Chg'] ?? gl[k+'Chg']?.[met]?.my;
-      return `<td data-v="${v??''}">${fmt(v)}</td>${chgTd(c)}`;}).join('')+'</tr>';
+      return `<td data-v="${v??''}">${mkFmt(k)(v)}</td>${chgTd(c)}`;}).join('')+'</tr>';   // each column its own period
   }
   for(const [met] of SNAP_MET){
     scRows+=`<tr><td class="small">${IDX_NAMES[met]} — index vs comp set</td>`+SC_PER.map(([k])=>{
@@ -5113,7 +5219,9 @@ function renderMarket(d){
         <div class="small" style="margin-top:6px">Each cell reads <b>value</b>, then its <b>% change vs the same period last year</b> beneath${showLy?', then that period a year ago in grey':''}.${benchSrc==='subcls'
   ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — the city's luxury <i>and</i> upper-upscale hotels, a wider peer group than the Luxury market. This one can only come from the Summary sheet: the Industry sheet carries a single scope. Its last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since the Summary sheet lists changes but not prior-year levels.`
   : benchSrc==='industry'
-  ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. It is deliberately <b>not</b> taken from the Summary sheet, whose Market / Submarket rows cover wider populations and therefore read much lower.`
+  ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. <b>This row has no equivalent on CoStar's Summary tab</b>: it is the Ho Chi Minh City × Luxury intersection, narrower than “Submarket: Ho Chi Minh City” (every class) and narrower than “MarketClass: Luxury” (the luxury class across all of Vietnam South, resorts included). Comparing it against either of those will not tie — use the buttons above to switch to them.`
+  : benchSrc==='mclass'
+  ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — the luxury class across the <b>whole Vietnam South market</b>, which includes the resort destinations, so its rate runs well above the city's and Sofitel indexes lower against it. This is the row CoStar's Summary tab labels <b>MarketClass: Luxury</b>. Last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since that sheet lists changes but not prior-year levels.`
   : benchSrc==='submkt'
   ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — <b>the whole city, every price class</b>, so it sits well below the luxury benchmarks and Sofitel usually indexes above 100 against it. Only the Summary sheet carries it. Last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since that sheet lists changes but not prior-year levels.`
   : benchSrc==='glance'
@@ -7182,7 +7290,7 @@ function renderSettings(){
         <div class="small" style="margin-top:8px">Accounts are managed in Supabase → Authentication → Users. Only accounts you create there can sign in (public sign-up is disabled). Setup guide: SUPABASE-SETUP.md.</div></div>
       <div class="panel"><h3>Data — storage, backup & restore</h3>
         <table><tbody>
-          <tr><td>Months stored</td><td>${Object.keys(state.store.months).length} (rolling 24)</td></tr>
+          <tr><td>Months stored</td><td>${Object.keys(state.store.months).length} (rolling ${MAX_MONTHS})</td></tr>
           <tr><td>Browser storage (IndexedDB)</td><td id="sEst">measuring…</td></tr>
           <tr><td>Folder mirror</td><td>${odHandle?`<span class="tag g">connected</span> ${odHandle.name} <span class="small" id="odStamp">${odStamp?'last saved '+odStamp:''}</span>`
             :odPending?`<span class="tag a">needs re-authorise</span> ${odPending.name}`
