@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Workflow – Thanh lý Tài sản Cố định | Plaza Hotel</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; background: #f4f6f9; color: #1a1a2e; }
+
+  /* ── Header ── */
+  .page-header {
+    background: linear-gradient(135deg, #1a3a5c 0%, #2e6da4 100%);
+    color: white; padding: 18px 32px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .page-header h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }
+  .page-header .meta { font-size: 10px; opacity: 0.85; text-align: right; line-height: 1.7; }
+  .page-header .sub { font-size: 11px; opacity: 0.75; margin-top: 2px; }
+
+  /* ── Legend ── */
+  .legend { display: flex; gap: 18px; padding: 10px 32px; background: #fff; border-bottom: 1px solid #dde; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #444; }
+  .legend-box { width: 26px; height: 14px; border-radius: 3px; border: 1px solid #aaa; flex-shrink: 0; }
+
+  /* ── Swimlane container ── */
+  .swimlane-wrap { padding: 20px 24px 32px; overflow-x: auto; }
+  .swimlane-grid { display: grid; min-width: 1060px; }
+
+  /* ── Column headers ── */
+  .col-header { font-weight: 700; font-size: 10.5px; text-align: center; padding: 8px 6px;
+    border-radius: 6px 6px 0 0; color: white; letter-spacing: 0.2px; }
+  .col-asset   { background: #4a6fa5; }
+  .col-council { background: #2e6da4; }
+  .col-vendor  { background: #5a8a5a; }
+  .col-finance { background: #8a5a2e; }
+  .col-mgmt    { background: #6b4a8a; }
+
+  /* ── Lane rows ── */
+  .lane { display: contents; }
+  .lane-label {
+    writing-mode: vertical-lr; transform: rotate(180deg);
+    font-size: 10px; font-weight: 700; text-align: center;
+    background: #e8edf4; border-right: 2px solid #c5d0e0;
+    padding: 8px 4px; color: #2e6da4; letter-spacing: 0.5px;
+  }
+
+  /* ── Phase separators ── */
+  .phase-row {
+    grid-column: 1 / -1;
+    background: linear-gradient(90deg, #1a3a5c, #2e6da4);
+    color: white; font-weight: 700; font-size: 11px;
+    padding: 7px 14px; border-radius: 4px; margin: 12px 0 6px;
+    letter-spacing: 0.3px;
+  }
+  .phase-num { font-size: 10px; opacity: 0.8; margin-left: 8px; font-weight: 400; }
+
+  /* ── Step boxes ── */
+  .step {
+    border-radius: 8px; padding: 9px 11px; margin: 4px 5px;
+    border: 1.5px solid transparent; position: relative;
+    line-height: 1.45; font-size: 10.5px;
+  }
+  .step .step-num {
+    font-size: 9px; font-weight: 700; color: white;
+    background: rgba(0,0,0,0.25); border-radius: 10px;
+    padding: 1px 6px; display: inline-block; margin-bottom: 4px;
+  }
+  .step .step-title { font-weight: 700; font-size: 11px; margin-bottom: 3px; display: block; }
+  .step ul { margin: 4px 0 0 12px; }
+  .step ul li { margin-bottom: 2px; }
+  .step .doc-tag {
+    display: inline-block; font-size: 9px; font-weight: 600;
+    background: rgba(0,0,0,0.08); border-radius: 3px;
+    padding: 1px 5px; margin-top: 4px; margin-right: 3px;
+  }
+
+  /* Step colors by actor */
+  .s-asset   { background: #dce8f5; border-color: #4a6fa5; }
+  .s-council { background: #d4e4f7; border-color: #2e6da4; }
+  .s-vendor  { background: #d8edd8; border-color: #5a8a5a; }
+  .s-finance { background: #f0e4d4; border-color: #8a5a2e; }
+  .s-mgmt    { background: #ead8f0; border-color: #6b4a8a; }
+  .s-multi   { background: #eef2f8; border-color: #4a5a7a; }
+
+  /* Decision diamond */
+  .decision {
+    border-radius: 0; clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    text-align: center; font-weight: 700; font-size: 10px; padding: 18px 8px;
+    margin: 6px auto; width: 110px; height: 70px; display: flex;
+    align-items: center; justify-content: center;
+  }
+
+  /* Arrow connector */
+  .arrow-col {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #4a6fa5; padding: 0;
+  }
+
+  /* Document badge row */
+  .docs-section {
+    background: #fff3cd; border: 1.5px solid #e0a800; border-radius: 8px;
+    padding: 12px 16px; margin: 8px 5px 4px; grid-column: 1 / -1;
+  }
+  .docs-section h4 { font-size: 11px; color: #7a5a00; margin-bottom: 8px; font-weight: 700; }
+  .docs-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .doc-item {
+    background: white; border: 1px solid #e0c87a; border-radius: 5px;
+    padding: 4px 10px; font-size: 10px; display: flex; align-items: center; gap: 5px;
+  }
+  .doc-item .dnum { font-weight: 700; color: #c8860a; }
+
+  /* Note box */
+  .note-box {
+    background: #fff8f0; border-left: 4px solid #e07c2e;
+    padding: 8px 12px; border-radius: 0 6px 6px 0;
+    font-size: 10px; color: #5a3a10; margin: 4px 5px; grid-column: 1/-1;
+  }
+  .note-box strong { color: #c0510a; }
+
+  /* Footer */
+  .page-footer {
+    text-align: center; padding: 12px; font-size: 9.5px; color: #888;
+    border-top: 1px solid #ddd; background: #fff;
+  }
+
+  @media print {
+    body { background: white; font-size: 10px; }
+    .swimlane-wrap { padding: 8px; }
+    .page-header { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    .col-header, .phase-row { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    .step { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<div class="page-header">
+  <div>
+    <div style="font-size:11px;opacity:0.75;margin-bottom:4px;">CÔNG TY TNHH LIÊN DOANH KHÁCH SẠN PLAZA</div>
+    <h1>WORKFLOW – THANH LÝ TÀI SẢN CỐ ĐỊNH (TSCĐ)</h1>
+    <div class="sub">Fixed Asset Liquidation Process</div>
+  </div>
+  <div class="meta">
+    Mã tài liệu / Doc No.: 03.2024.SOP<br>
+    Bộ phận / Dept.: Asset Management<br>
+    Căn cứ: TT 45/2013/TT-BTC &amp; TT 200/2014/TT-BTC<br>
+    Phiên bản / Version: 1.0 – 2024
+  </div>
+</div>
+
+<!-- ═══ LEGEND ═══ -->
+<div class="legend">
+  <strong style="font-size:10px;color:#444;align-self:center;">Người thực hiện:</strong>
+  <div class="legend-item"><div class="legend-box" style="background:#dce8f5;border-color:#4a6fa5;"></div>Asset Management Executive</div>
+  <div class="legend-item"><div class="legend-box" style="background:#d4e4f7;border-color:#2e6da4;"></div>Hội đồng thanh lý (HĐTL)</div>
+  <div class="legend-item"><div class="legend-box" style="background:#d8edd8;border-color:#5a8a5a;"></div>Bên thu mua / Vendor</div>
+  <div class="legend-item"><div class="legend-box" style="background:#f0e4d4;border-color:#8a5a2e;"></div>Kế toán / Finance</div>
+  <div class="legend-item"><div class="legend-box" style="background:#ead8f0;border-color:#6b4a8a;"></div>TGĐ / Phê duyệt</div>
+  <div class="legend-item"><div class="legend-box" style="background:#eef2f8;border-color:#4a5a7a;"></div>Đa bên phối hợp</div>
+  <div class="legend-item" style="margin-left:16px;"><div class="legend-box" style="background:#fff3cd;border-color:#e0a800;border-width:2px;"></div>Tài liệu / Hồ sơ bắt buộc</div>
+</div>
+
+<!-- ═══ SWIMLANE ═══ -->
+<div class="swimlane-wrap">
+<div class="swimlane-grid" style="grid-template-columns: 30px 1fr 1fr 1fr 1fr 1fr;">
+
+  <!-- Column headers -->
+  <div></div>
+  <div class="col-header col-asset">Asset Management Executive</div>
+  <div class="col-header col-council">Hội đồng Thanh lý (HĐTL)</div>
+  <div class="col-header col-vendor">Bên Thu mua / Vendor</div>
+  <div class="col-header col-finance">Kế toán / Finance</div>
+  <div class="col-header col-mgmt">TGĐ / Phê duyệt</div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- PHASE 1 -->
+  <div class="phase-row">
+    📋 GIAI ĐOẠN 1 – Khởi tạo hồ sơ &amp; Thành lập Hội đồng
+    <span class="phase-num">Bước 1 → 4</span>
+  </div>
+
+  <!-- B1 -->
+  <div class="lane-label">B1–B2</div>
+  <div class="step s-asset" style="grid-column:2">
+    <span class="step-num">Bước 1</span>
+    <span class="step-title">Tiếp nhận &amp; Rà soát Disposal Form</span>
+    <ul>
+      <li>Nhận Disposal Form từ bộ phận đề xuất</li>
+      <li>Phân loại <strong>hiện trạng</strong>: Full Operational / Poor / Damaged</li>
+      <li>Phân loại <strong>lý do</strong>: High repair cost / Obsolete / Irreparable / Breakage &amp; Loss</li>
+      <li>Kiểm tra hồ sơ hỗ trợ (Work Order, Upgrade Form, B&amp;L Report)</li>
+      <li>Đính kèm ảnh tài sản thực tế</li>
+    </ul>
+    <span class="doc-tag">📎 Disposal Form + Ảnh tài sản</span>
+  </div>
+  <div></div><div></div><div></div>
+  <div class="step s-mgmt" style="grid-column:6">
+    <span class="step-num">Bước 2</span>
+    <span class="step-title">Ký QĐ thành lập HĐTL</span>
+    <ul>
+      <li>TGĐ ký Quyết định số L0X/20XX</li>
+      <li>5 thành viên: TGĐ (Chủ tịch), PTGĐ (Phó CT), Kế toán trưởng (thường trực), Trưởng BP KT + GĐ TC (không thường trực)</li>
+    </ul>
+    <span class="doc-tag">📄 01-QĐ Thành lập HĐTL</span>
+  </div>
+
+  <!-- B3 -->
+  <div class="lane-label">B3–B4</div>
+  <div class="step s-asset" style="grid-column:2">
+    <span class="step-num">Bước 3</span>
+    <span class="step-title">Chuẩn bị &amp; Ghi biên bản họp</span>
+    <ul>
+      <li>Chuẩn bị tài liệu họp, triệu tập HĐTL</li>
+      <li>Ghi biên bản họp (lý do, phương án bán/hủy, danh sách tài sản)</li>
+      <li>Thu chữ ký toàn bộ thành viên</li>
+    </ul>
+    <span class="doc-tag">📄 02-BB Họp HĐTL</span>
+  </div>
+  <div class="step s-council" style="grid-column:3">
+    <span class="step-num">Họp HĐTL</span>
+    <span class="step-title">Xét duyệt nguyên nhân &amp; phương án</span>
+    <ul>
+      <li>Xem xét từng Disposal Form</li>
+      <li>Thống nhất phương án: bán thanh lý / hủy</li>
+      <li>Xác nhận danh sách tài sản và tiến độ</li>
+    </ul>
+  </div>
+  <div></div><div></div>
+  <div class="step s-mgmt" style="grid-column:6">
+    <span class="step-num">Bước 4</span>
+    <span class="step-title">Ký QĐ Thanh lý TSCĐ</span>
+    <ul>
+      <li>TGĐ ký Quyết định thanh lý</li>
+      <li>Ghi rõ: danh sách TS, mã TS, SL, thông số KT, bộ phận</li>
+    </ul>
+    <span class="doc-tag">📄 03-QĐ Thanh lý TSCĐ</span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- PHASE 2 -->
+  <div class="phase-row">
+    🔍 GIAI ĐOẠN 2 – Kiểm kê &amp; Đánh giá lại tài sản
+    <span class="phase-num">Bước 5 → 6</span>
+  </div>
+
+  <div class="lane-label">B5–B6</div>
+  <div class="step s-asset" style="grid-column:2">
+    <span class="step-num">Bước 5</span>
+    <span class="step-title">Lập BB Kiểm kê TSCĐ</span>
+    <ul>
+      <li>Kiểm kê thực tế: SL, tình trạng từng tài sản</li>
+      <li>Đối chiếu với sổ kế toán (nguyên giá, hao mòn, GTCL)</li>
+      <li>Tất cả HĐTL ký xác nhận</li>
+    </ul>
+    <span class="doc-tag">📄 04-BB Kiểm kê (Mẫu 05-TSCĐ TT200)</span>
+  </div>
+  <div class="step s-council" style="grid-column:3">
+    <span class="step-title" style="margin-top:8px;">HĐTL xác nhận</span>
+    <ul>
+      <li>Kiểm tra thực địa từng tài sản</li>
+      <li>Ký biên bản kiểm kê</li>
+    </ul>
+  </div>
+  <div></div>
+  <div class="step s-finance" style="grid-column:5">
+    <span class="step-num">Bước 6</span>
+    <span class="step-title">BB Đánh giá lại TSCĐ</span>
+    <ul>
+      <li>Xác định giá trị đánh giá lại (reserve price)</li>
+      <li>Tính chênh lệch tăng/giảm vs sổ sách</li>
+      <li>Làm cơ sở cho giá sàn đấu thầu</li>
+    </ul>
+    <span class="doc-tag">📄 05-BB Đánh giá lại (Mẫu 04-TSCĐ TT200)</span>
+  </div>
+  <div></div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- PHASE 3 -->
+  <div class="phase-row">
+    💰 GIAI ĐOẠN 3 – Gọi báo giá &amp; Mở thầu
+    <span class="phase-num">Bước 7 → 9</span>
+  </div>
+
+  <div class="lane-label">B7</div>
+  <div class="step s-asset" style="grid-column:2">
+    <span class="step-num">Bước 7</span>
+    <span class="step-title">Phân nhóm &amp; Gọi báo giá (≥ 3 bên)</span>
+    <ul>
+      <li><strong>Nhóm 1</strong> – Full Operational / Poor: gọi báo giá chung hoặc riêng</li>
+      <li><strong>Nhóm 2</strong> – Damaged: gọi báo giá riêng</li>
+      <li>Gửi Thư báo giá, mời xem tài sản thực tế tại khách sạn</li>
+      <li>Thu thập Thư báo giá từ ≥ 3 bên; thông báo thời gian mở thầu</li>
+    </ul>
+    <span class="doc-tag">📄 Thư báo giá (mẫu chuẩn) × ≥ 3</span>
+  </div>
+  <div></div>
+  <div class="step s-vendor" style="grid-column:4">
+    <span class="step-title" style="margin-top:8px;">Bên thu mua thực hiện</span>
+    <ul>
+      <li>Đến kiểm tra tài sản thực tế</li>
+      <li>Điền đầy đủ Thư báo giá (thông tin cá nhân/DN, đơn giá, giá mua, chi phí thu gom)</li>
+      <li>Nộp báo giá về văn phòng JVC</li>
+    </ul>
+  </div>
+  <div></div><div></div>
+
+  <div class="lane-label">B8–B9</div>
+  <div class="step s-asset" style="grid-column:2">
+    <span class="step-num">Bước 8</span>
+    <span class="step-title">Tổ chức mở thầu (Open Bid)</span>
+    <ul>
+      <li><strong style="color:#c0510a;">Bắt buộc:</strong> &gt; 50% thành viên HĐTL có mặt</li>
+      <li>Mở và so sánh toàn bộ báo giá</li>
+      <li>Chọn <strong>giá cao nhất hợp lệ</strong> (đánh giá tính hợp lý &amp; đối chiếu giá thị trường)</li>
+      <li>Lập Biên bản mở thầu, xác nhận bên trúng thầu</li>
+    </ul>
+  </div>
+  <div class="step s-council" style="grid-column:3">
+    <span class="step-title" style="margin-top:8px;">HĐTL chứng kiến &amp; xác nhận</span>
+    <ul>
+      <li>Ký biên bản mở thầu</li>
+    </ul>
+  </div>
+  <div class="step s-vendor" style="grid-column:4">
+    <span class="step-title" style="margin-top:8px;">Bên trúng thầu</span>
+    <ul>
+      <li><strong>Giá cao nhất hợp lệ</strong> được chọn</li>
+      <li style="font-size:0.82em;color:#555;margin-top:4px;"><em>Báo giá hợp lệ là Báo giá đã được HĐTL đánh giá tính hợp lý và so sánh với giá thị trường</em></li>
+    </ul>
+  </div>
+  <div></div>
+  <div class="step s-mgmt" style="grid-column:6">
+    <span class="step-num">Bước 9</span>
+    <span class="step-title">Phê duyệt kết quả</span>
+    <ul>
+      <li>TGĐ / HĐTL ký phê duyệt kết quả đấu thầu</li>
+      <li>Xác nhận bên thu mua chính thức</li>
+    </ul>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- PHASE 4 -->
+  <div class="phase-row">
+    📦 GIAI ĐOẠN 4 – Bàn giao &amp; Hoàn tất hồ sơ
+    <span class="phase-num">Bước 10 → 13</span>
+  </div>
+
+  <div class="lane-label">B10–B11</div>
+  <div class="step s-asset" style="grid-column:2">
+    <span class="step-num">Bước 10</span>
+    <span class="step-title">Lập BB Thanh lý TSCĐ</span>
+    <ul>
+      <li>Danh sách TS, SL, mã TS, thông số KT</li>
+      <li>Thông tin bên thu mua (CMND/MST)</li>
+      <li>Kết quả bán &amp; đối tượng thu mua</li>
+    </ul>
+    <span class="doc-tag">📄 06-BB Thanh lý (Mẫu 02-TSCĐ TT200)</span>
+  </div>
+  <div class="step s-multi" style="grid-column:3/5">
+    <span class="step-num">Bước 11</span>
+    <span class="step-title">Bàn giao tài sản – Gate Pass</span>
+    <ul>
+      <li>Cấp Gate Pass xác nhận bởi: Người nhận (Bên mua) ✔ | Bảo vệ ✔ | Trưởng BP ✔</li>
+      <li>Bên mua tháo dỡ &amp; vận chuyển theo tiến độ thỏa thuận</li>
+      <li>Lập Biên bản Giao nhận TSCĐ sau khi hoàn tất bàn giao</li>
+    </ul>
+    <span class="doc-tag">📄 Gate Pass</span>
+    <span class="doc-tag">📄 BB Giao nhận TSCĐ</span>
+  </div>
+  <div></div><div></div>
+
+  <div class="lane-label">B12–B13</div>
+  <div></div><div></div><div></div>
+  <div class="step s-finance" style="grid-column:5">
+    <span class="step-num">Bước 12</span>
+    <span class="step-title">Xuất hóa đơn GTGT bán TSCĐ</span>
+    <ul>
+      <li><strong style="color:#c0510a;">⚠ Bắt buộc:</strong> phải xuất HĐ khi thanh lý TSCĐ</li>
+      <li>Hóa đơn khớp với BB thanh lý và Thư báo giá</li>
+    </ul>
+    <span class="doc-tag">🧾 Hóa đơn GTGT</span>
+  </div>
+  <div></div>
+
+  <div class="lane-label">B13</div>
+  <div class="step s-asset" style="grid-column:2/4">
+    <span class="step-num">Bước 13</span>
+    <span class="step-title">Hạch toán &amp; Lưu trữ hồ sơ (Liquidation Adjust)</span>
+    <ul>
+      <li>Kế toán: xóa ghi nhận TSCĐ khỏi sổ, ghi nhận thu nhập thanh lý, hạch toán chênh lệch đánh giá lại</li>
+      <li>Nhân viên QLTS lưu trữ đầy đủ bộ hồ sơ 11 tài liệu</li>
+    </ul>
+  </div>
+  <div></div>
+  <div class="step s-finance" style="grid-column:5">
+    <span class="step-title" style="margin-top:8px;">Hạch toán kế toán</span>
+    <ul>
+      <li>Bút toán xóa TSCĐ</li>
+      <li>Ghi nhận thu nhập &amp; chênh lệch</li>
+      <li>Đối chiếu sổ sách</li>
+    </ul>
+  </div>
+  <div></div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- DOCUMENT CHECKLIST -->
+  <div class="docs-section">
+    <h4>📁 BỘ HỒ SƠ THANH LÝ TSCĐ BẮT BUỘC – 11 TÀI LIỆU</h4>
+    <div class="docs-grid">
+      <div class="doc-item"><span class="dnum">01</span>QĐ Thành lập Hội đồng thanh lý</div>
+      <div class="doc-item"><span class="dnum">02</span>Biên bản họp Hội đồng thanh lý</div>
+      <div class="doc-item"><span class="dnum">03</span>Quyết định thanh lý TSCĐ</div>
+      <div class="doc-item"><span class="dnum">04</span>Biên bản kiểm kê TSCĐ (Mẫu 05-TSCĐ)</div>
+      <div class="doc-item"><span class="dnum">05</span>Biên bản đánh giá lại TSCĐ (Mẫu 04-TSCĐ)</div>
+      <div class="doc-item"><span class="dnum">06</span>Biên bản thanh lý TSCĐ (Mẫu 02-TSCĐ)</div>
+      <div class="doc-item"><span class="dnum">07</span>Thư báo giá (≥ 3 bên thu mua)</div>
+      <div class="doc-item"><span class="dnum">08</span>Biên bản mở thầu</div>
+      <div class="doc-item"><span class="dnum">09</span>Hóa đơn GTGT bán TSCĐ ⚠</div>
+      <div class="doc-item"><span class="dnum">10</span>Gate Pass xuất cổng</div>
+      <div class="doc-item"><span class="dnum">11</span>Biên bản giao nhận TSCĐ</div>
+    </div>
+  </div>
+
+  <!-- KEY RULES -->
+  <div class="note-box">
+    <strong>⚠ Các điểm kiểm soát quan trọng:</strong>
+    &nbsp;(1) Disposal Form phải phân loại đúng hiện trạng (Full Operational / Poor / Damaged) &amp; lý do – áp dụng từ đợt L01.2026.
+    &nbsp;|&nbsp;(2) Phải thu tối thiểu <strong>3 báo giá</strong> trước khi mở thầu.
+    &nbsp;|&nbsp;(3) Mở thầu yêu cầu <strong>&gt;50% thành viên HĐTL</strong> có mặt.
+    &nbsp;|&nbsp;(4) <strong>Bắt buộc xuất hóa đơn GTGT</strong> khi thanh lý TSCĐ – không được bỏ sót.
+    &nbsp;|&nbsp;(5) Gate Pass phải có đủ 3 chữ ký: Bên mua + Bảo vệ + Trưởng BP.
+  </div>
+
+</div><!-- end swimlane-grid -->
+</div><!-- end swimlane-wrap -->
+
+<div class="page-footer">
+  Công ty TNHH Liên Doanh Khách Sạn Plaza &nbsp;|&nbsp; 17 Lê Duẩn, phường Bến Nghé, Quận 1, TP.HCM &nbsp;|&nbsp;
+  Tài liệu: 03.2024.SOP – Workflow Thanh lý TSCĐ &nbsp;|&nbsp; Căn cứ: TT 45/2013/TT-BTC &amp; TT 200/2014/TT-BTC
+</div>
+
+</body>
+</html>
