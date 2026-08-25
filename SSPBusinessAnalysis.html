@@ -2548,18 +2548,45 @@ const COMPSET_MEMBERS={
   new:['Sofitel Saigon Plaza','Hilton','Park Hyatt','JW Marriott','Sheraton'],
 };
 const COMPSET_LABEL={cur:'Current comp set',new:'New comp set (after reno)'};
-function starCompsetKind(wb){
+/* A Monthly STAR export varies along TWO INDEPENDENT axes, which this used to collapse into
+   one flag:
+     comp-set VINTAGE   — the current set, or the post-renovation "New Compset"
+     subject INCLUSION  — whether the comp-set averages include Sofitel itself
+   The owner's own exports prove they are independent: "(INCL) - Current Compset",
+   "(EXCL) - Current Compset" and "(EXCL) - New Compset" all exist side by side with
+   IDENTICAL filenames. The old test read "Excludes Subject Property" as evidence of the NEW
+   comp set, so an (EXCL) Current file was filed as the post-renovation set and labelled
+   "after reno" — and (EXCL) Current and (EXCL) New landed in the SAME slot, so dropping both
+   silently destroyed one, exactly the failure the note above this function warns about.
+   Inclusion is also read straight from the file rather than inferred from the vintage, so
+   the comp-set property count and the "excludes Sofitel" tag stop lying. */
+function starCompsetInfo(wb){
   const scan=n=>{ const ws=wb.Sheets[n]; if(!ws) return '';
     const gd=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
-    return gd.slice(0,12).flat().filter(v=>typeof v==='string').join(' | '); };
+    return gd.slice(0,14).flat().filter(v=>typeof v==='string').join(' | '); };
   const txt=scan('Table of Contents')+' | '+scan('Glance')+' | '+scan('Summary');
-  return /Excludes Subject Property|New Compset/i.test(txt)?'new':'cur';
+  return { kind: /New\s*Compset/i.test(txt) ? 'new' : 'cur',
+           inclSubject: !/Excludes?\s+Subject\s+Property|Exclude\s+Subject/i.test(txt) };
 }
-/* the STAR object for a month under the currently selected comp set, with fallback so a
-   month that only has one of the two still renders instead of going blank */
+/* Storage slot per variant. `star` keeps its original meaning (current set, subject
+   included) so months already stored stay valid without a re-drop. */
+function starSlotKey(kind,inclSubject){
+  return kind==='new' ? 'starNew' : (inclSubject ? 'star' : 'starExcl');
+}
+const STAR_VARIANTS=[['star','Current comp set'],
+                     ['starExcl','Current — excl. Sofitel'],
+                     ['starNew','New comp set (after reno)']];
+function starVariantSel(){
+  /* migrate the old two-way selector, whose 'new' meant `starNew` */
+  const v=state.compsetVar || (state.compset==='new' ? 'starNew' : 'star');
+  return v;
+}
+/* the STAR object for a month under the selected variant, falling back in a fixed order so
+   a month that only holds one of the three still renders instead of going blank */
 function starOf(mk){ const m=state.store.months[mk]||{};
-  return (state.compset==='new') ? (m.starNew||m.star||null) : (m.star||m.starNew||null); }
-function compsetHasNew(){ return Object.values(state.store.months).some(m=>m&&m.starNew); }
+  const want=starVariantSel();
+  return m[want] || m.star || m.starExcl || m.starNew || null; }
+function starVariantHas(k){ return Object.values(state.store.months).some(m=>m&&m[k]); }
 
 /* ---------- merged STAR history across every stored month ----------
    Each OFFICIAL Monthly STAR carries an 18-month Comp-sheet history, so merging the
@@ -2947,13 +2974,14 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
          Monthly STAR_119514-YYYYMM00-... pattern), so they can only be told apart by
          content. They must go to separate slots or dropping one silently destroys the
          other for that month. */
-      const kind=starCompsetKind(wb);
-      parsed.compsetKind=kind; parsed.inclSubject=(kind==='cur');
-      if(kind==='new'){ slot.starNew=parsed; state.compsetSeen=true; }
-      else slot.star=parsed;
-      slot.warns=(slot.warns||[]).filter(w=>!w.startsWith('STAR '+kind))
-        .concat(parsed.warns.map(w=>'STAR '+kind+': '+w));
-      label=`Monthly STAR (${kind==='new'?'NEW comp set — after reno':'current comp set'}) → ${fmtMonthKey(key)}`;
+      const {kind,inclSubject}=starCompsetInfo(wb);
+      parsed.compsetKind=kind; parsed.inclSubject=inclSubject;
+      const sk=starSlotKey(kind,inclSubject);
+      slot[sk]=parsed; if(kind==='new') state.compsetSeen=true;
+      slot.warns=(slot.warns||[]).filter(w=>!w.startsWith('STAR '+sk))
+        .concat(parsed.warns.map(w=>'STAR '+sk+': '+w));
+      const vName=STAR_VARIANTS.find(([k])=>k===sk)?.[1]||sk;
+      label=`Monthly STAR — ${vName} → ${fmtMonthKey(key)}`;
       state.month=state.month||key;
     }
     else if(type==='starWeekly'){ parsed=parseStarWeekly(wb); state.store.pace.weekly=parsed; label='Weekly STAR (pace): '+parsed.label;
@@ -3882,7 +3910,7 @@ function buildExecDraft(d){
 function monthlyPipeline(){
   const m=curMonth()||{}, mk=state.month||'';
   const P=state.store.pace||{};
-  const star=m.star||m.starNew;
+  const star=m.star||m.starExcl||m.starNew;
   /* Rolling-forecast freshness: the title carries "(07A+05F)" = 7 ACTUAL months, i.e.
      current through July. If that is behind the selected month the stored RF is a stale
      vintage — the cascade would silently show last month's plan. */
@@ -4705,7 +4733,7 @@ function snapTd(v,chg,ly,fmt){
     `</td>`;
 }
 window.__setSnapPer=v=>{ state.snapPer=v; renderMarket(derive()); };
-window.__setCompset=v=>{ state.compset=v; renderMarket(derive()); };
+window.__setCompset=v=>{ state.compsetVar=v; state.compset=(v==='starNew'?'new':'cur'); renderMarket(derive()); };
 window.__setStrLy=v=>{ state.strLy=!!v; renderMarket(derive()); };
 window.__setDailyBench=v=>{ state.dailyBench=v; renderMarket(derive()); };
 /* 'ind' = Industry sheet (HCMC Luxury), 'uu' = Summary SubmarketCollapsedClass (Lux + UU) */
@@ -4836,10 +4864,13 @@ function renderMarket(d){
      reference data — keep it rather than blanking the whole tab. */
   if(!st){ el.innerHTML=noData()+propsTable(); propFilterRestore(); return; }
   const csKind=st.compsetKind||'cur';
+  const csVar=starVariantSel();
+  /* one button per variant, each disabled until a file of that variant is stored — three
+     exist in the owner's exports: current/incl, current/excl and new/excl */
   const csBtns=`<span class="noprint" style="float:right;font-weight:400">
-    ${[['cur','Current comp set'],['new','New comp set (after reno)']].map(([k,l])=>
-      `<button class="heatbtn ${(state.compset||'cur')===k?'on':''}" onclick="__setCompset('${k}')"
-        ${k==='new'&&!compsetHasNew()?'disabled title="Drop the New-Compset Monthly STAR files to enable"':''}>${l}</button>`).join(' ')}</span>`;
+    ${STAR_VARIANTS.map(([k,l])=>{ const have=starVariantHas(k);
+      return `<button class="heatbtn ${csVar===k?'on':''}" onclick="__setCompset('${k}')"
+        ${have?'':`disabled title="No Monthly STAR of this variant stored — drop the ${escA(l)} export"`}>${l}</button>`;}).join(' ')}</span>`;
   const gl=st.glance||{}, sum=st.summary||{};
   const [stY,stM]=st.monthKey.split('-').map(Number);
   const lyKey=(stY-1)+'-'+String(stM).padStart(2,'0');
@@ -4942,20 +4973,23 @@ function renderMarket(d){
      from the Industry sheet; the other two exist only in the Summary sheet, so each mode names
      its own source in the caption. `summary` is the automatic fallback to the submarket when no
      Industry sheet is loaded — same figures as an explicit `submkt` pick, different wording. */
-  const canInd=!!ind?.metrics?.occ, canUU=!!sum.occ?.subcls, canMkt=!!sum.occ?.submkt,
-        canMC=!!sum.occ?.mclass;
-  const benchSrc = (state.starBench==='uu'   &&canUU)  ? 'subcls'
-                 : (state.starBench==='mkt'  &&canMkt) ? 'submkt'
-                 : (state.starBench==='vnlux'&&canMC)  ? 'mclass'
+  const canInd=!!ind?.metrics?.occ, canUU=!!sum.occ?.subcls, canMkt=!!sum.occ?.submkt;
+  /* "VN South Luxury" (Summary row MarketClass: Luxury) was offered here briefly and removed
+     at the owner's request: it is the luxury class across the whole southern-Vietnam market,
+     resorts included, which is not a peer group for a city hotel — it only invited the
+     comparison it was meant to explain. The Summary parse still carries `mclass`; nothing
+     reads it. An old stored state.starBench==='vnlux' simply falls through to the Industry
+     sheet below, so no migration is needed. */
+  const benchSrc = (state.starBench==='uu' &&canUU)  ? 'subcls'
+                 : (state.starBench==='mkt'&&canMkt) ? 'submkt'
                  : canInd ? 'industry'
                  : canMkt ? 'summary'
                  : gl.cmInd?.occ ? 'glance' : 'none';
   /* every Summary-sourced mode reads the same shape, so resolve the entity once */
   const sumEnt = benchSrc==='subcls' ? 'subcls'
-               : benchSrc==='mclass' ? 'mclass'
                : (benchSrc==='submkt'||benchSrc==='summary') ? 'submkt' : null;
   const SUM_FALLBACK={subcls:'SubmarketCollapsedClass: Luxury & Upper Upscale',
-                      mclass:'MarketClass: Luxury', submkt:'Submarket: Ho Chi Minh City'};
+                      submkt:'Submarket: Ho Chi Minh City'};
   const benchName = sumEnt ? (st.entityLabels?.[sumEnt]||SUM_FALLBACK[sumEnt])
                   : (ind?.scope||'Industry');
   /* Button labels name the GEOGRAPHY as well as the class. The first option used to read
@@ -4967,8 +5001,6 @@ function renderMarket(d){
         title="${escA(ind.scope)} — from the Industry sheet. Not shown on CoStar's Summary tab: it is the Ho Chi Minh City × Luxury intersection.">HCMC Luxury</button>`:''}
     ${canUU?`<button class="heatbtn ${benchSrc==='subcls'?'on':''}" onclick="__setStarBench('uu')"
         title="${escA(st.entityLabels?.subcls||SUM_FALLBACK.subcls)} — from the Summary sheet">Lux + upper upscale</button>`:''}
-    ${canMC?`<button class="heatbtn ${benchSrc==='mclass'?'on':''}" onclick="__setStarBench('vnlux')"
-        title="${escA(st.entityLabels?.mclass||SUM_FALLBACK.mclass)} — the luxury class across the whole Vietnam South market, resort destinations included, so its rate runs well above the city's. This is CoStar's &quot;MarketClass: Luxury&quot; row.">VN South Luxury</button>`:''}
     ${canMkt?`<button class="heatbtn ${(benchSrc==='submkt'||benchSrc==='summary')?'on':''}" onclick="__setStarBench('mkt')"
         title="${escA(st.entityLabels?.submkt||SUM_FALLBACK.submkt)} — the whole city, every price class, from the Summary sheet">HCMC market</button>`:''}</span>`;
   /* Column header follows the SELECTED benchmark and always carries the geography. The old
@@ -4977,7 +5009,6 @@ function renderMarket(d){
      the one word that distinguishes it from the Vietnam-South luxury row. Full scope stays
      in the column tooltip and is quoted verbatim in the caption. */
   const benchShort = benchSrc==='subcls' ? 'Lux + UU market'
-                   : benchSrc==='mclass' ? 'VN South Luxury'
                    : sumEnt               ? 'HCMC market'
                    : 'HCMC Luxury';
   let snapRows='';
@@ -5225,8 +5256,11 @@ function renderMarket(d){
     <div class="panel" style="padding:8px 12px;border-left:4px solid var(--navy)">
       <h3 style="margin:0">Owner STR Benchmark ${csBtns}</h3>
       <div class="small">Owner-side read of the STAR data — competitive position, index trend and daily envelopes. The comp-set switch above re-sources <b>every panel on this tab</b>.
-        Now showing: <b>${COMPSET_LABEL[csKind]}</b> — ${compSet.join(' · ')}${st.inclSubject===false?' <span class="tag a">comp-set averages exclude Sofitel</span>':''}
-        ${(state.compset==='new'&&csKind!=='new')?' <span class="tag r">No New-Compset file stored for this month — showing the current comp set instead</span>':''}</div></div>
+        Now showing: <b>${STAR_VARIANTS.find(([k])=>k===starSlotKey(csKind,st.inclSubject!==false))?.[1]||COMPSET_LABEL[csKind]}</b> — ${compSet.join(' · ')}
+        ${st.inclSubject===false
+          ? ' <span class="tag a">comp-set averages EXCLUDE Sofitel</span> CoStar calls this “Performance Set (Exclude Subject)”. Only the comp-set row and the indexes against it move — market, submarket and class benchmarks are identical in both exports.'
+          : ' <span class="tag g">comp-set averages INCLUDE Sofitel</span> STR\'s default, CoStar\'s “Current Compset (incl.)”. Its “Performance Set (Exclude Subject)” is a separate export; only the comp-set row differs.'}
+        ${(starVariantSel()!==starSlotKey(csKind,st.inclSubject!==false))?' <span class="tag r">No file of the selected variant stored for this month — showing the one named above instead</span>':''}</div></div>
     ${(paceHtml&&paceVisible())?`<div class="panel"><h3>Pace — interim reads ahead of the official Monthly STAR</h3>
       <table><thead><tr><th></th><th>Occ</th><th>MPI</th><th>ADR</th><th>ARI</th><th>RevPAR</th></tr></thead>
       <tbody>${paceHtml}</tbody></table>
@@ -5247,9 +5281,7 @@ function renderMarket(d){
         <div class="small" style="margin-top:6px">Each cell reads <b>value</b>, then its <b>% change vs the same period last year</b> beneath${showLy?', then that period a year ago in grey':''}.${benchSrc==='subcls'
   ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — the city's luxury <i>and</i> upper-upscale hotels, a wider peer group than the Luxury market. This one can only come from the Summary sheet: the Industry sheet carries a single scope. Its last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since the Summary sheet lists changes but not prior-year levels.`
   : benchSrc==='industry'
-  ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. <b>This row has no equivalent on CoStar's Summary tab</b>: it is the Ho Chi Minh City × Luxury intersection, narrower than “Submarket: Ho Chi Minh City” (every class) and narrower than “MarketClass: Luxury” (the luxury class across all of Vietnam South, resorts included). Comparing it against either of those will not tie — use the buttons above to switch to them.`
-  : benchSrc==='mclass'
-  ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — the luxury class across the <b>whole Vietnam South market</b>, which includes the resort destinations, so its rate runs well above the city's and Sofitel indexes lower against it. This is the row CoStar's Summary tab labels <b>MarketClass: Luxury</b>. Last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since that sheet lists changes but not prior-year levels.`
+  ? `The benchmark column is read from the STAR <b>Industry</b> sheet — <b>“${escH(benchName)}”</b> — the same population as the <b>Industry</b> option in the daily table below. <b>This row has no equivalent on CoStar's Summary tab</b>: it is the Ho Chi Minh City × Luxury intersection — narrower than “Submarket: Ho Chi Minh City”, which is every price class in the city, and narrower than “SubmarketCollapsedClass: Luxury &amp; Upper Upscale”, which adds the upper-upscale hotels. Both of those are on the buttons above; comparing this column against either will not tie. Its scope is set in the STR subscription, so it changes there rather than here.`
   : benchSrc==='submkt'
   ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — <b>the whole city, every price class</b>, so it sits well below the luxury benchmarks and Sofitel usually indexes above 100 against it. Only the Summary sheet carries it. Last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since that sheet lists changes but not prior-year levels.`
   : benchSrc==='glance'
