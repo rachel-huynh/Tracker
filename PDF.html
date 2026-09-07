@@ -38,10 +38,12 @@
     border-top:1px solid rgba(255,255,255,.06);line-height:1.5}
 
   .main{margin-left:240px;min-height:100vh}
-  .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:18px 30px}
+  .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:18px 30px;
+    display:flex;align-items:center;gap:16px;justify-content:space-between}
+  .topbar .tb-title{min-width:0}
   .topbar h1{margin:0;font-size:19px;color:var(--heading);font-weight:700}
   .topbar .crumb{font-size:12.5px;color:var(--muted);margin-top:2px}
-  .content{padding:26px 30px 70px;max-width:900px}
+  .content{padding:26px 30px 70px}
 
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
     padding:22px 24px;margin-bottom:20px}
@@ -89,13 +91,31 @@
   @keyframes sp{to{transform:rotate(360deg)}}
 
   .split2{display:grid;grid-template-columns:1fr;gap:20px}
-  .pagechips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
-  .chip{border:1px solid var(--border-in);border-radius:6px;padding:6px 10px;background:#fff;cursor:grab;
-    user-select:none;font-size:12.8px;display:flex;gap:6px;align-items:center}
-  .chip.dragging{opacity:.4}
-  .chip .rot{color:var(--accent);font-size:11px}
-  .chip.del{text-decoration:line-through;color:var(--muted);opacity:.6}
-  .chip button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0 2px}
+  /* Organize: page thumbnail tiles */
+  .pagechips{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:12px;margin-top:14px}
+  .tile{position:relative;display:flex;flex-direction:column;gap:7px;padding:8px;background:#fff;
+    border:1px solid var(--border-in);border-radius:8px;cursor:grab;user-select:none;transition:.15s}
+  .tile:hover{border-color:var(--accent);box-shadow:0 1px 6px rgba(37,99,235,.12)}
+  .tile.dragging{opacity:.35}
+  /* Square thumb box: an image that fits the square still fits after a 90° turn,
+     so rotation is a pure CSS transform and never clips. */
+  .tile .thumb{aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+    background:#f5f6f8;border-radius:4px;overflow:hidden}
+  .tile .thumb img{max-width:100%;max-height:100%;display:block;
+    box-shadow:0 1px 3px rgba(0,0,0,.22);background:#fff;transition:transform .2s ease}
+  .tile .thumb .ph{width:15px;height:15px;border:2px solid var(--border-in);border-top-color:var(--accent);
+    border-radius:50%;animation:sp .8s linear infinite}
+  .tile .cap{display:flex;align-items:center;gap:2px;font-size:12.5px;color:var(--heading)}
+  .tile .cap .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tile .cap button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:13px;
+    padding:2px 3px;border-radius:4px;line-height:1}
+  .tile .cap button:hover{background:#eef3fd;color:var(--accent)}
+  .tile .rot{position:absolute;top:12px;left:12px;background:var(--accent);color:#fff;font-size:10.5px;
+    font-weight:600;padding:1px 5px;border-radius:3px}
+  .tile.del{cursor:default;border-style:dashed}
+  .tile.del .thumb{opacity:.28}
+  .tile.del .cap .n{text-decoration:line-through;color:var(--muted)}
+  .tile.del .rot{display:none}
   @media(min-width:700px){ .split2{grid-template-columns:1fr 1fr} }
 
   @media(max-width:760px){
@@ -174,6 +194,7 @@
       <div class="drop" id="orgDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
       <input type="file" id="orgInput" accept="application/pdf" hidden>
       <div class="pagechips" id="orgChips"></div>
+      <p class="hint" id="orgStatus" style="margin-top:10px"></p>
       <div class="row" id="orgActions" style="display:none">
         <button class="btn" id="orgGo" data-i18n="orgGo">Export new file</button>
         <span class="hint" data-i18n="orgHint"></span>
@@ -210,11 +231,29 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- ==========================================================================
+     Local (vendored) libraries — no CDN needed, works on a blocked intranet.
+     Vendored 2026-09-07 from cdnjs.cloudflare.com. To upgrade: replace the file
+     in lib/ with the same file from the URL below, then bump the version here
+     and in README.md. Keep pdf.min.js and pdf.worker.min.js in lockstep.
+
+       lib/pdf-lib.min.js     pdf-lib 1.17.1
+         https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js
+       lib/jszip.min.js       JSZip 3.10.1
+         https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
+       lib/pdf.min.js         pdf.js 3.11.174
+         https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js
+       lib/pdf.worker.min.js  pdf.js 3.11.174  (worker — required by pdf.min.js)
+         https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js
+     ========================================================================== -->
+<script src="lib/pdf-lib.min.js"></script>
+<script src="lib/jszip.min.js"></script>
+<script src="lib/pdf.min.js"></script>
 <script>
-if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// Worker path is relative to this page. Over http(s) it runs as a real worker;
+// opened as a plain file:// page the browser blocks workers and pdf.js falls
+// back to the main thread (slower, still correct).
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='lib/pdf.worker.min.js';
 const { PDFDocument, degrees } = PDFLib;
 const $ = s => document.querySelector(s);
 
@@ -233,6 +272,10 @@ const I18N = {
     splitGo:"Extract by range", splitEach:"One file per page (.zip)",
     orgLead:"Choose a PDF, drag the tiles to reorder, click to rotate or mark a page for deletion.",
     orgGo:"Export new file", orgHint:"Drag to reorder · ↻ rotate · ✕ delete",
+    orgLoading:(p)=>`Building previews… ${p.done} / ${p.total}`,
+    orgKeep:(p)=>p.keep===p.total?`${p.total} pages — drag a tile to reorder`
+      :`Keeping ${p.keep} of ${p.total} pages`,
+    orgThumbFail:"Preview unavailable",
     convLead:"Turn images into a PDF, or render a PDF's pages to PNG images.",
     toPdf:"Images to PDF", chooseImgs:"Choose images", toPdfGo:"Convert to PDF",
     fromPdf:"PDF to images", fromGo:"Convert to PNG (.zip)",
@@ -248,6 +291,7 @@ const I18N = {
     errMerge:"Couldn't merge", errSplit:"Couldn't split", errOrg:"Error",
     errReadPdf:"Couldn't read the PDF", errConv:"Couldn't convert",
     e_no_pages:"No pages to merge. Add at least two PDFs.",
+    e_no_keep:"Every page is marked for deletion. Keep at least one page.",
     e_range:(p)=>`Pages do not exist: ${p.bad} (document has ${p.total} pages).`,
     e_read:"Couldn't read this file. It may be corrupted or password-protected.",
     e_img:(p)=>`Only PNG and JPG are supported here: ${p.file}`,
@@ -266,6 +310,10 @@ const I18N = {
     splitGo:"Tách theo khoảng", splitEach:"Mỗi trang một file (.zip)",
     orgLead:"Chọn một PDF, kéo các ô để đổi thứ tự, bấm để xoay hoặc đánh dấu xóa trang.",
     orgGo:"Xuất file mới", orgHint:"Kéo để đổi thứ tự · ↻ để xoay · ✕ để xóa",
+    orgLoading:(p)=>`Đang tạo ảnh xem trước… ${p.done} / ${p.total}`,
+    orgKeep:(p)=>p.keep===p.total?`${p.total} trang — kéo một ô để đổi thứ tự`
+      :`Giữ lại ${p.keep} trong ${p.total} trang`,
+    orgThumbFail:"Không xem trước được",
     convLead:"Ghép ảnh thành PDF, hoặc kết xuất các trang PDF thành ảnh PNG.",
     toPdf:"Ảnh sang PDF", chooseImgs:"Chọn ảnh", toPdfGo:"Chuyển sang PDF",
     fromPdf:"PDF sang ảnh", fromGo:"Chuyển sang PNG (.zip)",
@@ -281,6 +329,7 @@ const I18N = {
     errMerge:"Không gộp được", errSplit:"Không tách được", errOrg:"Lỗi",
     errReadPdf:"Không đọc được PDF", errConv:"Không chuyển được",
     e_no_pages:"Chưa có gì để gộp. Hãy thêm ít nhất hai file PDF.",
+    e_no_keep:"Tất cả các trang đều bị đánh dấu xóa. Hãy giữ lại ít nhất một trang.",
     e_range:(p)=>`Trang không tồn tại: ${p.bad} (tài liệu có ${p.total} trang).`,
     e_read:"Không đọc được file này. Có thể file bị hỏng hoặc đặt mật khẩu.",
     e_img:(p)=>`Bản này chỉ hỗ trợ PNG và JPG: ${p.file}`,
@@ -302,6 +351,9 @@ function applyStatic(){
   const a=document.querySelector('.navitem.active').dataset.tab;
   $('#pageTitle').textContent=T('nav')[a]; $('#pageCrumb').textContent=T('crumb')[a];
   $('#privacyNote').textContent=T('privacyNote');
+  // Organize tiles and status are built in JS, not from data-i18n, so re-render them
+  // on a language switch (cached thumbnails are reused — no pdf.js work).
+  if(typeof orgPages!=='undefined' && orgPages.length) renderChips();
   $('#langEn').classList.toggle('on',lang==='en'); $('#langVi').classList.toggle('on',lang==='vi');
 }
 function setLang(l){ lang=l; try{localStorage.setItem('pdftk_lang',l);}catch(e){} applyStatic(); }
@@ -394,32 +446,116 @@ $('#splitEach').onclick=async()=>{
 };
 
 // ===== ORGANIZE =====
-let orgBytes=null, orgPages=[];
+// orgBytes stays untouched for pdf-lib on export. pdf.js is given a COPY, because
+// getDocument() transfers the ArrayBuffer to its worker and detaches the original.
+//
+// Each page is rendered to a thumbnail EXACTLY ONCE, strictly sequentially, at load
+// time; the PNG is cached on the page object. Never re-render on rotate — overlapping
+// render() calls on the same pdf.js page object queue up and wedge the library. Rotation
+// is a CSS transform on the cached image instead (the .thumb box is square, so a turn
+// can't clip it).
+let orgBytes=null, orgPages=[], orgDoc=null, orgToken=0, orgBuilt=0;
+const THUMB_PX = 260;   // rendered bitmap width; box shows it at ~130px for crispness
+
 wireDrop('#orgDrop','#orgInput', async fs=>{
-  try{ orgBytes=await bytesOf(fs[0]); const s=await PDFDocument.load(orgBytes);
-    orgPages=Array.from({length:s.getPageCount()},(_,i)=>({n:i+1,rot:0,del:false}));
-    renderChips(); $('#orgActions').style.display='flex';
-  }catch(e){ showResult('#orgResult',false,T('errReadPdf'),msgOf(fail('e_read'))); }
+  const f=fs&&fs[0]; if(!f) return;
+  const token=++orgToken;                       // invalidates work from a previous file
+  if(orgDoc){ try{ await orgDoc.destroy(); }catch(_){} orgDoc=null; }
+  orgPages=[]; $('#orgChips').innerHTML=''; $('#orgActions').style.display='none';
+  $('#orgResult').className='result'; $('#orgStatus').textContent=T('working');
+  try{
+    orgBytes=await bytesOf(f);
+    const s=await PDFDocument.load(orgBytes);
+    orgPages=Array.from({length:s.getPageCount()},(_,i)=>({n:i+1,rot:0,del:false,thumb:null}));
+    orgBuilt=0;
+    renderChips();                              // tiles appear at once, thumbnails stream in
+    $('#orgActions').style.display='flex';
+    const doc=await pdfjsLib.getDocument({data:orgBytes.slice(0)}).promise;
+    if(token!==orgToken){ try{ await doc.destroy(); }catch(_){} return; }
+    orgDoc=doc;
+    await buildThumbs(token);
+  }catch(e){
+    if(token!==orgToken) return;
+    $('#orgStatus').textContent='';
+    showResult('#orgResult',false,T('errReadPdf'),msgOf(e&&e.code?e:fail('e_read')));
+  }
 });
+
+async function buildThumbs(token){
+  // for..of holds the array captured here; a mid-build reorder reassigns orgPages to a
+  // new array of the SAME page objects, so every page is still rendered exactly once.
+  for(const p of orgPages){
+    if(token!==orgToken) return;                // a newer file was dropped
+    updateStatus();
+    try{
+      const page=await orgDoc.getPage(p.n);
+      const base=page.getViewport({scale:1});
+      // bake the page's own /Rotate in so the thumbnail starts upright
+      const vp=page.getViewport({scale:THUMB_PX/base.width, rotation:base.rotation});
+      const cv=document.createElement('canvas');
+      cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+      await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+      if(token!==orgToken) return;
+      p.thumb=cv.toDataURL('image/png');
+    }catch(_){ p.thumb='fail'; }
+    paintThumb(p); orgBuilt++; updateStatus();
+    await new Promise(r=>setTimeout(r,0));       // yield so the tab stays responsive
+  }
+  if(token===orgToken) updateStatus();
+}
+
+// Drop the cached image into whichever tile currently holds this page.
+function paintThumb(p){
+  const i=orgPages.indexOf(p); if(i<0) return;
+  const box=$('#orgChips').querySelector(`[data-i="${i}"] .thumb`); if(!box) return;
+  if(p.thumb==='fail'){
+    box.innerHTML=`<span style="font-size:11.5px;color:var(--muted);padding:0 6px;text-align:center">${T('orgThumbFail')}</span>`;
+  }else if(p.thumb){
+    const img=document.createElement('img');
+    img.src=p.thumb; img.alt=T('page')(p.n); img.draggable=false;
+    img.style.transform=`rotate(${p.rot}deg)`;
+    box.innerHTML=''; box.appendChild(img);
+  }
+}
+function updateStatus(){
+  const el=$('#orgStatus');
+  if(!orgPages.length){ el.textContent=''; return; }
+  // While thumbnails are still being built, progress wins — renderChips() also calls
+  // this on every rotate/delete/reorder and must not clobber the progress line.
+  el.textContent = orgBuilt<orgPages.length
+    ? T('orgLoading')({done:orgBuilt,total:orgPages.length})
+    : T('orgKeep')({keep:orgPages.filter(p=>!p.del).length,total:orgPages.length});
+}
+
 function renderChips(){
   const box=$('#orgChips'); box.innerHTML='';
   orgPages.forEach((p,i)=>{
-    const c=document.createElement('div'); c.className='chip'+(p.del?' del':''); c.draggable=!p.del; c.dataset.i=i;
-    c.innerHTML=`<span>${T('page')(p.n)}</span>`+(p.rot?`<span class="rot">${p.rot}°</span>`:'')+
-      `<button title="${T('rotTitle')}">↻</button><button title="${T('delTitle')}">✕</button>`;
-    const [rotBtn,delBtn]=c.querySelectorAll('button');
-    rotBtn.onclick=()=>{p.rot=(p.rot+90)%360;renderChips()};
-    delBtn.onclick=()=>{p.del=!p.del;renderChips()};
+    const c=document.createElement('div');
+    c.className='tile'+(p.del?' del':''); c.draggable=!p.del; c.dataset.i=i;
+    c.innerHTML=
+      `<div class="thumb"><span class="ph"></span></div>`+
+      (p.rot?`<span class="rot">${p.rot}°</span>`:'')+
+      `<div class="cap"><span class="n">${T('page')(p.n)}</span>`+
+        `<button title="${T('rotTitle')}">↻</button><button title="${T('delTitle')}">✕</button></div>`;
+    const [rotBtn,delBtn]=c.querySelectorAll('.cap button');
+    rotBtn.onclick=e=>{ e.stopPropagation(); p.rot=(p.rot+90)%360; renderChips(); };
+    delBtn.onclick=e=>{ e.stopPropagation(); p.del=!p.del; renderChips(); };
     c.addEventListener('dragstart',()=>c.classList.add('dragging'));
-    c.addEventListener('dragend',()=>{c.classList.remove('dragging');orgPages=[...box.children].map(el=>orgPages[+el.dataset.i]);renderChips();});
-    c.addEventListener('dragover',e=>{e.preventDefault();const d=box.querySelector('.dragging');if(d===c)return;
+    c.addEventListener('dragend',()=>{c.classList.remove('dragging');
+      orgPages=[...box.children].map(el=>orgPages[+el.dataset.i]); renderChips();});
+    c.addEventListener('dragover',e=>{e.preventDefault();const d=box.querySelector('.dragging');if(!d||d===c)return;
       const r=c.getBoundingClientRect();box.insertBefore(d,(e.clientX>r.left+r.width/2)?c.nextSibling:c);});
     box.appendChild(c);
+    paintThumb(p);                               // cached — no pdf.js work here
   });
+  updateStatus();
 }
+
 $('#orgGo').onclick=async()=>{
   busy($('#orgGo'),true);
-  try{ const keep=orgPages.filter(p=>!p.del); const s=await PDFDocument.load(orgBytes);
+  try{ const keep=orgPages.filter(p=>!p.del);
+    if(!keep.length) throw fail('e_no_keep');
+    const s=await PDFDocument.load(orgBytes);
     const out=await PDFDocument.create(); const pages=await out.copyPages(s, keep.map(p=>p.n-1));
     pages.forEach((pg,k)=>{ const r=keep[k].rot; if(r){ pg.setRotation(degrees((pg.getRotation().angle+r)%360)); } out.addPage(pg); });
     const blob=new Blob([await out.save()],{type:'application/pdf'});
@@ -427,7 +563,6 @@ $('#orgGo').onclick=async()=>{
   }catch(e){ showResult('#orgResult',false,T('errOrg'),msgOf(e)); }
   finally{ busy($('#orgGo'),false); }
 };
-
 // ===== CONVERT: images -> PDF =====
 let toPdfFiles=[];
 wireDrop('#toPdfDrop','#toPdfInput', fs=>{ toPdfFiles.push(...fs); const ul=$('#toPdfList'); ul.innerHTML='';
