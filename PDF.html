@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PDF Toolkit — Internal</title>
+<style>
+  :root{
+    --nav:#2a3444; --nav-header:#212a38; --nav-active:#3a4a63; --nav-hover:#333e50;
+    --nav-text:#c9d2df; --nav-label:#7e8ca3; --accent:#2563eb;
+    --bg:#f1f3f6; --surface:#ffffff; --border:#e2e7ee; --border-in:#d5dbe4;
+    --heading:#1f2a37; --text:#374151; --muted:#6b7686;
+    --primary:#2a3444; --primary-h:#1f2836;
+    --ok:#0f9d6b; --danger:#d64550;
+    --radius:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:14.5px;line-height:1.55}
+  a{color:var(--accent);text-decoration:none}
+
+  .sidebar{position:fixed;top:0;left:0;bottom:0;width:240px;background:var(--nav);
+    color:var(--nav-text);display:flex;flex-direction:column;overflow-y:auto}
+  .sidebar .head{background:var(--nav-header);padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+  .sidebar .head .t{color:#fff;font-weight:700;font-size:14px;line-height:1.35;letter-spacing:.01em}
+  .sidebar .head .s{color:var(--nav-label);font-size:12px;margin-top:4px}
+  .langsw{display:flex;margin-top:12px;border:1px solid rgba(255,255,255,.16);border-radius:6px;overflow:hidden;width:max-content}
+  .langsw button{border:0;background:none;color:var(--nav-label);padding:4px 12px;font:inherit;font-size:12px;cursor:pointer}
+  .langsw button.on{background:var(--accent);color:#fff}
+  .grp{padding:16px 20px 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--nav-label)}
+  .navitem{display:flex;align-items:center;gap:10px;padding:10px 20px;cursor:pointer;color:var(--nav-text);
+    border-left:3px solid transparent;font-size:14px}
+  .navitem:hover{background:var(--nav-hover)}
+  .navitem.active{background:var(--nav-active);color:#fff;border-left-color:var(--accent)}
+  .sidebar .foot{margin-top:auto;padding:14px 20px;font-size:12px;color:var(--nav-label);
+    border-top:1px solid rgba(255,255,255,.06);line-height:1.5}
+
+  .main{margin-left:240px;min-height:100vh}
+  .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:18px 30px}
+  .topbar h1{margin:0;font-size:19px;color:var(--heading);font-weight:700}
+  .topbar .crumb{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .content{padding:26px 30px 70px;max-width:900px}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:22px 24px;margin-bottom:20px}
+  .panel > .lead{color:var(--muted);margin:0 0 18px;font-size:13.5px;max-width:64ch}
+  .subhead{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+
+  .field{margin:0 0 15px}
+  label{display:block;font-weight:600;margin:0 0 6px;font-size:13.5px;color:var(--heading)}
+  .hint{color:var(--muted);font-size:12.5px;margin:5px 0 0}
+  input[type=text],select{width:100%;padding:9px 11px;border:1px solid var(--border-in);
+    border-radius:6px;font:inherit;background:#fff;color:var(--text)}
+  input[type=text]:focus,select:focus{outline:2px solid #dbe4fb;border-color:var(--accent)}
+
+  .drop{border:1.5px dashed var(--border-in);border-radius:6px;padding:24px;text-align:center;
+    color:var(--muted);background:#fafbfc;cursor:pointer;transition:.15s}
+  .drop.hover{border-color:var(--accent);background:#f2f6ff}
+  .drop b{color:var(--heading)}
+
+  ul.filelist{list-style:none;margin:12px 0 0;padding:0}
+  ul.filelist li{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;
+    border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:13.5px}
+  ul.filelist li .grab{cursor:grab;color:var(--muted)}
+  ul.filelist li .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  ul.filelist li .x{border:0;background:none;color:var(--danger);cursor:pointer;font-size:15px}
+  ul.filelist li.dragging{opacity:.5}
+  .idx{color:var(--muted);width:20px;text-align:right}
+
+  .btn{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:6px;background:var(--primary);
+    color:#fff;padding:10px 18px;font:inherit;font-weight:600;font-size:13.5px;cursor:pointer}
+  .btn:hover{background:var(--primary-h)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--heading);border:1px solid var(--border-in)}
+  .btn.ghost:hover{background:#f2f6ff;border-color:var(--accent)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+
+  .result{margin-top:18px;padding:14px 16px;border:1px solid var(--border);border-left:3px solid var(--ok);
+    border-radius:6px;background:#fbfefc;display:none}
+  .result.show{display:block}
+  .result.error{border-left-color:var(--danger);background:#fdf6f6}
+  .result h3{margin:0 0 5px;font-size:14px;color:var(--heading)}
+  .result .meta{color:var(--muted);font-size:12.8px;white-space:pre-wrap}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid #fff;border-top-color:transparent;
+    border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .split2{display:grid;grid-template-columns:1fr;gap:20px}
+  .pagechips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .chip{border:1px solid var(--border-in);border-radius:6px;padding:6px 10px;background:#fff;cursor:grab;
+    user-select:none;font-size:12.8px;display:flex;gap:6px;align-items:center}
+  .chip.dragging{opacity:.4}
+  .chip .rot{color:var(--accent);font-size:11px}
+  .chip.del{text-decoration:line-through;color:var(--muted);opacity:.6}
+  .chip button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0 2px}
+  @media(min-width:700px){ .split2{grid-template-columns:1fr 1fr} }
+
+  @media(max-width:760px){
+    .sidebar{position:static;width:auto;flex-direction:row;flex-wrap:wrap;overflow:visible}
+    .sidebar .head{width:100%}
+    .grp,.sidebar .foot{display:none}
+    .navitem{border-left:0;border-bottom:3px solid transparent;padding:12px 14px}
+    .navitem.active{border-left:0;border-bottom-color:var(--accent)}
+    .main{margin-left:0}
+    .content{padding:20px 16px 60px}
+    .topbar{padding:16px}
+  }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="head">
+    <div class="t" data-i18n="brand">PDF Toolkit</div>
+    <div class="s" data-i18n="brandSub">Internal documents — LDKS Plaza</div>
+    <div class="langsw">
+      <button id="langEn" class="on" onclick="setLang('en')">EN</button>
+      <button id="langVi" onclick="setLang('vi')">VI</button>
+    </div>
+  </div>
+  <div class="grp" data-i18n="navGroup">Functions</div>
+  <div class="navitem active" data-tab="merge">Merge</div>
+  <div class="navitem" data-tab="split">Split</div>
+  <div class="navitem" data-tab="organize">Organize pages</div>
+  <div class="navitem" data-tab="convert">Convert format</div>
+  <div class="foot" id="privacyNote"></div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <h1 id="pageTitle"></h1>
+    <div class="crumb" id="pageCrumb"></div>
+  </div>
+  <div class="content">
+
+  <section class="panel-group" id="merge">
+    <div class="panel">
+      <p class="lead" data-i18n="mergeLead"></p>
+      <div class="drop" id="mergeDrop"><b data-i18n="dropPdfsB">Drop PDFs here</b><br><span data-i18n="dropOrClick">or click to choose</span></div>
+      <input type="file" id="mergeInput" accept="application/pdf" multiple hidden>
+      <ul class="filelist" id="mergeList"></ul>
+      <div class="row">
+        <input type="text" id="mergeName" data-i18n-ph="mergeNamePh" style="max-width:280px">
+        <button class="btn" id="mergeGo" data-i18n="mergeGo" disabled>Merge selected files</button>
+      </div>
+      <div class="result" id="mergeResult"></div>
+    </div>
+  </section>
+
+  <section class="panel-group" id="split" style="display:none">
+    <div class="panel">
+      <p class="lead" data-i18n="splitLead"></p>
+      <div class="drop" id="splitDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
+      <input type="file" id="splitInput" accept="application/pdf" hidden>
+      <p class="hint" id="splitInfo"></p>
+      <div class="field" style="margin-top:14px">
+        <label data-i18n="rangeLabel">Page ranges to extract</label>
+        <input type="text" id="splitRanges" data-i18n-ph="rangePh" style="max-width:320px">
+      </div>
+      <div class="row">
+        <button class="btn" id="splitGo" data-i18n="splitGo" disabled>Extract by range</button>
+        <button class="btn ghost" id="splitEach" data-i18n="splitEach" disabled>One file per page (.zip)</button>
+      </div>
+      <div class="result" id="splitResult"></div>
+    </div>
+  </section>
+
+  <section class="panel-group" id="organize" style="display:none">
+    <div class="panel">
+      <p class="lead" data-i18n="orgLead"></p>
+      <div class="drop" id="orgDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
+      <input type="file" id="orgInput" accept="application/pdf" hidden>
+      <div class="pagechips" id="orgChips"></div>
+      <div class="row" id="orgActions" style="display:none">
+        <button class="btn" id="orgGo" data-i18n="orgGo">Export new file</button>
+        <span class="hint" data-i18n="orgHint"></span>
+      </div>
+      <div class="result" id="orgResult"></div>
+    </div>
+  </section>
+
+  <section class="panel-group" id="convert" style="display:none">
+    <div class="panel">
+      <p class="lead" data-i18n="convLead"></p>
+      <div class="split2">
+        <div class="field">
+          <div class="subhead" data-i18n="toPdf">Images to PDF</div>
+          <div class="drop" id="toPdfDrop"><b data-i18n="chooseImgs">Choose images</b><br><span>PNG, JPG</span></div>
+          <input type="file" id="toPdfInput" accept="image/png,image/jpeg" multiple hidden>
+          <ul class="filelist" id="toPdfList"></ul>
+          <button class="btn" id="toPdfGo" data-i18n="toPdfGo" disabled style="margin-top:8px">Convert to PDF</button>
+          <div class="result" id="toPdfResult"></div>
+        </div>
+        <div class="field">
+          <div class="subhead" data-i18n="fromPdf">PDF to images</div>
+          <div class="drop" id="fromPdfDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
+          <input type="file" id="fromPdfInput" accept="application/pdf" hidden>
+          <p class="hint" id="fromInfo"></p>
+          <button class="btn" id="fromGo" data-i18n="fromGo" disabled style="margin-top:8px">Convert to PNG (.zip)</button>
+          <div class="result" id="fromResult"></div>
+        </div>
+      </div>
+      <p class="hint" data-i18n="convNote" style="margin-top:14px"></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const { PDFDocument, degrees } = PDFLib;
+const $ = s => document.querySelector(s);
+
+const I18N = {
+  en:{
+    brand:"PDF Toolkit", brandSub:"Internal documents — LDKS Plaza", navGroup:"Functions",
+    nav:{merge:"Merge",split:"Split",organize:"Organize pages",convert:"Convert format"},
+    crumb:{merge:"Functions · Merge documents",split:"Functions · Split pages",
+      organize:"Functions · Reorder / rotate / delete",convert:"Functions · Convert"},
+    privacyNote:"All files are processed in your browser. Nothing is uploaded.",
+    mergeLead:"Choose PDFs to merge, then drag rows to set the order.",
+    dropPdfsB:"Drop PDFs here", dropOrClick:"or click to choose", mergeNamePh:"Output file name (merged.pdf)",
+    mergeGo:"Merge selected files",
+    splitLead:"Extract selected pages by range, or split each page into its own file.",
+    chooseOnePdf:"Choose one PDF", rangeLabel:"Page ranges to extract", rangePh:"e.g. 1-3,5,8-10",
+    splitGo:"Extract by range", splitEach:"One file per page (.zip)",
+    orgLead:"Choose a PDF, drag the tiles to reorder, click to rotate or mark a page for deletion.",
+    orgGo:"Export new file", orgHint:"Drag to reorder · ↻ rotate · ✕ delete",
+    convLead:"Turn images into a PDF, or render a PDF's pages to PNG images.",
+    toPdf:"Images to PDF", chooseImgs:"Choose images", toPdfGo:"Convert to PDF",
+    fromPdf:"PDF to images", fromGo:"Convert to PNG (.zip)",
+    convNote:"This browser version handles images ↔ PDF only. Word / Excel / PowerPoint ↔ PDF needs the server version.",
+    page:(n)=>`Page ${n}`, rotTitle:"Rotate 90°", delTitle:"Delete / restore",
+    selected:(n)=>`Selected: ${n}`, download:"Download", working:"Working…",
+    okMerge:"Merged", okMergeMeta:(j)=>`${j.pages} pages · ${j.merged} files`+(j.skipped.length?`\nSkipped: ${j.skipped.join(', ')}`:''),
+    okSplit:"Split complete", okSplitMeta:(n)=>`${n} pages`,
+    okSplitEach:"Split each page", okSplitEachMeta:(n)=>`${n} files in .zip`,
+    okOrg:"New file exported", okOrgMeta:(n)=>`${n} pages`,
+    okToPdf:"Converted to PDF", okToPdfMeta:(n)=>`${n} images`,
+    okFrom:"Converted to images", okFromMeta:(n)=>`${n} pages`,
+    errMerge:"Couldn't merge", errSplit:"Couldn't split", errOrg:"Error",
+    errReadPdf:"Couldn't read the PDF", errConv:"Couldn't convert",
+    e_no_pages:"No pages to merge. Add at least two PDFs.",
+    e_range:(p)=>`Pages do not exist: ${p.bad} (document has ${p.total} pages).`,
+    e_read:"Couldn't read this file. It may be corrupted or password-protected.",
+    e_img:(p)=>`Only PNG and JPG are supported here: ${p.file}`,
+  },
+  vi:{
+    brand:"Công cụ PDF", brandSub:"Tài liệu nội bộ — LDKS Plaza", navGroup:"Chức năng",
+    nav:{merge:"Gộp PDF",split:"Tách trang",organize:"Sắp xếp trang",convert:"Chuyển đổi định dạng"},
+    crumb:{merge:"Chức năng · Gộp tài liệu",split:"Chức năng · Tách trang",
+      organize:"Chức năng · Sắp xếp / xoay / xóa",convert:"Chức năng · Chuyển đổi"},
+    privacyNote:"Mọi file được xử lý ngay trong trình duyệt. Không có gì được tải lên máy chủ.",
+    mergeLead:"Chọn các PDF cần gộp, rồi kéo từng dòng để sắp thứ tự.",
+    dropPdfsB:"Kéo thả PDF vào đây", dropOrClick:"hoặc bấm để chọn file", mergeNamePh:"Tên file kết quả (merged.pdf)",
+    mergeGo:"Gộp file đã chọn",
+    splitLead:"Lấy ra một số trang theo khoảng, hoặc tách mỗi trang thành một file riêng.",
+    chooseOnePdf:"Chọn 1 file PDF", rangeLabel:"Khoảng trang cần lấy", rangePh:"Ví dụ: 1-3,5,8-10",
+    splitGo:"Tách theo khoảng", splitEach:"Mỗi trang một file (.zip)",
+    orgLead:"Chọn một PDF, kéo các ô để đổi thứ tự, bấm để xoay hoặc đánh dấu xóa trang.",
+    orgGo:"Xuất file mới", orgHint:"Kéo để đổi thứ tự · ↻ để xoay · ✕ để xóa",
+    convLead:"Ghép ảnh thành PDF, hoặc kết xuất các trang PDF thành ảnh PNG.",
+    toPdf:"Ảnh sang PDF", chooseImgs:"Chọn ảnh", toPdfGo:"Chuyển sang PDF",
+    fromPdf:"PDF sang ảnh", fromGo:"Chuyển sang PNG (.zip)",
+    convNote:"Bản trình duyệt này chỉ xử lý ảnh ↔ PDF. Word / Excel / PowerPoint ↔ PDF cần bản chạy trên máy chủ.",
+    page:(n)=>`Trang ${n}`, rotTitle:"Xoay 90°", delTitle:"Xóa / khôi phục",
+    selected:(n)=>`Đã chọn: ${n}`, download:"Tải xuống", working:"Đang xử lý…",
+    okMerge:"Đã gộp xong", okMergeMeta:(j)=>`${j.pages} trang · ${j.merged} file`+(j.skipped.length?`\nBỏ qua: ${j.skipped.join(', ')}`:''),
+    okSplit:"Đã tách", okSplitMeta:(n)=>`${n} trang`,
+    okSplitEach:"Đã tách mỗi trang", okSplitEachMeta:(n)=>`${n} file trong .zip`,
+    okOrg:"Đã xuất file mới", okOrgMeta:(n)=>`${n} trang`,
+    okToPdf:"Đã chuyển sang PDF", okToPdfMeta:(n)=>`${n} ảnh`,
+    okFrom:"Đã chuyển thành ảnh", okFromMeta:(n)=>`${n} trang`,
+    errMerge:"Không gộp được", errSplit:"Không tách được", errOrg:"Lỗi",
+    errReadPdf:"Không đọc được PDF", errConv:"Không chuyển được",
+    e_no_pages:"Chưa có gì để gộp. Hãy thêm ít nhất hai file PDF.",
+    e_range:(p)=>`Trang không tồn tại: ${p.bad} (tài liệu có ${p.total} trang).`,
+    e_read:"Không đọc được file này. Có thể file bị hỏng hoặc đặt mật khẩu.",
+    e_img:(p)=>`Bản này chỉ hỗ trợ PNG và JPG: ${p.file}`,
+  }
+};
+
+let lang='en';
+try{ const s=localStorage.getItem('pdftk_lang'); if(s==='vi'||s==='en') lang=s; }catch(e){}
+const T = k => I18N[lang][k];
+
+function fail(code, params){ const e=new Error(code); e.code=code; e.params=params||{}; return e; }
+function msgOf(e){ const m=I18N[lang][e&&e.code]; if(m) return typeof m==='function'?m(e.params):m; return T('errReadPdf'); }
+
+function applyStatic(){
+  document.documentElement.lang=lang;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{const v=T(el.dataset.i18n); if(typeof v==='string') el.textContent=v;});
+  document.querySelectorAll('[data-i18n-ph]').forEach(el=>{el.placeholder=T(el.dataset.i18nPh);});
+  document.querySelectorAll('.navitem').forEach(b=>{b.textContent=T('nav')[b.dataset.tab];});
+  const a=document.querySelector('.navitem.active').dataset.tab;
+  $('#pageTitle').textContent=T('nav')[a]; $('#pageCrumb').textContent=T('crumb')[a];
+  $('#privacyNote').textContent=T('privacyNote');
+  $('#langEn').classList.toggle('on',lang==='en'); $('#langVi').classList.toggle('on',lang==='vi');
+}
+function setLang(l){ lang=l; try{localStorage.setItem('pdftk_lang',l);}catch(e){} applyStatic(); }
+
+document.querySelectorAll('.navitem').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.panel-group').forEach(x=>x.style.display='none');
+  b.classList.add('active'); $('#'+b.dataset.tab).style.display='block';
+  $('#pageTitle').textContent=T('nav')[b.dataset.tab]; $('#pageCrumb').textContent=T('crumb')[b.dataset.tab];
+  window.scrollTo(0,0);
+});
+
+function wireDrop(dropSel, inputSel, onFiles){
+  const drop=$(dropSel), input=$(inputSel);
+  drop.onclick=()=>input.click();
+  input.onchange=()=>onFiles([...input.files]);
+  ['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('hover')}));
+  ['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('hover')}));
+  drop.addEventListener('drop',ev=>onFiles([...ev.dataTransfer.files]));
+}
+function showResult(sel, ok, title, meta, dl, dlName){
+  const el=$(sel); el.className='result show'+(ok?'':' error');
+  el.innerHTML=`<h3>${title}</h3><div class="meta">${meta||''}</div>`;
+  if(dl){ const a=document.createElement('a'); a.className='btn'; a.textContent=T('download');
+    a.href=URL.createObjectURL(dl); a.download=dlName; const row=document.createElement('div'); row.className='row'; row.appendChild(a); el.appendChild(row); }
+}
+function busy(btn,on){ btn.disabled=on; btn.dataset._t=btn.dataset._t||btn.innerHTML; btn.innerHTML=on?`<span class="spin"></span>`:btn.dataset._t; }
+const bytesOf = f => f.arrayBuffer();
+function parseRanges(spec,total){ const out=[]; for(const c of (spec||'').replace(/\s/g,'').split(',')){ if(!c)continue;
+  if(c.includes('-')){let[a,b]=c.split('-').map(Number); if(a>b)[a,b]=[b,a]; for(let i=a;i<=b;i++)out.push(i-1);} else out.push(Number(c)-1);}
+  const bad=out.filter(i=>isNaN(i)||i<0||i>=total).map(i=>i+1); if(bad.length) throw fail('e_range',{bad:bad.join(','),total}); return out; }
+
+// ===== MERGE =====
+let mergeFiles=[];
+wireDrop('#mergeDrop','#mergeInput', fs=>{ mergeFiles.push(...fs.filter(f=>f.name.toLowerCase().endsWith('.pdf'))); renderMerge(); });
+function renderMerge(){
+  const ul=$('#mergeList'); ul.innerHTML='';
+  mergeFiles.forEach((f,i)=>{
+    const li=document.createElement('li'); li.draggable=true; li.dataset.i=i;
+    li.innerHTML=`<span class="grab">⋮⋮</span><span class="idx">${i+1}</span><span class="name">${f.name}</span><button class="x">✕</button>`;
+    li.querySelector('.x').onclick=()=>{mergeFiles.splice(i,1);renderMerge()};
+    li.addEventListener('dragstart',()=>li.classList.add('dragging'));
+    li.addEventListener('dragend',()=>li.classList.remove('dragging'));
+    li.addEventListener('dragover',e=>{e.preventDefault();const d=ul.querySelector('.dragging');if(d===li)return;
+      const r=li.getBoundingClientRect();ul.insertBefore(d,(e.clientY>r.top+r.height/2)?li.nextSibling:li);});
+    ul.appendChild(li);
+  });
+  ul.ondragend=()=>{ mergeFiles=[...ul.children].map(li=>mergeFiles[+li.dataset.i]); renderMerge(); };
+  $('#mergeGo').disabled = mergeFiles.length<2;
+}
+$('#mergeGo').onclick=async()=>{
+  busy($('#mergeGo'),true);
+  try{
+    const out=await PDFDocument.create(); let pages=0; const merged=[], skipped=[];
+    for(const f of mergeFiles){
+      try{ const s=await PDFDocument.load(await bytesOf(f)); const pg=await out.copyPages(s,s.getPageIndices());
+        pg.forEach(p=>out.addPage(p)); pages+=s.getPageCount(); merged.push(f.name); }
+      catch(_){ skipped.push(f.name); }
+    }
+    if(pages===0) throw fail('e_no_pages');
+    const blob=new Blob([await out.save()],{type:'application/pdf'});
+    showResult('#mergeResult',true,T('okMerge'),T('okMergeMeta')({pages,merged:merged.length,skipped}),blob,$('#mergeName').value||'merged.pdf');
+  }catch(e){ showResult('#mergeResult',false,T('errMerge'),msgOf(e)); }
+  finally{ busy($('#mergeGo'),false); }
+};
+
+// ===== SPLIT =====
+let splitFile=null;
+wireDrop('#splitDrop','#splitInput', fs=>{ splitFile=fs[0]; $('#splitInfo').textContent=T('selected')(splitFile.name);
+  $('#splitGo').disabled=false; $('#splitEach').disabled=false; });
+$('#splitGo').onclick=async()=>{
+  busy($('#splitGo'),true);
+  try{ const s=await PDFDocument.load(await bytesOf(splitFile)); const idx=parseRanges($('#splitRanges').value,s.getPageCount());
+    const out=await PDFDocument.create(); (await out.copyPages(s,idx)).forEach(p=>out.addPage(p));
+    const blob=new Blob([await out.save()],{type:'application/pdf'});
+    showResult('#splitResult',true,T('okSplit'),T('okSplitMeta')(idx.length),blob,'split.pdf');
+  }catch(e){ showResult('#splitResult',false,T('errSplit'),msgOf(e)); }
+  finally{ busy($('#splitGo'),false); }
+};
+$('#splitEach').onclick=async()=>{
+  busy($('#splitEach'),true);
+  try{ const s=await PDFDocument.load(await bytesOf(splitFile)); const n=s.getPageCount(); const zip=new JSZip();
+    const stem=(splitFile.name||'file').replace(/\.pdf$/i,'');
+    for(let i=0;i<n;i++){ const d=await PDFDocument.create(); const [p]=await d.copyPages(s,[i]); d.addPage(p);
+      zip.file(`${stem}_page_${String(i+1).padStart(3,'0')}.pdf`, await d.save()); }
+    const blob=await zip.generateAsync({type:'blob'});
+    showResult('#splitResult',true,T('okSplitEach'),T('okSplitEachMeta')(n),blob,`${stem}_pages.zip`);
+  }catch(e){ showResult('#splitResult',false,T('errSplit'),msgOf(e)); }
+  finally{ busy($('#splitEach'),false); }
+};
+
+// ===== ORGANIZE =====
+let orgBytes=null, orgPages=[];
+wireDrop('#orgDrop','#orgInput', async fs=>{
+  try{ orgBytes=await bytesOf(fs[0]); const s=await PDFDocument.load(orgBytes);
+    orgPages=Array.from({length:s.getPageCount()},(_,i)=>({n:i+1,rot:0,del:false}));
+    renderChips(); $('#orgActions').style.display='flex';
+  }catch(e){ showResult('#orgResult',false,T('errReadPdf'),msgOf(fail('e_read'))); }
+});
+function renderChips(){
+  const box=$('#orgChips'); box.innerHTML='';
+  orgPages.forEach((p,i)=>{
+    const c=document.createElement('div'); c.className='chip'+(p.del?' del':''); c.draggable=!p.del; c.dataset.i=i;
+    c.innerHTML=`<span>${T('page')(p.n)}</span>`+(p.rot?`<span class="rot">${p.rot}°</span>`:'')+
+      `<button title="${T('rotTitle')}">↻</button><button title="${T('delTitle')}">✕</button>`;
+    const [rotBtn,delBtn]=c.querySelectorAll('button');
+    rotBtn.onclick=()=>{p.rot=(p.rot+90)%360;renderChips()};
+    delBtn.onclick=()=>{p.del=!p.del;renderChips()};
+    c.addEventListener('dragstart',()=>c.classList.add('dragging'));
+    c.addEventListener('dragend',()=>{c.classList.remove('dragging');orgPages=[...box.children].map(el=>orgPages[+el.dataset.i]);renderChips();});
+    c.addEventListener('dragover',e=>{e.preventDefault();const d=box.querySelector('.dragging');if(d===c)return;
+      const r=c.getBoundingClientRect();box.insertBefore(d,(e.clientX>r.left+r.width/2)?c.nextSibling:c);});
+    box.appendChild(c);
+  });
+}
+$('#orgGo').onclick=async()=>{
+  busy($('#orgGo'),true);
+  try{ const keep=orgPages.filter(p=>!p.del); const s=await PDFDocument.load(orgBytes);
+    const out=await PDFDocument.create(); const pages=await out.copyPages(s, keep.map(p=>p.n-1));
+    pages.forEach((pg,k)=>{ const r=keep[k].rot; if(r){ pg.setRotation(degrees((pg.getRotation().angle+r)%360)); } out.addPage(pg); });
+    const blob=new Blob([await out.save()],{type:'application/pdf'});
+    showResult('#orgResult',true,T('okOrg'),T('okOrgMeta')(keep.length),blob,'organized.pdf');
+  }catch(e){ showResult('#orgResult',false,T('errOrg'),msgOf(e)); }
+  finally{ busy($('#orgGo'),false); }
+};
+
+// ===== CONVERT: images -> PDF =====
+let toPdfFiles=[];
+wireDrop('#toPdfDrop','#toPdfInput', fs=>{ toPdfFiles.push(...fs); const ul=$('#toPdfList'); ul.innerHTML='';
+  toPdfFiles.forEach((f,i)=>{const li=document.createElement('li');li.innerHTML=`<span class="idx">${i+1}</span><span class="name">${f.name}</span>`;ul.appendChild(li)});
+  $('#toPdfGo').disabled=toPdfFiles.length===0; });
+$('#toPdfGo').onclick=async()=>{
+  busy($('#toPdfGo'),true);
+  try{ const out=await PDFDocument.create();
+    for(const f of toPdfFiles){ const ext=(f.name.split('.').pop()||'').toLowerCase(); const b=await bytesOf(f);
+      let img; if(ext==='png') img=await out.embedPng(b); else if(ext==='jpg'||ext==='jpeg') img=await out.embedJpg(b);
+      else throw fail('e_img',{file:f.name});
+      const pg=out.addPage([img.width,img.height]); pg.drawImage(img,{x:0,y:0,width:img.width,height:img.height}); }
+    const blob=new Blob([await out.save()],{type:'application/pdf'});
+    showResult('#toPdfResult',true,T('okToPdf'),T('okToPdfMeta')(toPdfFiles.length),blob,'images.pdf');
+  }catch(e){ showResult('#toPdfResult',false,T('errConv'),msgOf(e)); }
+  finally{ busy($('#toPdfGo'),false); }
+};
+
+// ===== CONVERT: PDF -> images (pdf.js) =====
+let fromFile=null;
+wireDrop('#fromPdfDrop','#fromPdfInput', fs=>{ fromFile=fs[0]; $('#fromInfo').textContent=T('selected')(fromFile.name); $('#fromGo').disabled=false; });
+$('#fromGo').onclick=async()=>{
+  busy($('#fromGo'),true);
+  try{ const data=await bytesOf(fromFile); const pdf=await pdfjsLib.getDocument({data}).promise;
+    const zip=new JSZip(); const stem=(fromFile.name||'file').replace(/\.pdf$/i,''); const scale=150/72;
+    for(let i=1;i<=pdf.numPages;i++){ const page=await pdf.getPage(i); const vp=page.getViewport({scale});
+      const canvas=document.createElement('canvas'); canvas.width=Math.ceil(vp.width); canvas.height=Math.ceil(vp.height);
+      await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+      const b=await new Promise(r=>canvas.toBlob(r,'image/png'));
+      zip.file(`${stem}_page_${String(i).padStart(3,'0')}.png`, b); }
+    const blob=await zip.generateAsync({type:'blob'});
+    showResult('#fromResult',true,T('okFrom'),T('okFromMeta')(pdf.numPages),blob,`${stem}_images.zip`);
+  }catch(e){ showResult('#fromResult',false,T('errConv'),msgOf(fail('e_read'))); }
+  finally{ busy($('#fromGo'),false); }
+};
+
+applyStatic();
+</script>
+</body>
+</html>
