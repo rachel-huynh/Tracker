@@ -303,8 +303,8 @@
   <section class="panel-group" id="split" style="display:none">
     <div class="panel">
       <p class="lead" data-i18n="splitLead"></p>
-      <div class="drop" id="splitDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
-      <input type="file" id="splitInput" accept="application/pdf" hidden>
+      <div class="drop" id="splitDrop"><b data-i18n="dropPdfsB">Drop PDFs here</b><span data-i18n="dropOrClick">or click to choose</span></div>
+      <input type="file" id="splitInput" accept="application/pdf" multiple hidden>
       <div class="viewsw" id="splitViewSw" style="display:none;margin-top:16px"></div>
       <div class="gwrap" id="splitList"></div>
       <div class="pgrid" id="splitPages" style="display:none"></div>
@@ -493,7 +493,7 @@ const I18N = {
     mergeLead:"Choose PDFs to merge, then drag rows to set the order.",
     dropPdfsB:"Drop PDFs here", dropOrClick:"or click to choose", mergeNamePh:"Output file name (merged.pdf)",
     mergeGo:"Merge selected files",
-    splitLead:"Extract selected pages by range, or split each page into its own file.",
+    splitLead:"Add one or more PDFs. Page numbers run straight through the files in the order shown, so you can extract a range, cut into groups, or split every page into its own file.",
     chooseOnePdf:"Choose one PDF", rangeLabel:"Page ranges to extract", rangePh:"e.g. 1-3,5,8-10",
     rangeHint:"Extract by range puts these pages in one file. Split into groups makes each comma-separated part its own file — see the Groups view.",
     splitGo:"Extract by range", splitEach:"One file per page (.zip)",
@@ -575,7 +575,7 @@ const I18N = {
     mergeLead:"Chọn các PDF cần gộp, rồi kéo từng dòng để sắp thứ tự.",
     dropPdfsB:"Kéo thả PDF vào đây", dropOrClick:"hoặc bấm để chọn file", mergeNamePh:"Tên file kết quả (merged.pdf)",
     mergeGo:"Gộp file đã chọn",
-    splitLead:"Lấy ra một số trang theo khoảng, hoặc tách mỗi trang thành một file riêng.",
+    splitLead:"Thêm một hoặc nhiều PDF. Số trang được đánh liên tục qua các tệp theo thứ tự đang hiển thị, nên bạn có thể lấy một khoảng, cắt thành nhóm, hoặc tách mỗi trang thành một tệp riêng.",
     chooseOnePdf:"Chọn 1 file PDF", rangeLabel:"Khoảng trang cần lấy", rangePh:"Ví dụ: 1-3,5,8-10",
     rangeHint:"Tách theo khoảng gộp các trang này vào một file. Tách thành nhóm sẽ tạo mỗi phần cách nhau bằng dấu phẩy thành một file riêng — xem mục Nhóm.",
     splitGo:"Tách theo khoảng", splitEach:"Mỗi trang một file (.zip)",
@@ -894,6 +894,9 @@ function wsName(ws, fi){
   return (ws.names && ws.names[fi]) || (ws.files[fi] ? ws.files[fi].name : '');
 }
 function wsStem(ws, fi){ return wsName(ws,fi).replace(/\.pdf$/i,'') || 'file'; }
+// With several files loaded, naming every output after the first one would misrepresent
+// where the pages came from, so fall back to a neutral stem.
+function wsOutStem(ws){ return ws.files.length===1 ? wsStem(ws,0) : 'split'; }
 function wsFirstPageOf(ws, fi){ return ws.pages.find(p=>p.f===fi) || null; }
 
 function wsRenderFiles(ws){
@@ -1147,11 +1150,8 @@ $('#mergeGo').onclick=async()=>{
 };
 
 // ===== SPLIT =====
-WS.split = makeWS('split', {multi:false, cuts:true});
-wireDrop('#splitDrop','#splitInput', async fs=>{
-  await wsAddFiles(WS.split, fs);
-  if(WS.split.files.length) $('#splitInfo').textContent=T('selected')(WS.split.files[0].name);
-});
+WS.split = makeWS('split', {multi:true, cuts:true});
+wireDrop('#splitDrop','#splitInput', fs=>wsAddFiles(WS.split, fs));
 // The range box now feeds the Groups preview too, so refresh as it is typed.
 $('#splitRanges').oninput=()=>{
   const ws=WS.split;
@@ -1166,7 +1166,7 @@ $('#splitGo').onclick=async()=>{
     const idx=parseRanges($('#splitRanges').value, keep.length);
     const out=await wsBuild(ws, idx.map(i=>keep[i]));
     const blob=new Blob([await out.save()],{type:'application/pdf'});
-    showResult('#splitResult',true,T('okSplit'),T('okSplitMeta')(idx.length),blob,wsStem(ws,0)+'_extract.pdf');
+    showResult('#splitResult',true,T('okSplit'),T('okSplitMeta')(idx.length),blob,wsOutStem(ws)+"_extract.pdf");
   }catch(e){ showResult('#splitResult',false,T('errSplit'),msgOf(e)); }
   finally{ busy($('#splitGo'),false); }
 };
@@ -1179,7 +1179,7 @@ $('#splitCut').onclick=async()=>{
     // one group from cuts means no cut was armed; from ranges it is a deliberate ask
     if(!seg.groups.length || (seg.mode==='cuts' && seg.groups.length<2)) throw fail('e_no_groups');
     const zip=new JSZip();
-    const stem=wsStem(ws,0);
+    const stem=wsOutStem(ws);
     let pages=0;
     for(let s=0;s<seg.groups.length;s++){
       const g=seg.groups[s];
@@ -1196,10 +1196,15 @@ $('#splitCut').onclick=async()=>{
 $('#splitEach').onclick=async()=>{
   const ws=WS.split; busy($('#splitEach'),true);
   try{ const keep=wsKept(ws); const zip=new JSZip();
-    const stem=wsStem(ws,0);
+    const stem=wsOutStem(ws);
     for(let i=0;i<keep.length;i++){
       const out=await wsBuild(ws,[keep[i]]);
-      zip.file(stem+'_page_'+String(i+1).padStart(3,'0')+'.pdf', await out.save()); }
+      const pg=keep[i];
+      // with several sources, the entry has to say which file and which page inside it
+      const name = ws.files.length===1
+        ? stem+'_page_'+String(i+1).padStart(3,'0')+'.pdf'
+        : String(i+1).padStart(3,'0')+'_'+wsStem(ws,pg.f)+'_p'+(pg.p+1)+'.pdf';
+      zip.file(name, await out.save()); }
     const blob=await zip.generateAsync({type:'blob'});
     showResult('#splitResult',true,T('okSplitEach'),T('okSplitEachMeta')(keep.length),blob,stem+'_pages.zip');
   }catch(e){ showResult('#splitResult',false,T('errSplit'),msgOf(e)); }
