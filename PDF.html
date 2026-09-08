@@ -198,8 +198,9 @@
   .pcard .bar button{border:0;background:none;cursor:pointer;color:var(--heading);
     padding:7px 9px;display:flex;align-items:center;line-height:0}
   .pcard .bar button + button{border-left:1px solid var(--border)}
-  .pcard .bar button:hover{background:#eef3fd;color:var(--accent)}
-  .pcard .bar button.danger:hover{background:#fdeaec;color:var(--danger)}
+  .pcard .bar button:hover:not(:disabled){background:#eef3fd;color:var(--accent)}
+  .pcard .bar button:disabled{opacity:.32;cursor:not-allowed}
+  .pcard .bar button.danger:hover:not(:disabled){background:#fdeaec;color:var(--danger)}
   .pcard .bar svg{width:17px;height:17px}
   .pcard .rotbadge{position:absolute;top:10px;left:12px;background:var(--accent);color:#fff;
     font-size:10.5px;font-weight:600;padding:1px 5px;border-radius:3px;z-index:1}
@@ -445,6 +446,8 @@ const I18N = {
     resetBtn:"Start over", resetTitle:"Clear the files and results on this page",
     viewFiles:"Files", viewPages:"Pages", wsFilePages:(n)=>n===1?"1 page":`${n} pages`,
     viewGroups:"Groups", tipRemove:"Remove this file",
+    tipLockedByRange:"Clear the page-range box to reorder, duplicate or delete pages",
+    wsFilteredInfo:(p)=>`Showing ${p.shown} of ${p.total} pages — the ones ${p.spec} addresses`,
     wsGroupName:(p)=>`Part ${p.n} · pages ${p.label}`,
     wsGroupsInfo:(p)=>`${p.groups} file(s) will be produced · ${p.pages} pages in total`,
     wsNoGroups:"Nothing to group yet — type page ranges above, or click a scissors icon in the Pages view.",
@@ -456,7 +459,7 @@ const I18N = {
     ocrLangHint:"Pick a single language where you can. Vietnamese is less accurate than English, especially the accents. The combined option is only for genuinely mixed pages — it weakens Vietnamese accents.",
     ocrSkipLabel:"Skip pages that already contain text (much faster)",
     ocrGo:"Make searchable PDF", ocrStop:"Stop",
-    ocrNote:"OCR runs entirely in your browser — nothing is uploaded. It must be opened over a web address (or GitHub Pages), not by double-clicking the file, because the recognition engine runs in a browser worker.",
+    ocrNote:"OCR runs entirely in your browser — nothing is uploaded.",
     ocrLoadEngine:"Loading the recognition engine (first run only)…",
     ocrPageStat:(p)=>`Page ${p.page} of ${p.total} — ${p.what}`,
     ocrReading:"reading", ocrRecognising:"recognising text", ocrHasText:"already has text, skipped",
@@ -525,6 +528,8 @@ const I18N = {
     resetBtn:"Bắt đầu lại", resetTitle:"Xóa các file và kết quả trên trang này",
     viewFiles:"Tệp", viewPages:"Trang", wsFilePages:(n)=>`${n} trang`,
     viewGroups:"Nhóm", tipRemove:"Bỏ tệp này",
+    tipLockedByRange:"Xóa nội dung ô khoảng trang để đổi thứ tự, nhân đôi hoặc xóa trang",
+    wsFilteredInfo:(p)=>`Đang hiện ${p.shown}/${p.total} trang — những trang mà ${p.spec} chỉ tới`,
     wsGroupName:(p)=>`Phần ${p.n} · trang ${p.label}`,
     wsGroupsInfo:(p)=>`Sẽ tạo ${p.groups} tệp · tổng ${p.pages} trang`,
     wsNoGroups:"Chưa có nhóm nào — hãy nhập khoảng trang ở trên, hoặc bấm biểu tượng cái kéo trong mục Trang.",
@@ -536,7 +541,7 @@ const I18N = {
     ocrLangHint:"Nên chọn một ngôn ngữ khi có thể. Tiếng Việt nhận dạng kém chính xác hơn tiếng Anh, nhất là dấu. Tùy chọn kết hợp chỉ dành cho trang thật sự lẫn hai thứ tiếng — nó làm mất dấu tiếng Việt.",
     ocrSkipLabel:"Bỏ qua những trang đã có chữ (nhanh hơn nhiều)",
     ocrGo:"Tạo PDF tìm kiếm được", ocrStop:"Dừng",
-    ocrNote:"OCR chạy hoàn toàn trong trình duyệt — không có gì được tải lên. Cần mở trang qua một địa chỉ web (hoặc GitHub Pages), không phải bằng cách bấm đúp vào file, vì bộ nhận dạng chạy trong worker của trình duyệt.",
+    ocrNote:"OCR chạy hoàn toàn trong trình duyệt — không có gì được tải lên.",
     ocrLoadEngine:"Đang tải bộ nhận dạng (chỉ lần đầu)…",
     ocrPageStat:(p)=>`Trang ${p.page}/${p.total} — ${p.what}`,
     ocrReading:"đang đọc", ocrRecognising:"đang nhận dạng chữ", ocrHasText:"đã có chữ, bỏ qua",
@@ -800,7 +805,15 @@ function wsStatus(ws){
   if(ws.built<ws.pages.length){ el.textContent=T('wsLoading')({done:ws.built,total:ws.pages.length}); return; }
   const keep=ws.pages.filter(p=>!p.del).length;
   let txt=T('wsPagesInfo')({keep,total:ws.pages.length,files:ws.files.length});
-  if(ws.cuts && ws.view==='pages') txt += ' · ' + T('wsCuts')(wsCutCount(ws));
+  if(ws.cuts && ws.view==='pages'){
+    const vis=wsVisiblePages(ws);
+    if(vis.filtered){
+      // the view is narrowed, so say so rather than reporting the whole file
+      txt=T('wsFilteredInfo')({shown:vis.pages.length,total:keep,spec:vis.spec});
+    }else{
+      txt += ' · ' + T('wsCuts')(wsCutCount(ws));
+    }
+  }
   if(ws.cuts && ws.view==='groups'){
     let g; try{ g=wsSegments(ws); }catch(e){ el.textContent=msgOf(e); return; }
     txt = T('wsGroupsInfo')({groups:g.groups.length, pages:g.groups.reduce((n,x)=>n+x.pages.length,0)});
@@ -969,32 +982,62 @@ function wsRemoveFile(ws, i){
 }
 
 // ---- Pages view ----------------------------------------------------------
+// Which pages the Pages view lays out. With something in the range box the view narrows
+// to exactly the pages those ranges address, so it previews the scope of the split; with
+// the box empty it shows the whole file. An unparseable range falls back to showing
+// everything rather than blanking the view.
+function wsVisiblePages(ws){
+  const box=$('#splitRanges');
+  const spec=((ws.cuts && box && box.value) || '').trim();
+  if(!spec) return {pages:ws.pages, filtered:false, spec:''};
+  const keep=wsKept(ws);
+  let idx;
+  try{ idx=parseRanges(spec, keep.length); }
+  catch(_){ return {pages:ws.pages, filtered:false, spec:spec, bad:true}; }
+  const set=new Set(idx.map(i=>keep[i]).filter(Boolean));
+  return {pages:ws.pages.filter(p=>set.has(p)), filtered:true, spec:spec};
+}
+// Page ranges count kept pages only, so the number on a card has to be its position in
+// that list -- a deleted page must not consume a number, or "1-3" would address
+// something other than the pages labelled 1, 2 and 3.
+function wsPageNo(ws, pg){
+  const i=wsKept(ws).indexOf(pg);
+  return i<0 ? '—' : String(i+1);
+}
 function wsRenderPages(ws){
   const box=ws.el.grid; box.innerHTML='';
-  ws.pages.forEach((pg,i)=>{
-    box.appendChild(wsCard(ws,pg,i));
-    // a scissors gap sits BETWEEN two pages, so never after the last one
-    if(ws.cuts && i<ws.pages.length-1) box.appendChild(wsGap(ws,pg));
+  const vis=wsVisiblePages(ws);
+  const list=vis.pages;
+  list.forEach((pg,n)=>{
+    box.appendChild(wsCard(ws, pg, ws.pages.indexOf(pg), !vis.filtered));
+    // Scissors only make sense with the whole file on screen: once ranges are typed the
+    // ranges define the grouping and cuts are ignored, so don't offer them.
+    if(ws.cuts && !vis.filtered && n<list.length-1) box.appendChild(wsGap(ws,pg));
   });
-  ws.pages.forEach(pg=>wsPaint(ws,pg));
+  list.forEach(pg=>wsPaint(ws,pg));
 }
-function wsCard(ws, pg, i){
+// `full` is false while the view is narrowed by a range. Reordering, duplicating and
+// deleting all shift the numbering that those ranges refer to, so they are held back
+// until the box is cleared; rotate and preview are safe and stay live.
+function wsCard(ws, pg, i, full){
   const c=document.createElement('div');
-  c.className='pcard'+(pg.del?' del':''); c.draggable=!pg.del; c.dataset.i=i;
+  c.className='pcard'+(pg.del?' del':''); c.draggable=!!full && !pg.del; c.dataset.i=i;
+  const lock=T('tipLockedByRange');
   c.innerHTML=
     '<div class="bar">'+
       '<button data-a="zoom" title="'+T('tipPreview')+'">'+SVG.zoom+'</button>'+
       '<button data-a="rot" title="'+T('tipRotate')+'">'+SVG.rotate+'</button>'+
-      '<button data-a="dup" title="'+T('tipDup')+'">'+SVG.dup+'</button>'+
-      '<button data-a="del" class="danger" title="'+T('tipDel')+'">'+SVG.trash+'</button>'+
+      '<button data-a="dup"'+(full?'':' disabled title="'+lock+'"')+(full?' title="'+T('tipDup')+'"':'')+'>'+SVG.dup+'</button>'+
+      '<button data-a="del" class="danger"'+(full?' title="'+T('tipDel')+'"':' disabled title="'+lock+'"')+'>'+SVG.trash+'</button>'+
     '</div>'+
     (pg.rot?'<span class="rotbadge">'+pg.rot+'&deg;</span>':'')+
     '<div class="sheet"><span class="ph"></span></div>'+
     '<span class="fname"></span>'+
-    '<span class="pno">'+(i+1)+'</span>';
+    '<span class="pno">'+wsPageNo(ws,pg)+'</span>';
   c.querySelector('.fname').textContent = wsName(ws,pg.f);
   c.querySelectorAll('.bar button').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
+    if(b.disabled) return;
     const a=b.dataset.a;
     if(a==='rot'){ pg.rot=(pg.rot+90)%360; wsRenderPages(ws); }
     if(a==='del'){ pg.del=!pg.del; wsRenderPages(ws); wsStatus(ws); wsSyncButtons(ws); }
@@ -1003,18 +1046,21 @@ function wsCard(ws, pg, i){
       ws.built++; wsRenderPages(ws); wsStatus(ws); wsSyncButtons(ws); }
     if(a==='zoom') wsPreview(ws,pg);
   });
-  c.addEventListener('dragstart',()=>c.classList.add('dragging'));
-  c.addEventListener('dragend',()=>{
-    c.classList.remove('dragging');
-    // read the DOM order back, ignoring the gap elements between cards
-    ws.pages=[...ws.el.grid.querySelectorAll('.pcard')].map(el=>ws.pages[+el.dataset.i]);
-    wsRenderPages(ws); wsStatus(ws);
-  });
-  c.addEventListener('dragover',e=>{
-    e.preventDefault(); const d=ws.el.grid.querySelector('.dragging'); if(!d||d===c) return;
-    const r=c.getBoundingClientRect();
-    ws.el.grid.insertBefore(d,(e.clientX>r.left+r.width/2)?c.nextSibling:c);
-  });
+  if(full){
+    c.addEventListener('dragstart',()=>c.classList.add('dragging'));
+    c.addEventListener('dragend',()=>{
+      c.classList.remove('dragging');
+      // Reading the DOM order back is only safe while every page is on screen -- on a
+      // narrowed view the hidden pages would be dropped from ws.pages entirely.
+      ws.pages=[...ws.el.grid.querySelectorAll('.pcard')].map(el=>ws.pages[+el.dataset.i]);
+      wsRenderPages(ws); wsStatus(ws);
+    });
+    c.addEventListener('dragover',e=>{
+      e.preventDefault(); const d=ws.el.grid.querySelector('.dragging'); if(!d||d===c) return;
+      const r=c.getBoundingClientRect();
+      ws.el.grid.insertBefore(d,(e.clientX>r.left+r.width/2)?c.nextSibling:c);
+    });
+  }
   return c;
 }
 function wsGap(ws, pg){
@@ -1111,6 +1157,7 @@ $('#splitRanges').oninput=()=>{
   const ws=WS.split;
   if(!ws.files.length) return;
   if(ws.view==='groups') wsRenderGroups(ws);
+  else if(ws.view==='pages') wsRenderPages(ws);   // the range also narrows the Pages view
   wsStatus(ws); wsSyncButtons(ws);
 };
 $('#splitGo').onclick=async()=>{
