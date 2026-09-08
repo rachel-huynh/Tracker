@@ -48,7 +48,7 @@
 
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
     padding:22px 24px;margin-bottom:20px}
-  .panel > .lead{color:var(--muted);margin:0 0 18px;font-size:13.5px;max-width:64ch}
+  .panel > .lead{color:var(--muted);margin:0 0 18px;font-size:13.5px}
   .subhead{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
     font-weight:700;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 
@@ -343,7 +343,11 @@
         </div>
         <div class="field">
           <label data-i18n="ocrLangLabel">Text language</label>
-          <select id="ocrLang"><option value="eng">English</option></select>
+          <select id="ocrLang">
+            <option value="eng">English</option>
+            <option value="vie">Tiếng Việt</option>
+            <option value="eng+vie">English + Tiếng Việt</option>
+          </select>
           <p class="hint" data-i18n="ocrLangHint"></p>
         </div>
       </div>
@@ -404,7 +408,7 @@ const I18N = {
     ocrLead:"Recognise the text in a scanned PDF and add an invisible text layer, so the file becomes searchable and selectable. The original pages are kept exactly as they are.",
     ocrDpiLabel:"Scan resolution", ocrLangLabel:"Text language",
     ocrDpiHint:"300 dpi suits most office scans. Higher is slower and rarely more accurate.",
-    ocrLangHint:"English only in this build. Vietnamese needs a second language file.",
+    ocrLangHint:"Pick a single language where you can. Vietnamese is less accurate than English, especially the accents. The combined option is only for genuinely mixed pages — it weakens Vietnamese accents.",
     ocrSkipLabel:"Skip pages that already contain text (much faster)",
     ocrGo:"Make searchable PDF", ocrStop:"Stop",
     ocrNote:"OCR runs entirely in your browser — nothing is uploaded. It must be opened over a web address (or GitHub Pages), not by double-clicking the file, because the recognition engine runs in a browser worker.",
@@ -414,9 +418,11 @@ const I18N = {
     ocrSaving:"building the searchable PDF…",
     okOcr:"Searchable PDF ready",
     okOcrMeta:(p)=>`${p.ocred} page(s) recognised`+(p.skipped?` · ${p.skipped} already had text`:'')+
-      (p.words?` · ${p.words} words added`:'')+(p.empty?`\n${p.empty} page(s) produced no readable text`:''),
+      (p.words?` · ${p.words} words added`:'')+(p.empty?`\n${p.empty} page(s) produced no readable text`:'')+
+      (p.dropped?`\n${p.dropped} word(s) skipped — the font could not represent them`:''),
     errOcr:"OCR failed", ocrStopped:"Stopped",
     e_ocr_lib:"Couldn't load the recognition engine from lib/tess/. Check that the lib folder was uploaded with the page.",
+    e_ocr_font:"Couldn't load the Unicode font (lib/fontkit.umd.min.js and lib/fonts/DejaVuSans.ttf). Vietnamese needs it — without it the accents would be dropped.",
     e_ocr_worker:"The recognition engine couldn't start. Open this page over a web address (http/https or GitHub Pages) rather than as a local file.",
     e_ocr_cancel:"Stopped. No file was produced.",
     e_ocr_none:"No text could be recognised on any page. The scan may be too low-resolution, skewed, or not text at all.",
@@ -476,7 +482,7 @@ const I18N = {
     ocrLead:"Nhận dạng chữ trong PDF đã scan và thêm một lớp chữ ẩn, để file có thể tìm kiếm và bôi chọn được. Các trang gốc được giữ nguyên.",
     ocrDpiLabel:"Độ phân giải khi scan", ocrLangLabel:"Ngôn ngữ của chữ",
     ocrDpiHint:"300 dpi phù hợp với phần lớn bản scan văn phòng. Cao hơn sẽ chậm hơn mà ít khi chính xác hơn.",
-    ocrLangHint:"Bản này chỉ có tiếng Anh. Tiếng Việt cần thêm một file ngôn ngữ.",
+    ocrLangHint:"Nên chọn một ngôn ngữ khi có thể. Tiếng Việt nhận dạng kém chính xác hơn tiếng Anh, nhất là dấu. Tùy chọn kết hợp chỉ dành cho trang thật sự lẫn hai thứ tiếng — nó làm mất dấu tiếng Việt.",
     ocrSkipLabel:"Bỏ qua những trang đã có chữ (nhanh hơn nhiều)",
     ocrGo:"Tạo PDF tìm kiếm được", ocrStop:"Dừng",
     ocrNote:"OCR chạy hoàn toàn trong trình duyệt — không có gì được tải lên. Cần mở trang qua một địa chỉ web (hoặc GitHub Pages), không phải bằng cách bấm đúp vào file, vì bộ nhận dạng chạy trong worker của trình duyệt.",
@@ -486,9 +492,11 @@ const I18N = {
     ocrSaving:"đang tạo PDF tìm kiếm được…",
     okOcr:"PDF tìm kiếm được đã xong",
     okOcrMeta:(p)=>`Đã nhận dạng ${p.ocred} trang`+(p.skipped?` · ${p.skipped} trang đã có chữ`:'')+
-      (p.words?` · thêm ${p.words} từ`:'')+(p.empty?`\n${p.empty} trang không đọc được chữ nào`:''),
+      (p.words?` · thêm ${p.words} từ`:'')+(p.empty?`\n${p.empty} trang không đọc được chữ nào`:'')+
+      (p.dropped?`\n${p.dropped} từ bị bỏ qua — phông chữ không thể hiện được`:''),
     errOcr:"OCR không thành công", ocrStopped:"Đã dừng",
     e_ocr_lib:"Không tải được bộ nhận dạng từ lib/tess/. Hãy kiểm tra thư mục lib đã được tải lên cùng trang chưa.",
+    e_ocr_font:"Không tải được phông Unicode (lib/fontkit.umd.min.js và lib/fonts/DejaVuSans.ttf). Tiếng Việt cần phông này — nếu thiếu, các dấu sẽ bị mất.",
     e_ocr_worker:"Bộ nhận dạng không khởi động được. Hãy mở trang qua địa chỉ web (http/https hoặc GitHub Pages) thay vì mở file trực tiếp.",
     e_ocr_cancel:"Đã dừng. Không có file nào được tạo.",
     e_ocr_none:"Không nhận dạng được chữ trên bất kỳ trang nào. Bản scan có thể quá mờ, bị lệch, hoặc không phải là chữ.",
@@ -1203,26 +1211,51 @@ async function ocrGetWorker(lang){
   ocrLang=lang;
   return ocrWorker;
 }
-// Strip anything Helvetica's WinAnsi encoding can't represent. Without this a single
-// stray glyph from the OCR makes drawText throw and loses the whole page.
-function ocrSafeText(t){
-  return String(t||'')
-    .replace(/[\u0000-\u001F\u007F]/g,'')      // control characters
-    .replace(/[^\u0020-\u00FF]/g,'')           // anything outside Latin-1
-    .trim();
+// Vietnamese needs a real Unicode font in the invisible layer. pdf-lib's built-in
+// Helvetica is WinAnsi-encoded and simply cannot represent ế ạ ữ …, so for any
+// language other than plain English we embed DejaVu Sans through fontkit. It is
+// subset on embed, so only the glyphs actually used ride along in the output.
+let ocrFontBytes=null;
+function ocrLoadScript(src, ok, code){
+  if(ok()) return Promise.resolve();
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src; s.onload=()=>ok()?res():rej(fail(code)); s.onerror=()=>rej(fail(code));
+    document.head.appendChild(s);
+  });
+}
+// Loads the local .ttf that ships in lib/fonts — a bundled asset, not a service call.
+async function ocrEmbedUnicodeFont(out){
+  await ocrLoadScript('lib/fontkit.umd.min.js', ()=>window.fontkit, 'e_ocr_font');
+  out.registerFontkit(window.fontkit);
+  if(!ocrFontBytes){
+    let r; try{ r=await fetch('lib/fonts/DejaVuSans.ttf'); }catch(_){ throw fail('e_ocr_font'); }
+    if(!r.ok) throw fail('e_ocr_font');
+    ocrFontBytes=await r.arrayBuffer();
+  }
+  try{ return await out.embedFont(ocrFontBytes,{subset:true}); }
+  catch(_){ throw fail('e_ocr_font'); }
+}
+// With Helvetica anything outside Latin-1 has to go, or drawText throws and the whole
+// page is lost. With the Unicode font we keep everything and let the per-word
+// try/catch handle a glyph the font lacks — those are counted, never silently dropped.
+function ocrSafeText(t, unicode){
+  let s=String(t||'').replace(/[\u0000-\u001F\u007F]/g,'');
+  if(!unicode) s=s.replace(/[^\u0020-\u00FF]/g,'');
+  return s.trim();
 }
 // Map Tesseract's word boxes (pixels, y down, page shown upright) into the PDF's
 // unrotated user space (points, y up), compensating for the page's own /Rotate.
 // A viewer applies /Rotate to image and text alike, so both must live in the same
 // unrotated space or the text layer drifts off the words.
-function ocrDrawLayer(P, words, s, font){
+function ocrDrawLayer(P, words, s, font, unicode, tally){
   const r=((P.getRotation().angle%360)+360)%360;
   const W=P.getWidth(), H=P.getHeight();
   const Hu=(r%180===0)?H:W;                   // height of the upright view, in points
   let n=0;
   for(const w of (words||[])){
     if((w.confidence||0)<OCR_MIN_CONF) continue;
-    const t=ocrSafeText(w.text); if(!t) continue;
+    const t=ocrSafeText(w.text, unicode); if(!t) continue;
     const b=w.bbox; if(!b) continue;
     const x0=b.x0/s, x1=b.x1/s, y0=b.y0/s, y1=b.y1/s;   // upright points, y from top
     const bw=x1-x0; let fs=Math.max(1,y1-y0);
@@ -1235,7 +1268,7 @@ function ocrDrawLayer(P, words, s, font){
     else if(r===270){ px=by;   py=H-bx; rot=270; }
     else { px=bx; py=by; rot=0; }
     try{ P.drawText(t,{x:px,y:py,size:fs,font,opacity:0,rotate:degrees(rot)}); n++; }
-    catch(_){ /* one unencodable word must not sink the page */ }
+    catch(_){ if(tally) tally.dropped++; }   // a glyph the font lacks: skip the word, keep the page
   }
   return n;
 }
@@ -1259,12 +1292,16 @@ $('#ocrGo').onclick=async()=>{
     if(!ocrBytes) ocrBytes=await bytesOf(ocrFile);
     const src=await PDFDocument.load(ocrBytes);
     const out=await PDFDocument.create();
-    const font=await out.embedFont(StandardFonts.Helvetica);
+    // English can ride on built-in Helvetica (nothing embedded); anything else needs
+    // the Unicode font or the diacritics would be silently thrown away.
+    const unicode = lang!=='eng';
+    const font = unicode ? await ocrEmbedUnicodeFont(out)
+                         : await out.embedFont(StandardFonts.Helvetica);
     doc=await pdfjsLib.getDocument({data:ocrBytes.slice(0)}).promise;
 
     const copied=await out.copyPages(src, src.getPageIndices());
     const total=copied.length;
-    let ocred=0, skipped=0, words=0, empty=0;
+    let ocred=0, skipped=0, words=0, empty=0; const tally={dropped:0};
 
     for(let i=0;i<total;i++){
       if(ocrAbort) throw fail('e_ocr_cancel');
@@ -1291,7 +1328,7 @@ $('#ocrGo').onclick=async()=>{
       if(ocrAbort) throw fail('e_ocr_cancel');
 
       const {data}=await worker.recognize(cv);
-      const added=ocrDrawLayer(P, data&&data.words, s, font);
+      const added=ocrDrawLayer(P, data&&data.words, s, font, unicode, tally);
       words+=added; if(added) ocred++; else empty++;
       ocrProgress((i+1)/total);
       await new Promise(r=>setTimeout(r,0));
@@ -1301,7 +1338,7 @@ $('#ocrGo').onclick=async()=>{
     $('#ocrStatus').textContent=T('ocrSaving');
     const blob=new Blob([await out.save()],{type:'application/pdf'});
     const stem=(ocrFile.name||'file').replace(/\.pdf$/i,'');
-    showResult('#ocrResult',true,T('okOcr'),T('okOcrMeta')({ocred,skipped,words,empty}),
+    showResult('#ocrResult',true,T('okOcr'),T('okOcrMeta')({ocred,skipped,words,empty,dropped:tally.dropped}),
       blob, stem+'_searchable.pdf');
     $('#ocrStatus').textContent='';
   }catch(e){
