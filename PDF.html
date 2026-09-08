@@ -8,6 +8,7 @@
   :root{
     --nav:#2a3444; --nav-header:#212a38; --nav-active:#3a4a63; --nav-hover:#333e50;
     --nav-text:#c9d2df; --nav-label:#7e8ca3; --accent:#2563eb;
+    --gold:#d9a520;   /* active-item marker in the sidebar */
     --bg:#f1f3f6; --surface:#ffffff; --border:#e2e7ee; --border-in:#d5dbe4;
     --heading:#1f2a37; --text:#374151; --muted:#6b7686;
     --primary:#2a3444; --primary-h:#1f2836;
@@ -33,7 +34,7 @@
   .navitem{display:flex;align-items:center;gap:10px;padding:10px 20px;cursor:pointer;color:var(--nav-text);
     border-left:3px solid transparent;font-size:14px}
   .navitem:hover{background:var(--nav-hover)}
-  .navitem.active{background:var(--nav-active);color:#fff;border-left-color:var(--accent)}
+  .navitem.active{background:var(--nav-active);color:#fff;border-left-color:var(--gold)}
   .sidebar .foot{margin-top:auto;padding:14px 20px;font-size:12px;color:var(--nav-label);
     border-top:1px solid rgba(255,255,255,.06);line-height:1.5}
 
@@ -207,7 +208,7 @@
     .sidebar .head{width:100%}
     .grp,.sidebar .foot{display:none}
     .navitem{border-left:0;border-bottom:3px solid transparent;padding:12px 14px}
-    .navitem.active{border-left:0;border-bottom-color:var(--accent)}
+    .navitem.active{border-left:0;border-bottom-color:var(--gold)}
     .main{margin-left:0}
     .content{padding:20px 16px 60px}
     .topbar{padding:16px;flex-wrap:wrap}
