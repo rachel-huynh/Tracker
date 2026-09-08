@@ -59,8 +59,13 @@
     border-radius:6px;font:inherit;background:#fff;color:var(--text)}
   input[type=text]:focus,select:focus{outline:2px solid #dbe4fb;border-color:var(--accent)}
 
+  /* Fixed minimum height so a one-line drop zone matches a two-line one; the flex
+     centring keeps either content set in the middle. Line breaks come from the flex
+     column, not <br>, so the items stack without an extra empty line box. */
   .drop{border:1.5px dashed var(--border-in);border-radius:6px;padding:24px;text-align:center;
-    color:var(--muted);background:#fafbfc;cursor:pointer;transition:.15s}
+    color:var(--muted);background:#fafbfc;cursor:pointer;transition:.15s;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    min-height:100px}
   .drop.hover{border-color:var(--accent);background:#f2f6ff}
   .drop b{color:var(--heading)}
 
@@ -247,7 +252,7 @@
   <section class="panel-group" id="merge">
     <div class="panel">
       <p class="lead" data-i18n="mergeLead"></p>
-      <div class="drop" id="mergeDrop"><b data-i18n="dropPdfsB">Drop PDFs here</b><br><span data-i18n="dropOrClick">or click to choose</span></div>
+      <div class="drop" id="mergeDrop"><b data-i18n="dropPdfsB">Drop PDFs here</b><span data-i18n="dropOrClick">or click to choose</span></div>
       <input type="file" id="mergeInput" accept="application/pdf" multiple hidden>
       <div class="viewsw" id="mergeViewSw" style="display:none;margin-top:16px"></div>
       <ul class="filelist" id="mergeList"></ul>
@@ -305,7 +310,7 @@
       <div class="split2">
         <div class="field">
           <div class="subhead" data-i18n="toPdf">Images to PDF</div>
-          <div class="drop" id="toPdfDrop"><b data-i18n="chooseImgs">Choose images</b><br><span>PNG, JPG</span></div>
+          <div class="drop" id="toPdfDrop"><b data-i18n="chooseImgs">Choose images</b><span>PNG, JPG</span></div>
           <input type="file" id="toPdfInput" accept="image/png,image/jpeg" multiple hidden>
           <ul class="filelist" id="toPdfList"></ul>
           <button class="btn" id="toPdfGo" data-i18n="toPdfGo" disabled style="margin-top:8px">Convert to PDF</button>
