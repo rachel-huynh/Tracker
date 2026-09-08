@@ -108,6 +108,39 @@
   @keyframes sp{to{transform:rotate(360deg)}}
 
   .split2{display:grid;grid-template-columns:1fr;gap:20px}
+
+  /* ---- stacked "group" card: Files view and Groups view ---- */
+  .gwrap{display:flex;flex-wrap:wrap;gap:16px;margin:14px 0 6px}
+  .gcard{position:relative;width:212px;padding:14px 12px 16px;border:1px solid transparent;
+    border-radius:10px;background:#fff;cursor:grab;user-select:none;
+    display:flex;flex-direction:column;align-items:center;gap:10px;transition:.15s}
+  .gcard:hover{border-color:#c3d6f7;background:#f7faff;box-shadow:0 2px 10px rgba(37,99,235,.10)}
+  .gcard.dragging{opacity:.35}
+  .gcard .stack{width:100%;height:158px;display:flex;align-items:flex-end;justify-content:center}
+  /* the offset sheets behind the page are pure CSS, shown only when count > 1 */
+  .gcard .sheets{position:relative;display:inline-block;line-height:0;max-width:100%}
+  .gcard .sheets img{position:relative;z-index:3;display:block;max-width:100%;max-height:150px;
+    background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.26)}
+  .gcard .sheets.multi::before,.gcard .sheets.multi::after{content:"";position:absolute;inset:0;
+    background:#fff;border:1px solid #e2e7ee;border-radius:2px}
+  .gcard .sheets.multi::before{transform:translate(7px,-7px);z-index:1}
+  .gcard .sheets.multi::after{transform:translate(3.5px,-3.5px);z-index:2}
+  .gcard .sheets .ph{display:inline-block;width:16px;height:16px;border:2px solid var(--border-in);
+    border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
+  .gcard .thumbfail{font-size:11.5px;color:var(--muted);line-height:1.4;display:inline-block;padding:0 6px}
+  .gcard .count{color:var(--muted);font-size:13px;line-height:1}
+  .gcard .bar{position:absolute;top:8px;right:8px;display:none;background:#fff;
+    border:1px solid var(--border-in);border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.14);
+    overflow:hidden;z-index:4}
+  .gcard:hover .bar{display:flex}
+  .gcard .bar button{border:0;background:none;cursor:pointer;color:var(--heading);
+    padding:6px 8px;display:flex;align-items:center;line-height:0;font-size:13px}
+  .gcard .bar button + button{border-left:1px solid var(--border)}
+  .gcard .bar button:hover{background:#eef3fd;color:var(--accent)}
+  .gcard .bar button.danger:hover{background:#fdeaec;color:var(--danger)}
+  .gcard .bar svg{width:16px;height:16px}
+  .gcard input.rename{width:100%;padding:5px 8px;border:1px solid var(--accent);
+    border-radius:5px;font:inherit;font-size:13px;text-align:center}
   /* Organize: page thumbnail tiles */
   .pagechips{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:12px;margin-top:14px}
   .tile{position:relative;display:flex;flex-direction:column;gap:7px;padding:8px;background:#fff;
@@ -255,7 +288,7 @@
       <div class="drop" id="mergeDrop"><b data-i18n="dropPdfsB">Drop PDFs here</b><span data-i18n="dropOrClick">or click to choose</span></div>
       <input type="file" id="mergeInput" accept="application/pdf" multiple hidden>
       <div class="viewsw" id="mergeViewSw" style="display:none;margin-top:16px"></div>
-      <ul class="filelist" id="mergeList"></ul>
+      <div class="gwrap" id="mergeList"></div>
       <div class="pgrid" id="mergePages" style="display:none"></div>
       <p class="hint" id="mergeStatus"></p>
       <div class="row">
@@ -272,17 +305,19 @@
       <div class="drop" id="splitDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
       <input type="file" id="splitInput" accept="application/pdf" hidden>
       <div class="viewsw" id="splitViewSw" style="display:none;margin-top:16px"></div>
-      <ul class="filelist" id="splitList"></ul>
+      <div class="gwrap" id="splitList"></div>
       <div class="pgrid" id="splitPages" style="display:none"></div>
+      <div class="gwrap" id="splitGroupsBox" style="display:none"></div>
       <p class="hint" id="splitStatus"></p>
       <p class="hint" id="splitInfo"></p>
       <div class="field" style="margin-top:14px">
         <label data-i18n="rangeLabel">Page ranges to extract</label>
         <input type="text" id="splitRanges" data-i18n-ph="rangePh" style="max-width:320px">
+        <p class="hint" data-i18n="rangeHint"></p>
       </div>
       <div class="row">
         <button class="btn" id="splitGo" data-i18n="splitGo" disabled>Extract by range</button>
-        <button class="btn ghost" id="splitCut" data-i18n="splitCut" disabled>Split at cut marks (.zip)</button>
+        <button class="btn ghost" id="splitCut" data-i18n="splitCut" disabled>Split into groups (.zip)</button>
         <button class="btn ghost" id="splitEach" data-i18n="splitEach" disabled>One file per page (.zip)</button>
       </div>
       <div class="result" id="splitResult"></div>
@@ -408,7 +443,12 @@ const I18N = {
   en:{
     brand:"PDF Toolkit", brandSub:"Internal documents", navGroup:"Functions",
     resetBtn:"Start over", resetTitle:"Clear the files and results on this page",
-    viewFiles:"Files", viewPages:"Pages", wsFilePages:(n)=>`${n} pages`,
+    viewFiles:"Files", viewPages:"Pages", wsFilePages:(n)=>n===1?"1 page":`${n} pages`,
+    viewGroups:"Groups", tipRemove:"Remove this file",
+    wsGroupName:(p)=>`Part ${p.n} · pages ${p.label}`,
+    wsGroupsInfo:(p)=>`${p.groups} file(s) will be produced · ${p.pages} pages in total`,
+    wsNoGroups:"Nothing to group yet — type page ranges above, or click a scissors icon in the Pages view.",
+    e_no_groups:"No groups to split into. Type page ranges (e.g. 1-3,5-7) or set a split point with the scissors.",
     tipRename:"Rename this file", dlRename:"Rename the file before saving",
     ocrLead:"Recognise the text in a scanned PDF and add an invisible text layer, so the file becomes searchable and selectable. The original pages are kept exactly as they are.",
     ocrDpiLabel:"Scan resolution", ocrLangLabel:"Text language",
@@ -438,7 +478,7 @@ const I18N = {
       :`Keeping ${p.keep} of ${p.total} pages`,
     wsCuts:(n)=>n===0?"Click a scissors icon between two pages to set a split point."
       :`${n} split point(s) — the file will be cut into ${n+1} parts.`,
-    splitCut:"Split at cut marks (.zip)",
+    splitCut:"Split into groups (.zip)",
     okSplitCut:"Split at cut marks", okSplitCutMeta:(p)=>`${p.parts} files in .zip · ${p.pages} pages`,
     e_no_cuts:"No split points set. Click a scissors icon between two pages first.",
     e_ws_empty:"No pages left. Restore a page or add a file.",
@@ -452,6 +492,7 @@ const I18N = {
     mergeGo:"Merge selected files",
     splitLead:"Extract selected pages by range, or split each page into its own file.",
     chooseOnePdf:"Choose one PDF", rangeLabel:"Page ranges to extract", rangePh:"e.g. 1-3,5,8-10",
+    rangeHint:"Extract by range puts these pages in one file. Split into groups makes each comma-separated part its own file — see the Groups view.",
     splitGo:"Extract by range", splitEach:"One file per page (.zip)",
     orgLead:"Choose a PDF, drag the tiles to reorder, click to rotate or mark a page for deletion.",
     orgGo:"Export new file", orgHint:"Drag to reorder · ↻ rotate · ✕ delete",
@@ -483,6 +524,11 @@ const I18N = {
     brand:"Công cụ PDF", brandSub:"Tài liệu nội bộ", navGroup:"Chức năng",
     resetBtn:"Bắt đầu lại", resetTitle:"Xóa các file và kết quả trên trang này",
     viewFiles:"Tệp", viewPages:"Trang", wsFilePages:(n)=>`${n} trang`,
+    viewGroups:"Nhóm", tipRemove:"Bỏ tệp này",
+    wsGroupName:(p)=>`Phần ${p.n} · trang ${p.label}`,
+    wsGroupsInfo:(p)=>`Sẽ tạo ${p.groups} tệp · tổng ${p.pages} trang`,
+    wsNoGroups:"Chưa có nhóm nào — hãy nhập khoảng trang ở trên, hoặc bấm biểu tượng cái kéo trong mục Trang.",
+    e_no_groups:"Không có nhóm nào để tách. Hãy nhập khoảng trang (ví dụ 1-3,5-7) hoặc đặt điểm tách bằng cái kéo.",
     tipRename:"Đổi tên tệp này", dlRename:"Đổi tên tệp trước khi lưu",
     ocrLead:"Nhận dạng chữ trong PDF đã scan và thêm một lớp chữ ẩn, để file có thể tìm kiếm và bôi chọn được. Các trang gốc được giữ nguyên.",
     ocrDpiLabel:"Độ phân giải khi scan", ocrLangLabel:"Ngôn ngữ của chữ",
@@ -512,7 +558,7 @@ const I18N = {
       :`Giữ lại ${p.keep} trong ${p.total} trang`,
     wsCuts:(n)=>n===0?"Bấm vào biểu tượng cái kéo giữa hai trang để đặt điểm tách."
       :`${n} điểm tách — tệp sẽ được cắt thành ${n+1} phần.`,
-    splitCut:"Tách tại điểm đã cắt (.zip)",
+    splitCut:"Tách thành nhóm (.zip)",
     okSplitCut:"Đã tách tại điểm đã cắt", okSplitCutMeta:(p)=>`${p.parts} tệp trong .zip · ${p.pages} trang`,
     e_no_cuts:"Chưa đặt điểm tách. Hãy bấm vào biểu tượng cái kéo giữa hai trang trước.",
     e_ws_empty:"Không còn trang nào. Hãy khôi phục một trang hoặc thêm tệp.",
@@ -526,6 +572,7 @@ const I18N = {
     mergeGo:"Gộp file đã chọn",
     splitLead:"Lấy ra một số trang theo khoảng, hoặc tách mỗi trang thành một file riêng.",
     chooseOnePdf:"Chọn 1 file PDF", rangeLabel:"Khoảng trang cần lấy", rangePh:"Ví dụ: 1-3,5,8-10",
+    rangeHint:"Tách theo khoảng gộp các trang này vào một file. Tách thành nhóm sẽ tạo mỗi phần cách nhau bằng dấu phẩy thành một file riêng — xem mục Nhóm.",
     splitGo:"Tách theo khoảng", splitEach:"Mỗi trang một file (.zip)",
     orgLead:"Chọn một PDF, kéo các ô để đổi thứ tự, bấm để xoay hoặc đánh dấu xóa trang.",
     orgGo:"Xuất file mới", orgHint:"Kéo để đổi thứ tự · ↻ để xoay · ✕ để xóa",
@@ -652,6 +699,7 @@ const SVG = {
   rotate:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>',
   dup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M15 5H5a2 2 0 0 0-2 2v10" stroke-linecap="round"/></svg>',
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
+  groups:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="7" width="11" height="14" rx="1.5"/><path d="M7 4h9a1.5 1.5 0 0 1 1.5 1.5V17" stroke-linecap="round"/><path d="M11 3.5h8A1.5 1.5 0 0 1 20.5 5v11" stroke-linecap="round" opacity=".55"/></svg>',
   scissors:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M20 4L8.6 15.4M8.6 8.6L20 20"/></svg>'
 };
 const WS_THUMB_PX = 300;   // rendered bitmap width for a page card
@@ -660,7 +708,8 @@ function makeWS(tab, opts){
   return { tab, cuts:!!opts.cuts, multi:!!opts.multi, files:[], pages:[], names:[],
            docs:[], bytes:[], view:'files', token:0, built:0,
            el:{ sw:$('#'+tab+'ViewSw'), list:$('#'+tab+'List'),
-                grid:$('#'+tab+'Pages'), status:$('#'+tab+'Status') } };
+                grid:$('#'+tab+'Pages'), status:$('#'+tab+'Status'),
+                groups:$('#'+tab+'GroupsBox') } };   // only the Split tab has one
 }
 const WS = { merge:null, split:null };
 
@@ -709,6 +758,10 @@ async function wsBuildThumbs(ws, token){
       pg.thumb=cv.toDataURL('image/png');
     }catch(_){ pg.thumb='fail'; }
     ws.built++; wsPaint(ws,pg); wsStatus(ws);
+    // wsPaint only touches the Pages grid, so a card view has to be refreshed too or
+    // its thumbnail would spin forever while sitting on the Files/Groups tab.
+    if(ws.view==='files') wsRenderFiles(ws);
+    else if(ws.view==='groups') wsRenderGroups(ws);
     await new Promise(r=>setTimeout(r,0));
   }
 }
@@ -720,21 +773,24 @@ function wsClear(ws){
   ws.el.sw.style.display='none'; ws.el.grid.style.display='none'; ws.el.list.style.display='';
 }
 
-// ---- Files / Pages switch ------------------------------------------------
+// ---- Files / Pages / Groups switch ---------------------------------------
 function wsRenderSwitch(ws){
   const sw=ws.el.sw;
   sw.style.display = ws.files.length ? 'inline-flex' : 'none';
-  sw.innerHTML =
-    '<button data-view="files" class="'+(ws.view==='files'?'on':'')+'">'+SVG.files+'<span>'+T('viewFiles')+'</span></button>'+
-    '<button data-view="pages" class="'+(ws.view==='pages'?'on':'')+'">'+SVG.pages+'<span>'+T('viewPages')+'</span></button>';
+  const btn=(v,icon,label)=>'<button data-view="'+v+'" class="'+(ws.view===v?'on':'')+'">'+icon+'<span>'+label+'</span></button>';
+  sw.innerHTML = btn('files',SVG.files,T('viewFiles')) + btn('pages',SVG.pages,T('viewPages'))
+               + (ws.el.groups ? btn('groups',SVG.groups,T('viewGroups')) : '');
   sw.querySelectorAll('button').forEach(b=>b.onclick=()=>{ ws.view=b.dataset.view; wsRender(ws); });
 }
 function wsRender(ws){
-  const pages = ws.view==='pages';
-  ws.el.list.style.display = pages?'none':'';
-  ws.el.grid.style.display = pages?'flex':'none';
+  const v=ws.view;
+  ws.el.list.style.display = v==='files' ? 'flex' : 'none';
+  ws.el.grid.style.display = v==='pages' ? 'flex' : 'none';
+  if(ws.el.groups) ws.el.groups.style.display = v==='groups' ? 'flex' : 'none';
   wsRenderSwitch(ws);
-  if(pages) wsRenderPages(ws); else wsRenderFiles(ws);
+  if(v==='pages') wsRenderPages(ws);
+  else if(v==='groups') wsRenderGroups(ws);
+  else wsRenderFiles(ws);
   wsStatus(ws);
   wsSyncButtons(ws);
 }
@@ -745,10 +801,77 @@ function wsStatus(ws){
   const keep=ws.pages.filter(p=>!p.del).length;
   let txt=T('wsPagesInfo')({keep,total:ws.pages.length,files:ws.files.length});
   if(ws.cuts && ws.view==='pages') txt += ' · ' + T('wsCuts')(wsCutCount(ws));
+  if(ws.cuts && ws.view==='groups'){
+    let g; try{ g=wsSegments(ws); }catch(e){ el.textContent=msgOf(e); return; }
+    txt = T('wsGroupsInfo')({groups:g.groups.length, pages:g.groups.reduce((n,x)=>n+x.pages.length,0)});
+  }
   el.textContent=txt;
 }
 // A cut on the very last page would make an empty trailing segment, so it never counts.
 function wsCutCount(ws){ const k=wsKept(ws); return k.filter((p,i)=>p.cut && i<k.length-1).length; }
+
+// ---- segments: what a split will actually produce -------------------------
+// Two ways to describe the same thing. If the range box has something in it, each
+// comma-separated part becomes its own group -- so "1-3,5-7" is two files and page 4
+// is left out entirely. Otherwise the armed scissors partition the kept pages.
+// The Groups preview and the export both read this, so what you see is what you get.
+function wsSegments(ws){
+  const keep=wsKept(ws);
+  const box=$('#splitRanges');
+  const spec=((box && box.value) || '').trim();
+  if(spec){
+    const groups=[];
+    for(const tok of spec.replace(/\s/g,'').split(',')){
+      if(!tok) continue;
+      const idx=parseRanges(tok, keep.length);       // throws e_range when out of bounds
+      const pages=idx.map(i=>keep[i]).filter(Boolean);
+      if(pages.length) groups.push({pages:pages, label:tok});
+    }
+    return {mode:'ranges', groups:groups};
+  }
+  const groups=[]; let cur=[], from=1;
+  keep.forEach((pg,i)=>{
+    cur.push(pg);
+    if(pg.cut && i<keep.length-1){ groups.push({pages:cur, label:from+'-'+(i+1)}); cur=[]; from=i+2; }
+  });
+  if(cur.length) groups.push({pages:cur, label:from+'-'+keep.length});
+  return {mode:'cuts', groups:groups};
+}
+
+// ---- stacked card, shared by the Files and Groups views -------------------
+// The offset sheets behind the thumbnail are pure CSS (.sheets::before/::after) and
+// only show when the card stands for more than one page.
+function wsCardEl(opts){
+  const c=document.createElement('div');
+  c.className='gcard';
+  c.innerHTML=
+    '<div class="stack"><span class="sheets'+(opts.count>1?' multi':'')+'"><span class="ph"></span></span></div>'+
+    '<span class="fname"></span>'+
+    '<span class="count"></span>';
+  c.querySelector('.fname').textContent=opts.label;      // untrusted filename text
+  c.querySelector('.count').textContent=T('wsFilePages')(opts.count);
+  if(opts.actions && opts.actions.length){
+    const bar=document.createElement('div'); bar.className='bar';
+    opts.actions.forEach(a=>{
+      const b=document.createElement('button');
+      b.innerHTML=a.icon; b.title=a.title; if(a.danger) b.className='danger';
+      b.onclick=e=>{ e.stopPropagation(); a.run(); };
+      bar.appendChild(b);
+    });
+    c.insertBefore(bar,c.firstChild);
+  }
+  return c;
+}
+// Drop a cached page thumbnail into a card's sheet stack.
+function wsFillCard(card, page){
+  const box=card.querySelector('.sheets'); if(!box||!page) return;
+  if(page.thumb==='fail'){ box.innerHTML='<span class="thumbfail">'+T('orgThumbFail')+'</span>'; return; }
+  if(!page.thumb) return;                                 // still building -- keep the spinner
+  const img=document.createElement('img');
+  img.src=page.thumb; img.draggable=false; img.alt=T('page')(page.p+1);
+  img.style.transform='rotate('+page.rot+'deg)';
+  box.innerHTML=''; box.appendChild(img);
+}
 
 // ---- Files view ----------------------------------------------------------
 // Display name for a loaded file. A File object's .name is read-only, so a rename is
@@ -758,47 +881,46 @@ function wsName(ws, fi){
   return (ws.names && ws.names[fi]) || (ws.files[fi] ? ws.files[fi].name : '');
 }
 function wsStem(ws, fi){ return wsName(ws,fi).replace(/\.pdf$/i,'') || 'file'; }
+function wsFirstPageOf(ws, fi){ return ws.pages.find(p=>p.f===fi) || null; }
 
 function wsRenderFiles(ws){
-  const ul=ws.el.list; ul.innerHTML='';
+  const box=ws.el.list; box.innerHTML='';
   ws.files.forEach((f,i)=>{
-    const n=ws.pages.filter(p=>p.f===i).length;
-    const li=document.createElement('li'); li.draggable=ws.multi; li.dataset.i=i;
-    li.innerHTML=(ws.multi?'<span class="grab">&#8942;&#8942;</span>':'')+
-      '<span class="idx">'+(i+1)+'</span><span class="name"></span>'+
-      '<button class="ren" title="">&#9998;</button>'+
-      '<span class="pno">'+(n?T('wsFilePages')(n):'')+'</span>'+
-      '<button class="x">&#10005;</button>';
-    li.querySelector('.name').textContent=wsName(ws,i);   // filenames are untrusted text
-    li.querySelector('.ren').title=T('tipRename');
-    li.querySelector('.ren').onclick=e=>{ e.stopPropagation(); wsBeginRename(ws,li,i); };
-    li.querySelector('.x').onclick=()=>wsRemoveFile(ws,i);
+    const mine=ws.pages.filter(p=>p.f===i);
+    const card=wsCardEl({
+      label:wsName(ws,i), count:mine.length,
+      actions:[
+        {icon:'✎', title:T('tipRename'), run:()=>wsBeginRename(ws,card,i)},
+        {icon:SVG.trash, title:T('tipRemove'), danger:true, run:()=>wsRemoveFile(ws,i)}
+      ]
+    });
+    card.dataset.i=i; card.draggable=ws.multi;
     if(ws.multi){
-      li.addEventListener('dragstart',()=>li.classList.add('dragging'));
-      li.addEventListener('dragend',()=>li.classList.remove('dragging'));
-      li.addEventListener('dragover',e=>{e.preventDefault();const d=ul.querySelector('.dragging');if(!d||d===li)return;
-        const r=li.getBoundingClientRect();ul.insertBefore(d,(e.clientY>r.top+r.height/2)?li.nextSibling:li);});
+      card.addEventListener('dragstart',()=>card.classList.add('dragging'));
+      card.addEventListener('dragend',()=>{ card.classList.remove('dragging');
+        wsReorderFiles(ws,[...box.children].map(el=>+el.dataset.i)); });
+      card.addEventListener('dragover',e=>{ e.preventDefault();
+        const d=box.querySelector('.dragging'); if(!d||d===card) return;
+        const r=card.getBoundingClientRect();
+        box.insertBefore(d,(e.clientX>r.left+r.width/2)?card.nextSibling:card); });
     }
-    ul.appendChild(li);
+    box.appendChild(card);
+    wsFillCard(card, wsFirstPageOf(ws,i));
   });
-  ul.ondragend = ws.multi ? ()=>wsReorderFiles(ws,[...ul.children].map(li=>+li.dataset.i)) : null;
 }
-// Swap the name span for a text box. Enter/blur commits, Escape abandons. Dragging is
-// suspended while editing, otherwise the row moves out from under the caret.
-function wsBeginRename(ws, li, i){
-  if(li.querySelector('input.rename')) return;
-  const span=li.querySelector('.name');
+// Swap the name tag for a text box. Enter/blur commits, Escape abandons. Dragging is
+// suspended while editing, otherwise the card moves out from under the caret.
+function wsBeginRename(ws, card, i){
+  if(card.querySelector('input.rename')) return;
+  const tag=card.querySelector('.fname');
   const inp=document.createElement('input');
   inp.type='text'; inp.className='rename'; inp.value=wsName(ws,i);
-  const wasDraggable=li.draggable; li.draggable=false;
+  const wasDraggable=card.draggable; card.draggable=false;
   let done=false;
   const finish=commit=>{
     if(done) return; done=true;
-    li.draggable=wasDraggable;
-    if(commit){
-      ws.names=ws.names||[];
-      ws.names[i]=safeName(inp.value,'.pdf');
-    }
+    card.draggable=wasDraggable;
+    if(commit){ ws.names=ws.names||[]; ws.names[i]=safeName(inp.value,'.pdf'); }
     wsRender(ws);
   };
   inp.onkeydown=e=>{
@@ -806,9 +928,26 @@ function wsBeginRename(ws, li, i){
     if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); finish(false); }
   };
   inp.onblur=()=>finish(true);
-  span.replaceWith(inp);
+  tag.replaceWith(inp);
   inp.focus(); inp.select();
 }
+
+// ---- Groups view ---------------------------------------------------------
+// One stacked card per file the split will produce.
+function wsRenderGroups(ws){
+  const box=ws.el.groups; if(!box) return;
+  box.innerHTML='';
+  let seg;
+  try{ seg=wsSegments(ws); }
+  catch(e){ box.innerHTML='<p class="hint" style="margin:0">'+msgOf(e)+'</p>'; return; }
+  if(!seg.groups.length){ box.innerHTML='<p class="hint" style="margin:0">'+T('wsNoGroups')+'</p>'; return; }
+  seg.groups.forEach((g,gi)=>{
+    const card=wsCardEl({ label:T('wsGroupName')({n:gi+1,label:g.label}), count:g.pages.length });
+    box.appendChild(card);
+    wsFillCard(card, g.pages[0]);
+  });
+}
+
 // Reordering files rewrites every page's file index, so page-level edits survive.
 function wsReorderFiles(ws, order){
   const files=order.map(i=>ws.files[i]), bytes=order.map(i=>ws.bytes[i]),
@@ -939,7 +1078,9 @@ function wsSyncButtons(ws){
   const has=wsKept(ws).length>0;
   if(ws.tab==='merge'){ $('#mergeGo').disabled=!has; return; }
   $('#splitGo').disabled=!has; $('#splitEach').disabled=!has;
-  $('#splitCut').disabled = !has || wsCutCount(ws)===0;
+  // enabled by an armed scissors OR by anything typed in the range box
+  const spec=($('#splitRanges').value||'').trim();
+  $('#splitCut').disabled = !has || (wsCutCount(ws)===0 && !spec);
 }
 
 // ===== MERGE =====
@@ -965,6 +1106,13 @@ wireDrop('#splitDrop','#splitInput', async fs=>{
   await wsAddFiles(WS.split, fs);
   if(WS.split.files.length) $('#splitInfo').textContent=T('selected')(WS.split.files[0].name);
 });
+// The range box now feeds the Groups preview too, so refresh as it is typed.
+$('#splitRanges').oninput=()=>{
+  const ws=WS.split;
+  if(!ws.files.length) return;
+  if(ws.view==='groups') wsRenderGroups(ws);
+  wsStatus(ws); wsSyncButtons(ws);
+};
 $('#splitGo').onclick=async()=>{
   const ws=WS.split; busy($('#splitGo'),true);
   try{ const keep=wsKept(ws);
@@ -975,25 +1123,26 @@ $('#splitGo').onclick=async()=>{
   }catch(e){ showResult('#splitResult',false,T('errSplit'),msgOf(e)); }
   finally{ busy($('#splitGo'),false); }
 };
-// Quick split: cut the page run wherever a scissors is armed.
+// Exports exactly what the Groups view previews: ranges if the box has any, cuts otherwise.
 $('#splitCut').onclick=async()=>{
   const ws=WS.split; busy($('#splitCut'),true);
   try{
-    const keep=wsKept(ws);
-    if(!keep.length) throw fail('e_ws_empty');
-    if(wsCutCount(ws)===0) throw fail('e_no_cuts');
-    const segs=[[]];
-    keep.forEach((pg,i)=>{ segs[segs.length-1].push(pg);
-      if(pg.cut && i<keep.length-1) segs.push([]); });
+    if(!wsKept(ws).length) throw fail('e_ws_empty');
+    const seg=wsSegments(ws);
+    // one group from cuts means no cut was armed; from ranges it is a deliberate ask
+    if(!seg.groups.length || (seg.mode==='cuts' && seg.groups.length<2)) throw fail('e_no_groups');
     const zip=new JSZip();
     const stem=wsStem(ws,0);
-    for(let s=0;s<segs.length;s++){
-      const out=await wsBuild(ws, segs[s]);
-      zip.file(stem+'_part_'+String(s+1).padStart(2,'0')+'.pdf', await out.save());
+    let pages=0;
+    for(let s=0;s<seg.groups.length;s++){
+      const g=seg.groups[s];
+      const out=await wsBuild(ws, g.pages);
+      pages+=g.pages.length;
+      zip.file(stem+'_part_'+String(s+1).padStart(2,'0')+'_p'+g.label+'.pdf', await out.save());
     }
     const blob=await zip.generateAsync({type:'blob'});
     showResult('#splitResult',true,T('okSplitCut'),
-      T('okSplitCutMeta')({parts:segs.length,pages:keep.length}),blob,stem+'_parts.zip');
+      T('okSplitCutMeta')({parts:seg.groups.length,pages}),blob,stem+'_parts.zip');
   }catch(e){ showResult('#splitResult',false,T('errSplit'),msgOf(e)); }
   finally{ busy($('#splitCut'),false); }
 };
