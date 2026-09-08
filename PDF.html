@@ -69,6 +69,7 @@
   ul.filelist li .grab{cursor:grab;color:var(--muted)}
   ul.filelist li .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   ul.filelist li .x{border:0;background:none;color:var(--danger);cursor:pointer;font-size:15px}
+  ul.filelist li .pno{color:var(--muted);font-size:12.5px}
   ul.filelist li.dragging{opacity:.5}
   .idx{color:var(--muted);width:20px;text-align:right}
 
@@ -86,6 +87,16 @@
   .result.error{border-left-color:var(--danger);background:#fdf6f6}
   .result h3{margin:0 0 5px;font-size:14px;color:var(--heading)}
   .result .meta{color:var(--muted);font-size:12.8px;white-space:pre-wrap}
+  /* editable output filename shown next to every Download button */
+  .result .dlname{width:auto;flex:1;min-width:170px;max-width:340px;padding:8px 11px;
+    border:1px solid var(--border-in);border-radius:6px;font:inherit;font-size:13.5px;background:#fff}
+  .result .dlname:focus{outline:2px solid #dbe4fb;border-color:var(--accent)}
+  /* inline rename of a loaded file in the Files view */
+  ul.filelist li .ren{border:0;background:none;cursor:pointer;color:var(--muted);
+    font-size:13px;padding:2px 5px;border-radius:4px;line-height:1}
+  ul.filelist li .ren:hover{background:#eef3fd;color:var(--accent)}
+  ul.filelist li input.rename{flex:1;min-width:0;padding:5px 8px;border:1px solid var(--accent);
+    border-radius:5px;font:inherit;font-size:13.5px}
   .spin{display:inline-block;width:13px;height:13px;border:2px solid #fff;border-top-color:transparent;
     border-radius:50%;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
@@ -116,6 +127,79 @@
   .tile.del .thumb{opacity:.28}
   .tile.del .cap .n{text-decoration:line-through;color:var(--muted)}
   .tile.del .rot{display:none}
+  /* ---- Files / Pages segmented toggle ---- */
+  .viewsw{display:inline-flex;border:1px solid var(--border-in);border-radius:7px;overflow:hidden;
+    background:#fff;margin-bottom:16px}
+  .viewsw button{display:flex;align-items:center;gap:7px;border:0;background:none;font:inherit;
+    font-size:13.5px;font-weight:600;color:var(--muted);padding:8px 15px;cursor:pointer}
+  .viewsw button + button{border-left:1px solid var(--border-in)}
+  .viewsw button.on{background:#eef3fd;color:var(--accent)}
+  .viewsw button svg{width:16px;height:16px;flex:none}
+
+  /* ---- Pages workspace: page cards with cut gaps between them ---- */
+  .pgrid{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin:4px 0 6px}
+  .pcard{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;
+    width:190px;padding:12px 10px 14px;border:1px solid transparent;border-radius:10px;
+    background:#fff;cursor:grab;user-select:none;transition:.15s}
+  .pcard:hover{border-color:#c3d6f7;background:#f7faff;box-shadow:0 2px 10px rgba(37,99,235,.10)}
+  .pcard.dragging{opacity:.35}
+  .pcard .sheet{width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center}
+  .pcard .sheet img{max-width:100%;max-height:100%;display:block;background:#fff;
+    box-shadow:0 1px 4px rgba(0,0,0,.24);transition:transform .2s ease}
+  .pcard .sheet .ph{width:16px;height:16px;border:2px solid var(--border-in);
+    border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
+  .pcard .fname{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    background:#fbf0cd;color:#8a6708;border:1px solid #f0dfa4;border-radius:5px;padding:3px 10px;font-size:13px}
+  .pcard .pno{color:var(--muted);font-size:13px;line-height:1}
+  /* hover toolbar */
+  .pcard .bar{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:none;
+    background:#fff;border:1px solid var(--border-in);border-radius:8px;
+    box-shadow:0 2px 10px rgba(0,0,0,.14);overflow:hidden;z-index:2}
+  .pcard:hover .bar{display:flex}
+  .pcard .bar button{border:0;background:none;cursor:pointer;color:var(--heading);
+    padding:7px 9px;display:flex;align-items:center;line-height:0}
+  .pcard .bar button + button{border-left:1px solid var(--border)}
+  .pcard .bar button:hover{background:#eef3fd;color:var(--accent)}
+  .pcard .bar button.danger:hover{background:#fdeaec;color:var(--danger)}
+  .pcard .bar svg{width:17px;height:17px}
+  .pcard .rotbadge{position:absolute;top:10px;left:12px;background:var(--accent);color:#fff;
+    font-size:10.5px;font-weight:600;padding:1px 5px;border-radius:3px;z-index:1}
+  .pcard.del{cursor:default;border-style:dashed;border-color:var(--border-in)}
+  .pcard.del .sheet{opacity:.25}
+  .pcard.del .fname{background:#eceff3;color:var(--muted);border-color:var(--border);text-decoration:line-through}
+  .pcard.del .rotbadge{display:none}
+
+  /* scissors gap between two pages */
+  .cutgap{position:relative;flex:none;width:44px;align-self:stretch;border:0;background:none;
+    padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .cutgap::before{content:"";position:absolute;top:14px;bottom:14px;left:50%;width:0;
+    border-left:1.5px dashed #b9c6da}
+  .cutgap .sc{position:relative;width:28px;height:28px;border-radius:50%;background:#e3ecfb;
+    color:var(--accent);display:flex;align-items:center;justify-content:center;opacity:.45;transition:.15s}
+  .cutgap:hover .sc{opacity:1;background:var(--accent);color:#fff}
+  .cutgap .sc svg{width:15px;height:15px}
+  .cutgap.on::before{border-left:2px solid var(--danger)}
+  .cutgap.on .sc{opacity:1;background:var(--danger);color:#fff}
+
+  /* ---- page preview modal ---- */
+  .modal{position:fixed;inset:0;background:rgba(20,26,36,.62);display:none;
+    align-items:center;justify-content:center;padding:28px;z-index:50}
+  .modal.show{display:flex}
+  .modal .box{background:#fff;border-radius:10px;padding:16px;max-width:min(92vw,900px);
+    max-height:92vh;display:flex;flex-direction:column;gap:12px}
+  .modal .box .hd{display:flex;align-items:center;gap:14px}
+  .modal .box .hd .t{flex:1;font-weight:600;color:var(--heading);font-size:14px}
+  .modal .box .hd button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:19px;line-height:1}
+  .modal .box .cv{overflow:auto;display:flex;align-items:center;justify-content:center;background:#f5f6f8;border-radius:6px}
+  .modal .box canvas{max-width:100%;max-height:76vh;display:block}
+
+  /* ---- OCR: progress bar + inline checkbox ---- */
+  .prog{display:none;height:7px;background:#e6eaf1;border-radius:4px;overflow:hidden;margin:14px 0 8px}
+  .prog.on{display:block}
+  .prog .bar{height:100%;width:0;background:var(--accent);border-radius:4px;transition:width .2s linear}
+  .chk{display:flex;align-items:center;gap:9px;font-weight:400;font-size:13.5px;
+    color:var(--text);margin:4px 0 2px;cursor:pointer}
+  .chk input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
   @media(min-width:700px){ .split2{grid-template-columns:1fr 1fr} }
 
   @media(max-width:760px){
@@ -126,7 +210,7 @@
     .navitem.active{border-left:0;border-bottom-color:var(--accent)}
     .main{margin-left:0}
     .content{padding:20px 16px 60px}
-    .topbar{padding:16px}
+    .topbar{padding:16px;flex-wrap:wrap}
   }
 </style>
 </head>
@@ -146,22 +230,28 @@
   <div class="navitem" data-tab="split">Split</div>
   <div class="navitem" data-tab="organize">Organize pages</div>
   <div class="navitem" data-tab="convert">Convert format</div>
+  <div class="navitem" data-tab="ocr">OCR</div>
   <div class="foot" id="privacyNote"></div>
 </aside>
 
 <div class="main">
   <div class="topbar">
-    <h1 id="pageTitle"></h1>
-    <div class="crumb" id="pageCrumb"></div>
+    <div class="tb-title">
+      <h1 id="pageTitle"></h1>
+      <div class="crumb" id="pageCrumb"></div>
+    </div>
+    <button class="btn ghost" id="resetBtn" data-i18n="resetBtn" title=""></button>
   </div>
   <div class="content">
-
   <section class="panel-group" id="merge">
     <div class="panel">
       <p class="lead" data-i18n="mergeLead"></p>
       <div class="drop" id="mergeDrop"><b data-i18n="dropPdfsB">Drop PDFs here</b><br><span data-i18n="dropOrClick">or click to choose</span></div>
       <input type="file" id="mergeInput" accept="application/pdf" multiple hidden>
+      <div class="viewsw" id="mergeViewSw" style="display:none;margin-top:16px"></div>
       <ul class="filelist" id="mergeList"></ul>
+      <div class="pgrid" id="mergePages" style="display:none"></div>
+      <p class="hint" id="mergeStatus"></p>
       <div class="row">
         <input type="text" id="mergeName" data-i18n-ph="mergeNamePh" style="max-width:280px">
         <button class="btn" id="mergeGo" data-i18n="mergeGo" disabled>Merge selected files</button>
@@ -175,6 +265,10 @@
       <p class="lead" data-i18n="splitLead"></p>
       <div class="drop" id="splitDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
       <input type="file" id="splitInput" accept="application/pdf" hidden>
+      <div class="viewsw" id="splitViewSw" style="display:none;margin-top:16px"></div>
+      <ul class="filelist" id="splitList"></ul>
+      <div class="pgrid" id="splitPages" style="display:none"></div>
+      <p class="hint" id="splitStatus"></p>
       <p class="hint" id="splitInfo"></p>
       <div class="field" style="margin-top:14px">
         <label data-i18n="rangeLabel">Page ranges to extract</label>
@@ -182,6 +276,7 @@
       </div>
       <div class="row">
         <button class="btn" id="splitGo" data-i18n="splitGo" disabled>Extract by range</button>
+        <button class="btn ghost" id="splitCut" data-i18n="splitCut" disabled>Split at cut marks (.zip)</button>
         <button class="btn ghost" id="splitEach" data-i18n="splitEach" disabled>One file per page (.zip)</button>
       </div>
       <div class="result" id="splitResult"></div>
@@ -228,6 +323,40 @@
     </div>
   </section>
 
+  <section class="panel-group" id="ocr" style="display:none">
+    <div class="panel">
+      <p class="lead" data-i18n="ocrLead"></p>
+      <div class="drop" id="ocrDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
+      <input type="file" id="ocrInput" accept="application/pdf" hidden>
+      <p class="hint" id="ocrInfo"></p>
+      <div class="split2" style="margin-top:16px">
+        <div class="field">
+          <label data-i18n="ocrDpiLabel">Scan resolution</label>
+          <select id="ocrDpi">
+            <option value="150">150 dpi</option>
+            <option value="200">200 dpi</option>
+            <option value="300" selected>300 dpi</option>
+            <option value="400">400 dpi</option>
+          </select>
+          <p class="hint" data-i18n="ocrDpiHint"></p>
+        </div>
+        <div class="field">
+          <label data-i18n="ocrLangLabel">Text language</label>
+          <select id="ocrLang"><option value="eng">English</option></select>
+          <p class="hint" data-i18n="ocrLangHint"></p>
+        </div>
+      </div>
+      <label class="chk"><input type="checkbox" id="ocrSkip" checked><span data-i18n="ocrSkipLabel"></span></label>
+      <div class="row">
+        <button class="btn" id="ocrGo" data-i18n="ocrGo" disabled>Make searchable PDF</button>
+        <button class="btn ghost" id="ocrStop" data-i18n="ocrStop" style="display:none">Stop</button>
+      </div>
+      <div class="prog" id="ocrProg"><div class="bar" id="ocrBar"></div></div>
+      <p class="hint" id="ocrStatus"></p>
+      <div class="result" id="ocrResult"></div>
+      <p class="hint" data-i18n="ocrNote" style="margin-top:14px"></p>
+    </div>
+  </section>
   </div>
 </div>
 
@@ -246,6 +375,14 @@
        lib/pdf.worker.min.js  pdf.js 3.11.174  (worker — required by pdf.min.js)
          https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js
      ========================================================================== -->
+
+<!-- page preview (magnifier on a page card) -->
+<div class="modal" id="pvModal">
+  <div class="box">
+    <div class="hd"><span class="t" id="pvTitle"></span><button id="pvClose" title="">✕</button></div>
+    <div class="cv"><canvas id="pvCanvas"></canvas></div>
+  </div>
+</div>
 <script src="lib/pdf-lib.min.js"></script>
 <script src="lib/jszip.min.js"></script>
 <script src="lib/pdf.min.js"></script>
@@ -254,15 +391,49 @@
 // opened as a plain file:// page the browser blocks workers and pdf.js falls
 // back to the main thread (slower, still correct).
 if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='lib/pdf.worker.min.js';
-const { PDFDocument, degrees } = PDFLib;
+const { PDFDocument, StandardFonts, degrees } = PDFLib;
 const $ = s => document.querySelector(s);
 
 const I18N = {
   en:{
     brand:"PDF Toolkit", brandSub:"Internal documents — LDKS Plaza", navGroup:"Functions",
-    nav:{merge:"Merge",split:"Split",organize:"Organize pages",convert:"Convert format"},
+    resetBtn:"Start over", resetTitle:"Clear the files and results on this page",
+    viewFiles:"Files", viewPages:"Pages", wsFilePages:(n)=>`${n} pages`,
+    tipRename:"Rename this file", dlRename:"Rename the file before saving",
+    ocrLead:"Recognise the text in a scanned PDF and add an invisible text layer, so the file becomes searchable and selectable. The original pages are kept exactly as they are.",
+    ocrDpiLabel:"Scan resolution", ocrLangLabel:"Text language",
+    ocrDpiHint:"300 dpi suits most office scans. Higher is slower and rarely more accurate.",
+    ocrLangHint:"English only in this build. Vietnamese needs a second language file.",
+    ocrSkipLabel:"Skip pages that already contain text (much faster)",
+    ocrGo:"Make searchable PDF", ocrStop:"Stop",
+    ocrNote:"OCR runs entirely in your browser — nothing is uploaded. It must be opened over a web address (or GitHub Pages), not by double-clicking the file, because the recognition engine runs in a browser worker.",
+    ocrLoadEngine:"Loading the recognition engine (first run only)…",
+    ocrPageStat:(p)=>`Page ${p.page} of ${p.total} — ${p.what}`,
+    ocrReading:"reading", ocrRecognising:"recognising text", ocrHasText:"already has text, skipped",
+    ocrSaving:"building the searchable PDF…",
+    okOcr:"Searchable PDF ready",
+    okOcrMeta:(p)=>`${p.ocred} page(s) recognised`+(p.skipped?` · ${p.skipped} already had text`:'')+
+      (p.words?` · ${p.words} words added`:'')+(p.empty?`\n${p.empty} page(s) produced no readable text`:''),
+    errOcr:"OCR failed", ocrStopped:"Stopped",
+    e_ocr_lib:"Couldn't load the recognition engine from lib/tess/. Check that the lib folder was uploaded with the page.",
+    e_ocr_worker:"The recognition engine couldn't start. Open this page over a web address (http/https or GitHub Pages) rather than as a local file.",
+    e_ocr_cancel:"Stopped. No file was produced.",
+    e_ocr_none:"No text could be recognised on any page. The scan may be too low-resolution, skewed, or not text at all.",
+    tipPreview:"Preview page", tipRotate:"Rotate 90°", tipDup:"Duplicate page", tipDel:"Delete / restore",
+    tipCut:"Split here", tipCutOn:"Remove this split", pvClose:"Close",
+    wsLoading:(p)=>`Building previews… ${p.done} / ${p.total}`,
+    wsPagesInfo:(p)=>p.keep===p.total?`${p.total} pages from ${p.files} file(s)`
+      :`Keeping ${p.keep} of ${p.total} pages`,
+    wsCuts:(n)=>n===0?"Click a scissors icon between two pages to set a split point."
+      :`${n} split point(s) — the file will be cut into ${n+1} parts.`,
+    splitCut:"Split at cut marks (.zip)",
+    okSplitCut:"Split at cut marks", okSplitCutMeta:(p)=>`${p.parts} files in .zip · ${p.pages} pages`,
+    e_no_cuts:"No split points set. Click a scissors icon between two pages first.",
+    e_ws_empty:"No pages left. Restore a page or add a file.",
+    nav:{merge:"Merge",split:"Split",organize:"Organize pages",convert:"Convert format",ocr:"OCR — searchable PDF"},
     crumb:{merge:"Functions · Merge documents",split:"Functions · Split pages",
-      organize:"Functions · Reorder / rotate / delete",convert:"Functions · Convert"},
+      organize:"Functions · Reorder / rotate / delete",convert:"Functions · Convert",
+      ocr:"Functions · Recognise text in a scan"},
     privacyNote:"All files are processed in your browser. Nothing is uploaded.",
     mergeLead:"Choose PDFs to merge, then drag rows to set the order.",
     dropPdfsB:"Drop PDFs here", dropOrClick:"or click to choose", mergeNamePh:"Output file name (merged.pdf)",
@@ -298,9 +469,43 @@ const I18N = {
   },
   vi:{
     brand:"Công cụ PDF", brandSub:"Tài liệu nội bộ — LDKS Plaza", navGroup:"Chức năng",
-    nav:{merge:"Gộp PDF",split:"Tách trang",organize:"Sắp xếp trang",convert:"Chuyển đổi định dạng"},
+    resetBtn:"Bắt đầu lại", resetTitle:"Xóa các file và kết quả trên trang này",
+    viewFiles:"Tệp", viewPages:"Trang", wsFilePages:(n)=>`${n} trang`,
+    tipRename:"Đổi tên tệp này", dlRename:"Đổi tên tệp trước khi lưu",
+    ocrLead:"Nhận dạng chữ trong PDF đã scan và thêm một lớp chữ ẩn, để file có thể tìm kiếm và bôi chọn được. Các trang gốc được giữ nguyên.",
+    ocrDpiLabel:"Độ phân giải khi scan", ocrLangLabel:"Ngôn ngữ của chữ",
+    ocrDpiHint:"300 dpi phù hợp với phần lớn bản scan văn phòng. Cao hơn sẽ chậm hơn mà ít khi chính xác hơn.",
+    ocrLangHint:"Bản này chỉ có tiếng Anh. Tiếng Việt cần thêm một file ngôn ngữ.",
+    ocrSkipLabel:"Bỏ qua những trang đã có chữ (nhanh hơn nhiều)",
+    ocrGo:"Tạo PDF tìm kiếm được", ocrStop:"Dừng",
+    ocrNote:"OCR chạy hoàn toàn trong trình duyệt — không có gì được tải lên. Cần mở trang qua một địa chỉ web (hoặc GitHub Pages), không phải bằng cách bấm đúp vào file, vì bộ nhận dạng chạy trong worker của trình duyệt.",
+    ocrLoadEngine:"Đang tải bộ nhận dạng (chỉ lần đầu)…",
+    ocrPageStat:(p)=>`Trang ${p.page}/${p.total} — ${p.what}`,
+    ocrReading:"đang đọc", ocrRecognising:"đang nhận dạng chữ", ocrHasText:"đã có chữ, bỏ qua",
+    ocrSaving:"đang tạo PDF tìm kiếm được…",
+    okOcr:"PDF tìm kiếm được đã xong",
+    okOcrMeta:(p)=>`Đã nhận dạng ${p.ocred} trang`+(p.skipped?` · ${p.skipped} trang đã có chữ`:'')+
+      (p.words?` · thêm ${p.words} từ`:'')+(p.empty?`\n${p.empty} trang không đọc được chữ nào`:''),
+    errOcr:"OCR không thành công", ocrStopped:"Đã dừng",
+    e_ocr_lib:"Không tải được bộ nhận dạng từ lib/tess/. Hãy kiểm tra thư mục lib đã được tải lên cùng trang chưa.",
+    e_ocr_worker:"Bộ nhận dạng không khởi động được. Hãy mở trang qua địa chỉ web (http/https hoặc GitHub Pages) thay vì mở file trực tiếp.",
+    e_ocr_cancel:"Đã dừng. Không có file nào được tạo.",
+    e_ocr_none:"Không nhận dạng được chữ trên bất kỳ trang nào. Bản scan có thể quá mờ, bị lệch, hoặc không phải là chữ.",
+    tipPreview:"Xem trước trang", tipRotate:"Xoay 90°", tipDup:"Nhân đôi trang", tipDel:"Xóa / khôi phục",
+    tipCut:"Tách tại đây", tipCutOn:"Bỏ điểm tách này", pvClose:"Đóng",
+    wsLoading:(p)=>`Đang tạo ảnh xem trước… ${p.done} / ${p.total}`,
+    wsPagesInfo:(p)=>p.keep===p.total?`${p.total} trang từ ${p.files} tệp`
+      :`Giữ lại ${p.keep} trong ${p.total} trang`,
+    wsCuts:(n)=>n===0?"Bấm vào biểu tượng cái kéo giữa hai trang để đặt điểm tách."
+      :`${n} điểm tách — tệp sẽ được cắt thành ${n+1} phần.`,
+    splitCut:"Tách tại điểm đã cắt (.zip)",
+    okSplitCut:"Đã tách tại điểm đã cắt", okSplitCutMeta:(p)=>`${p.parts} tệp trong .zip · ${p.pages} trang`,
+    e_no_cuts:"Chưa đặt điểm tách. Hãy bấm vào biểu tượng cái kéo giữa hai trang trước.",
+    e_ws_empty:"Không còn trang nào. Hãy khôi phục một trang hoặc thêm tệp.",
+    nav:{merge:"Gộp PDF",split:"Tách trang",organize:"Sắp xếp trang",convert:"Chuyển đổi định dạng",ocr:"OCR — PDF tìm kiếm được"},
     crumb:{merge:"Chức năng · Gộp tài liệu",split:"Chức năng · Tách trang",
-      organize:"Chức năng · Sắp xếp / xoay / xóa",convert:"Chức năng · Chuyển đổi"},
+      organize:"Chức năng · Sắp xếp / xoay / xóa",convert:"Chức năng · Chuyển đổi",
+      ocr:"Chức năng · Nhận dạng chữ trong bản scan"},
     privacyNote:"Mọi file được xử lý ngay trong trình duyệt. Không có gì được tải lên máy chủ.",
     mergeLead:"Chọn các PDF cần gộp, rồi kéo từng dòng để sắp thứ tự.",
     dropPdfsB:"Kéo thả PDF vào đây", dropOrClick:"hoặc bấm để chọn file", mergeNamePh:"Tên file kết quả (merged.pdf)",
@@ -351,9 +556,19 @@ function applyStatic(){
   const a=document.querySelector('.navitem.active').dataset.tab;
   $('#pageTitle').textContent=T('nav')[a]; $('#pageCrumb').textContent=T('crumb')[a];
   $('#privacyNote').textContent=T('privacyNote');
+  $('#resetBtn').title=T('resetTitle');
+  $('#pvClose').title=T('pvClose');
+  // An open result panel keeps its Download button and rename box, so retranslate those
+  // controls. The status line above them is left as generated — it reports what happened
+  // at the time, and showResult() is handed finished strings rather than message keys.
+  document.querySelectorAll('.result a.btn').forEach(a=>{ a.textContent=T('download'); });
+  document.querySelectorAll('.result .dlname').forEach(i=>{
+    i.title=T('dlRename'); i.setAttribute('aria-label',T('dlRename')); });
   // Organize tiles and status are built in JS, not from data-i18n, so re-render them
   // on a language switch (cached thumbnails are reused — no pdf.js work).
   if(typeof orgPages!=='undefined' && orgPages.length) renderChips();
+  // Same for the Merge/Split page workspaces (labels, tooltips, status text).
+  if(typeof WS!=='undefined'){ [WS.merge,WS.split].forEach(w=>{ if(w && w.files.length) wsRender(w); }); }
   $('#langEn').classList.toggle('on',lang==='en'); $('#langVi').classList.toggle('on',lang==='vi');
 }
 function setLang(l){ lang=l; try{localStorage.setItem('pdftk_lang',l);}catch(e){} applyStatic(); }
@@ -374,11 +589,32 @@ function wireDrop(dropSel, inputSel, onFiles){
   ['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('hover')}));
   drop.addEventListener('drop',ev=>onFiles([...ev.dataTransfer.files]));
 }
+// Keep a usable filename: drop only the characters Windows/macOS reject in a name
+// (spaces and hyphens are fine), and put the original extension back if the user
+// deletes it — a .pdf saved as "report" with no extension is a nuisance.
+function safeName(name, ext){
+  let n=String(name||'').replace(/[\\/:*?"<>|]/g,'').trim().replace(/^\.+/,'');
+  if(!n) n='download';
+  if(ext && n.slice(-ext.length).toLowerCase()!==ext.toLowerCase()) n+=ext;
+  return n;
+}
 function showResult(sel, ok, title, meta, dl, dlName){
   const el=$(sel); el.className='result show'+(ok?'':' error');
   el.innerHTML=`<h3>${title}</h3><div class="meta">${meta||''}</div>`;
-  if(dl){ const a=document.createElement('a'); a.className='btn'; a.textContent=T('download');
-    a.href=URL.createObjectURL(dl); a.download=dlName; const row=document.createElement('div'); row.className='row'; row.appendChild(a); el.appendChild(row); }
+  if(!dl) return;
+  const ext=(String(dlName).match(/\.[a-z0-9]+$/i)||[''])[0];
+  const row=document.createElement('div'); row.className='row';
+  const inp=document.createElement('input');
+  inp.type='text'; inp.className='dlname'; inp.value=dlName;
+  inp.title=T('dlRename'); inp.setAttribute('aria-label',T('dlRename'));
+  const a=document.createElement('a');
+  a.className='btn'; a.textContent=T('download');
+  a.href=URL.createObjectURL(dl); a.download=dlName;
+  // the link's download attribute is the only thing that names the saved file
+  inp.oninput=()=>{ a.download=safeName(inp.value,ext); };
+  inp.onblur=()=>{ inp.value=safeName(inp.value,ext); a.download=inp.value; };
+  inp.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); inp.blur(); a.click(); } };
+  row.appendChild(inp); row.appendChild(a); el.appendChild(row);
 }
 function busy(btn,on){ btn.disabled=on; btn.dataset._t=btn.dataset._t||btn.innerHTML; btn.innerHTML=on?`<span class="spin"></span>`:btn.dataset._t; }
 const bytesOf = f => f.arrayBuffer();
@@ -386,65 +622,379 @@ function parseRanges(spec,total){ const out=[]; for(const c of (spec||'').replac
   if(c.includes('-')){let[a,b]=c.split('-').map(Number); if(a>b)[a,b]=[b,a]; for(let i=a;i<=b;i++)out.push(i-1);} else out.push(Number(c)-1);}
   const bad=out.filter(i=>isNaN(i)||i<0||i>=total).map(i=>i+1); if(bad.length) throw fail('e_range',{bad:bad.join(','),total}); return out; }
 
-// ===== MERGE =====
-let mergeFiles=[];
-wireDrop('#mergeDrop','#mergeInput', fs=>{ mergeFiles.push(...fs.filter(f=>f.name.toLowerCase().endsWith('.pdf'))); renderMerge(); });
-function renderMerge(){
-  const ul=$('#mergeList'); ul.innerHTML='';
-  mergeFiles.forEach((f,i)=>{
-    const li=document.createElement('li'); li.draggable=true; li.dataset.i=i;
-    li.innerHTML=`<span class="grab">⋮⋮</span><span class="idx">${i+1}</span><span class="name">${f.name}</span><button class="x">✕</button>`;
-    li.querySelector('.x').onclick=()=>{mergeFiles.splice(i,1);renderMerge()};
-    li.addEventListener('dragstart',()=>li.classList.add('dragging'));
-    li.addEventListener('dragend',()=>li.classList.remove('dragging'));
-    li.addEventListener('dragover',e=>{e.preventDefault();const d=ul.querySelector('.dragging');if(d===li)return;
-      const r=li.getBoundingClientRect();ul.insertBefore(d,(e.clientY>r.top+r.height/2)?li.nextSibling:li);});
+// ===== PAGES WORKSPACE (shared by Merge and Split) =========================
+// One workspace per tab. It owns the loaded files and a flat page list built from
+// them, so the Files view and the Pages view are two windows onto the same state.
+//
+// A page entry is {f, p, rot, del, cut, thumb}:
+//   f/p   index of the source file and the 0-based page inside it
+//   cut   true = a split point sits AFTER this page (Split tab only)
+//   thumb cached PNG data URL. Rendered ONCE, sequentially; rotation is a CSS
+//         transform, never a re-render (same reasoning as the Organize tab).
+const SVG = {
+  files:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 12h6M9 16h6"/></svg>',
+  pages:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  zoom:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.2-4.2M11 8v6M8 11h6"/></svg>',
+  rotate:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>',
+  dup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M15 5H5a2 2 0 0 0-2 2v10" stroke-linecap="round"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
+  scissors:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M20 4L8.6 15.4M8.6 8.6L20 20"/></svg>'
+};
+const WS_THUMB_PX = 300;   // rendered bitmap width for a page card
+
+function makeWS(tab, opts){
+  return { tab, cuts:!!opts.cuts, multi:!!opts.multi, files:[], pages:[], names:[],
+           docs:[], bytes:[], view:'files', token:0, built:0,
+           el:{ sw:$('#'+tab+'ViewSw'), list:$('#'+tab+'List'),
+                grid:$('#'+tab+'Pages'), status:$('#'+tab+'Status') } };
+}
+const WS = { merge:null, split:null };
+
+// ---- loading -------------------------------------------------------------
+async function wsAddFiles(ws, fs){
+  const pdfs = fs.filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  if(!pdfs.length) return;
+  if(ws.multi) ws.files.push(...pdfs); else { wsClear(ws); ws.files=[pdfs[0]]; }
+  const token=++ws.token;
+  wsRender(ws);
+  try{
+    // rebuild the page list from every loaded file
+    ws.bytes=[]; ws.pages=[]; ws.built=0;
+    for(let fi=0; fi<ws.files.length; fi++){
+      const buf=await bytesOf(ws.files[fi]);
+      if(token!==ws.token) return;
+      ws.bytes[fi]=buf;
+      const doc=await PDFDocument.load(buf);
+      for(let p=0;p<doc.getPageCount();p++) ws.pages.push({f:fi,p,rot:0,del:false,cut:false,thumb:null});
+    }
+    wsRender(ws);
+    await wsBuildThumbs(ws, token);
+  }catch(e){
+    if(token!==ws.token) return;
+    showResult('#'+ws.tab+'Result', false, T('errReadPdf'), msgOf(e&&e.code?e:fail('e_read')));
+  }
+}
+// pdf.js gets a COPY of each buffer: getDocument() transfers it to the worker and
+// detaches the original, which pdf-lib still needs at export time.
+async function wsDoc(ws, fi){
+  if(!ws.docs[fi]) ws.docs[fi]=await pdfjsLib.getDocument({data:ws.bytes[fi].slice(0)}).promise;
+  return ws.docs[fi];
+}
+async function wsBuildThumbs(ws, token){
+  for(const pg of ws.pages){
+    if(token!==ws.token) return;
+    try{
+      const doc=await wsDoc(ws,pg.f);
+      const page=await doc.getPage(pg.p+1);
+      const base=page.getViewport({scale:1});
+      const vp=page.getViewport({scale:WS_THUMB_PX/base.width, rotation:base.rotation});
+      const cv=document.createElement('canvas');
+      cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+      await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+      if(token!==ws.token) return;
+      pg.thumb=cv.toDataURL('image/png');
+    }catch(_){ pg.thumb='fail'; }
+    ws.built++; wsPaint(ws,pg); wsStatus(ws);
+    await new Promise(r=>setTimeout(r,0));
+  }
+}
+function wsClear(ws){
+  ws.token++;
+  ws.docs.forEach(d=>{ if(d) Promise.resolve(d.destroy()).catch(()=>{}); });
+  ws.docs=[]; ws.bytes=[]; ws.files=[]; ws.names=[]; ws.pages=[]; ws.built=0; ws.view='files';
+  ws.el.list.innerHTML=''; ws.el.grid.innerHTML=''; ws.el.status.textContent='';
+  ws.el.sw.style.display='none'; ws.el.grid.style.display='none'; ws.el.list.style.display='';
+}
+
+// ---- Files / Pages switch ------------------------------------------------
+function wsRenderSwitch(ws){
+  const sw=ws.el.sw;
+  sw.style.display = ws.files.length ? 'inline-flex' : 'none';
+  sw.innerHTML =
+    '<button data-view="files" class="'+(ws.view==='files'?'on':'')+'">'+SVG.files+'<span>'+T('viewFiles')+'</span></button>'+
+    '<button data-view="pages" class="'+(ws.view==='pages'?'on':'')+'">'+SVG.pages+'<span>'+T('viewPages')+'</span></button>';
+  sw.querySelectorAll('button').forEach(b=>b.onclick=()=>{ ws.view=b.dataset.view; wsRender(ws); });
+}
+function wsRender(ws){
+  const pages = ws.view==='pages';
+  ws.el.list.style.display = pages?'none':'';
+  ws.el.grid.style.display = pages?'flex':'none';
+  wsRenderSwitch(ws);
+  if(pages) wsRenderPages(ws); else wsRenderFiles(ws);
+  wsStatus(ws);
+  wsSyncButtons(ws);
+}
+function wsStatus(ws){
+  const el=ws.el.status;
+  if(!ws.pages.length){ el.textContent=''; return; }
+  if(ws.built<ws.pages.length){ el.textContent=T('wsLoading')({done:ws.built,total:ws.pages.length}); return; }
+  const keep=ws.pages.filter(p=>!p.del).length;
+  let txt=T('wsPagesInfo')({keep,total:ws.pages.length,files:ws.files.length});
+  if(ws.cuts && ws.view==='pages') txt += ' · ' + T('wsCuts')(wsCutCount(ws));
+  el.textContent=txt;
+}
+// A cut on the very last page would make an empty trailing segment, so it never counts.
+function wsCutCount(ws){ const k=wsKept(ws); return k.filter((p,i)=>p.cut && i<k.length-1).length; }
+
+// ---- Files view ----------------------------------------------------------
+// Display name for a loaded file. A File object's .name is read-only, so a rename is
+// held in ws.names[] and everything user-facing (tags, preview title, output stems)
+// reads through here. The bytes are untouched.
+function wsName(ws, fi){
+  return (ws.names && ws.names[fi]) || (ws.files[fi] ? ws.files[fi].name : '');
+}
+function wsStem(ws, fi){ return wsName(ws,fi).replace(/\.pdf$/i,'') || 'file'; }
+
+function wsRenderFiles(ws){
+  const ul=ws.el.list; ul.innerHTML='';
+  ws.files.forEach((f,i)=>{
+    const n=ws.pages.filter(p=>p.f===i).length;
+    const li=document.createElement('li'); li.draggable=ws.multi; li.dataset.i=i;
+    li.innerHTML=(ws.multi?'<span class="grab">&#8942;&#8942;</span>':'')+
+      '<span class="idx">'+(i+1)+'</span><span class="name"></span>'+
+      '<button class="ren" title="">&#9998;</button>'+
+      '<span class="pno">'+(n?T('wsFilePages')(n):'')+'</span>'+
+      '<button class="x">&#10005;</button>';
+    li.querySelector('.name').textContent=wsName(ws,i);   // filenames are untrusted text
+    li.querySelector('.ren').title=T('tipRename');
+    li.querySelector('.ren').onclick=e=>{ e.stopPropagation(); wsBeginRename(ws,li,i); };
+    li.querySelector('.x').onclick=()=>wsRemoveFile(ws,i);
+    if(ws.multi){
+      li.addEventListener('dragstart',()=>li.classList.add('dragging'));
+      li.addEventListener('dragend',()=>li.classList.remove('dragging'));
+      li.addEventListener('dragover',e=>{e.preventDefault();const d=ul.querySelector('.dragging');if(!d||d===li)return;
+        const r=li.getBoundingClientRect();ul.insertBefore(d,(e.clientY>r.top+r.height/2)?li.nextSibling:li);});
+    }
     ul.appendChild(li);
   });
-  ul.ondragend=()=>{ mergeFiles=[...ul.children].map(li=>mergeFiles[+li.dataset.i]); renderMerge(); };
-  $('#mergeGo').disabled = mergeFiles.length<2;
+  ul.ondragend = ws.multi ? ()=>wsReorderFiles(ws,[...ul.children].map(li=>+li.dataset.i)) : null;
 }
-$('#mergeGo').onclick=async()=>{
-  busy($('#mergeGo'),true);
-  try{
-    const out=await PDFDocument.create(); let pages=0; const merged=[], skipped=[];
-    for(const f of mergeFiles){
-      try{ const s=await PDFDocument.load(await bytesOf(f)); const pg=await out.copyPages(s,s.getPageIndices());
-        pg.forEach(p=>out.addPage(p)); pages+=s.getPageCount(); merged.push(f.name); }
-      catch(_){ skipped.push(f.name); }
+// Swap the name span for a text box. Enter/blur commits, Escape abandons. Dragging is
+// suspended while editing, otherwise the row moves out from under the caret.
+function wsBeginRename(ws, li, i){
+  if(li.querySelector('input.rename')) return;
+  const span=li.querySelector('.name');
+  const inp=document.createElement('input');
+  inp.type='text'; inp.className='rename'; inp.value=wsName(ws,i);
+  const wasDraggable=li.draggable; li.draggable=false;
+  let done=false;
+  const finish=commit=>{
+    if(done) return; done=true;
+    li.draggable=wasDraggable;
+    if(commit){
+      ws.names=ws.names||[];
+      ws.names[i]=safeName(inp.value,'.pdf');
     }
-    if(pages===0) throw fail('e_no_pages');
+    wsRender(ws);
+  };
+  inp.onkeydown=e=>{
+    if(e.key==='Enter'){ e.preventDefault(); finish(true); }
+    if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); finish(false); }
+  };
+  inp.onblur=()=>finish(true);
+  span.replaceWith(inp);
+  inp.focus(); inp.select();
+}
+// Reordering files rewrites every page's file index, so page-level edits survive.
+function wsReorderFiles(ws, order){
+  const files=order.map(i=>ws.files[i]), bytes=order.map(i=>ws.bytes[i]),
+        docs=order.map(i=>ws.docs[i]), names=order.map(i=>ws.names[i]);
+  const pages=[];
+  order.forEach((oldIdx,newIdx)=>{
+    ws.pages.filter(p=>p.f===oldIdx).forEach(p=>pages.push(Object.assign({},p,{f:newIdx})));
+  });
+  ws.files=files; ws.bytes=bytes; ws.docs=docs; ws.names=names; ws.pages=pages;
+  wsRender(ws);
+}
+function wsRemoveFile(ws, i){
+  ws.files.splice(i,1); ws.bytes.splice(i,1); ws.names.splice(i,1);
+  const d=ws.docs.splice(i,1)[0]; if(d) Promise.resolve(d.destroy()).catch(()=>{});
+  ws.pages = ws.pages.filter(p=>p.f!==i).map(p=>p.f>i?Object.assign({},p,{f:p.f-1}):p);
+  ws.built = ws.pages.filter(p=>p.thumb).length;
+  if(!ws.files.length){ wsClear(ws); wsRender(ws); return; }
+  wsRender(ws);
+}
+
+// ---- Pages view ----------------------------------------------------------
+function wsRenderPages(ws){
+  const box=ws.el.grid; box.innerHTML='';
+  ws.pages.forEach((pg,i)=>{
+    box.appendChild(wsCard(ws,pg,i));
+    // a scissors gap sits BETWEEN two pages, so never after the last one
+    if(ws.cuts && i<ws.pages.length-1) box.appendChild(wsGap(ws,pg));
+  });
+  ws.pages.forEach(pg=>wsPaint(ws,pg));
+}
+function wsCard(ws, pg, i){
+  const c=document.createElement('div');
+  c.className='pcard'+(pg.del?' del':''); c.draggable=!pg.del; c.dataset.i=i;
+  c.innerHTML=
+    '<div class="bar">'+
+      '<button data-a="zoom" title="'+T('tipPreview')+'">'+SVG.zoom+'</button>'+
+      '<button data-a="rot" title="'+T('tipRotate')+'">'+SVG.rotate+'</button>'+
+      '<button data-a="dup" title="'+T('tipDup')+'">'+SVG.dup+'</button>'+
+      '<button data-a="del" class="danger" title="'+T('tipDel')+'">'+SVG.trash+'</button>'+
+    '</div>'+
+    (pg.rot?'<span class="rotbadge">'+pg.rot+'&deg;</span>':'')+
+    '<div class="sheet"><span class="ph"></span></div>'+
+    '<span class="fname"></span>'+
+    '<span class="pno">'+(i+1)+'</span>';
+  c.querySelector('.fname').textContent = wsName(ws,pg.f);
+  c.querySelectorAll('.bar button').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const a=b.dataset.a;
+    if(a==='rot'){ pg.rot=(pg.rot+90)%360; wsRenderPages(ws); }
+    if(a==='del'){ pg.del=!pg.del; wsRenderPages(ws); wsStatus(ws); wsSyncButtons(ws); }
+    if(a==='dup'){ const at=ws.pages.indexOf(pg);
+      ws.pages.splice(at+1,0,Object.assign({},pg,{cut:false}));
+      ws.built++; wsRenderPages(ws); wsStatus(ws); wsSyncButtons(ws); }
+    if(a==='zoom') wsPreview(ws,pg);
+  });
+  c.addEventListener('dragstart',()=>c.classList.add('dragging'));
+  c.addEventListener('dragend',()=>{
+    c.classList.remove('dragging');
+    // read the DOM order back, ignoring the gap elements between cards
+    ws.pages=[...ws.el.grid.querySelectorAll('.pcard')].map(el=>ws.pages[+el.dataset.i]);
+    wsRenderPages(ws); wsStatus(ws);
+  });
+  c.addEventListener('dragover',e=>{
+    e.preventDefault(); const d=ws.el.grid.querySelector('.dragging'); if(!d||d===c) return;
+    const r=c.getBoundingClientRect();
+    ws.el.grid.insertBefore(d,(e.clientX>r.left+r.width/2)?c.nextSibling:c);
+  });
+  return c;
+}
+function wsGap(ws, pg){
+  const g=document.createElement('button');
+  g.className='cutgap'+(pg.cut?' on':''); g.type='button';
+  g.title=pg.cut?T('tipCutOn'):T('tipCut');
+  g.innerHTML='<span class="sc">'+SVG.scissors+'</span>';
+  g.onclick=()=>{ pg.cut=!pg.cut; wsRenderPages(ws); wsStatus(ws); wsSyncButtons(ws); };
+  return g;
+}
+function wsPaint(ws, pg){
+  if(ws.view!=='pages') return;
+  const i=ws.pages.indexOf(pg); if(i<0) return;
+  const box=ws.el.grid.querySelector('.pcard[data-i="'+i+'"] .sheet'); if(!box) return;
+  if(pg.thumb==='fail'){
+    box.innerHTML='<span style="font-size:11.5px;color:var(--muted);text-align:center">'+T('orgThumbFail')+'</span>';
+  }else if(pg.thumb){
+    const img=document.createElement('img');
+    img.src=pg.thumb; img.draggable=false; img.alt=T('page')(i+1);
+    img.style.transform='rotate('+pg.rot+'deg)';
+    box.innerHTML=''; box.appendChild(img);
+  }
+}
+
+// ---- page preview modal --------------------------------------------------
+async function wsPreview(ws, pg){
+  const m=$('#pvModal');
+  $('#pvTitle').textContent=wsName(ws,pg.f)+' — '+T('page')(pg.p+1);
+  m.classList.add('show');
+  try{
+    const doc=await wsDoc(ws,pg.f); const page=await doc.getPage(pg.p+1);
+    const base=page.getViewport({scale:1});
+    const vp=page.getViewport({scale:Math.min(1400/base.width,2.2), rotation:(base.rotation+pg.rot)%360});
+    const cv=$('#pvCanvas'); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+    await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+  }catch(_){ /* leave the canvas blank rather than tearing the modal down */ }
+}
+function wsPreviewClose(){
+  $('#pvModal').classList.remove('show');
+  const cv=$('#pvCanvas'); cv.getContext('2d').clearRect(0,0,cv.width,cv.height);
+}
+$('#pvClose').onclick=wsPreviewClose;
+$('#pvModal').onclick=e=>{ if(e.target===$('#pvModal')) wsPreviewClose(); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') wsPreviewClose(); });
+
+// ---- export helpers ------------------------------------------------------
+// Copy a run of workspace pages into a fresh document, honouring rotation.
+async function wsBuild(ws, pages){
+  const out=await PDFDocument.create();
+  const srcCache=new Map();
+  for(const pg of pages){
+    if(!srcCache.has(pg.f)) srcCache.set(pg.f, await PDFDocument.load(ws.bytes[pg.f]));
+    const [copy]=await out.copyPages(srcCache.get(pg.f), [pg.p]);
+    if(pg.rot) copy.setRotation(degrees((copy.getRotation().angle+pg.rot)%360));
+    out.addPage(copy);
+  }
+  return out;
+}
+function wsKept(ws){ return ws.pages.filter(p=>!p.del); }
+function wsSyncButtons(ws){
+  const has=wsKept(ws).length>0;
+  if(ws.tab==='merge'){ $('#mergeGo').disabled=!has; return; }
+  $('#splitGo').disabled=!has; $('#splitEach').disabled=!has;
+  $('#splitCut').disabled = !has || wsCutCount(ws)===0;
+}
+
+// ===== MERGE =====
+WS.merge = makeWS('merge', {multi:true, cuts:false});
+wireDrop('#mergeDrop','#mergeInput', fs=>wsAddFiles(WS.merge, fs));
+$('#mergeGo').onclick=async()=>{
+  const ws=WS.merge; busy($('#mergeGo'),true);
+  try{
+    const keep=wsKept(ws);
+    if(!keep.length) throw fail('e_ws_empty');
+    const out=await wsBuild(ws, keep);
     const blob=new Blob([await out.save()],{type:'application/pdf'});
-    showResult('#mergeResult',true,T('okMerge'),T('okMergeMeta')({pages,merged:merged.length,skipped}),blob,$('#mergeName').value||'merged.pdf');
+    showResult('#mergeResult',true,T('okMerge'),
+      T('okMergeMeta')({pages:keep.length,merged:ws.files.length,skipped:[]}),
+      blob,$('#mergeName').value||'merged.pdf');
   }catch(e){ showResult('#mergeResult',false,T('errMerge'),msgOf(e)); }
   finally{ busy($('#mergeGo'),false); }
 };
 
 // ===== SPLIT =====
-let splitFile=null;
-wireDrop('#splitDrop','#splitInput', fs=>{ splitFile=fs[0]; $('#splitInfo').textContent=T('selected')(splitFile.name);
-  $('#splitGo').disabled=false; $('#splitEach').disabled=false; });
+WS.split = makeWS('split', {multi:false, cuts:true});
+wireDrop('#splitDrop','#splitInput', async fs=>{
+  await wsAddFiles(WS.split, fs);
+  if(WS.split.files.length) $('#splitInfo').textContent=T('selected')(WS.split.files[0].name);
+});
 $('#splitGo').onclick=async()=>{
-  busy($('#splitGo'),true);
-  try{ const s=await PDFDocument.load(await bytesOf(splitFile)); const idx=parseRanges($('#splitRanges').value,s.getPageCount());
-    const out=await PDFDocument.create(); (await out.copyPages(s,idx)).forEach(p=>out.addPage(p));
+  const ws=WS.split; busy($('#splitGo'),true);
+  try{ const keep=wsKept(ws);
+    const idx=parseRanges($('#splitRanges').value, keep.length);
+    const out=await wsBuild(ws, idx.map(i=>keep[i]));
     const blob=new Blob([await out.save()],{type:'application/pdf'});
-    showResult('#splitResult',true,T('okSplit'),T('okSplitMeta')(idx.length),blob,'split.pdf');
+    showResult('#splitResult',true,T('okSplit'),T('okSplitMeta')(idx.length),blob,wsStem(ws,0)+'_extract.pdf');
   }catch(e){ showResult('#splitResult',false,T('errSplit'),msgOf(e)); }
   finally{ busy($('#splitGo'),false); }
 };
-$('#splitEach').onclick=async()=>{
-  busy($('#splitEach'),true);
-  try{ const s=await PDFDocument.load(await bytesOf(splitFile)); const n=s.getPageCount(); const zip=new JSZip();
-    const stem=(splitFile.name||'file').replace(/\.pdf$/i,'');
-    for(let i=0;i<n;i++){ const d=await PDFDocument.create(); const [p]=await d.copyPages(s,[i]); d.addPage(p);
-      zip.file(`${stem}_page_${String(i+1).padStart(3,'0')}.pdf`, await d.save()); }
+// Quick split: cut the page run wherever a scissors is armed.
+$('#splitCut').onclick=async()=>{
+  const ws=WS.split; busy($('#splitCut'),true);
+  try{
+    const keep=wsKept(ws);
+    if(!keep.length) throw fail('e_ws_empty');
+    if(wsCutCount(ws)===0) throw fail('e_no_cuts');
+    const segs=[[]];
+    keep.forEach((pg,i)=>{ segs[segs.length-1].push(pg);
+      if(pg.cut && i<keep.length-1) segs.push([]); });
+    const zip=new JSZip();
+    const stem=wsStem(ws,0);
+    for(let s=0;s<segs.length;s++){
+      const out=await wsBuild(ws, segs[s]);
+      zip.file(stem+'_part_'+String(s+1).padStart(2,'0')+'.pdf', await out.save());
+    }
     const blob=await zip.generateAsync({type:'blob'});
-    showResult('#splitResult',true,T('okSplitEach'),T('okSplitEachMeta')(n),blob,`${stem}_pages.zip`);
+    showResult('#splitResult',true,T('okSplitCut'),
+      T('okSplitCutMeta')({parts:segs.length,pages:keep.length}),blob,stem+'_parts.zip');
+  }catch(e){ showResult('#splitResult',false,T('errSplit'),msgOf(e)); }
+  finally{ busy($('#splitCut'),false); }
+};
+$('#splitEach').onclick=async()=>{
+  const ws=WS.split; busy($('#splitEach'),true);
+  try{ const keep=wsKept(ws); const zip=new JSZip();
+    const stem=wsStem(ws,0);
+    for(let i=0;i<keep.length;i++){
+      const out=await wsBuild(ws,[keep[i]]);
+      zip.file(stem+'_page_'+String(i+1).padStart(3,'0')+'.pdf', await out.save()); }
+    const blob=await zip.generateAsync({type:'blob'});
+    showResult('#splitResult',true,T('okSplitEach'),T('okSplitEachMeta')(keep.length),blob,stem+'_pages.zip');
   }catch(e){ showResult('#splitResult',false,T('errSplit'),msgOf(e)); }
   finally{ busy($('#splitEach'),false); }
 };
-
 // ===== ORGANIZE =====
 // orgBytes stays untouched for pdf-lib on export. pdf.js is given a COPY, because
 // getDocument() transfers the ArrayBuffer to its worker and detaches the original.
@@ -598,6 +1148,204 @@ $('#fromGo').onclick=async()=>{
   }catch(e){ showResult('#fromResult',false,T('errConv'),msgOf(fail('e_read'))); }
   finally{ busy($('#fromGo'),false); }
 };
+
+// ===== OCR -> SEARCHABLE PDF ===============================================
+// Tesseract (WASM) reads each page image and returns word boxes; we copy the
+// ORIGINAL page unchanged and lay invisible text over it. The scan is never
+// re-encoded, so quality and file size are untouched and the page just becomes
+// searchable. Everything is local — lib/tess/ holds the engine and language data.
+//
+// Requires an http(s) origin: the engine runs in a Web Worker, which browsers
+// refuse to start from a file:// page.
+let ocrFile=null, ocrBytes=null, ocrWorker=null, ocrLang=null, ocrAbort=false;
+const OCR_MIN_CONF = 40;   // drop words Tesseract is very unsure about
+const OCR_TEXT_MIN = 12;   // chars on a page before we call it "already has text"
+
+wireDrop('#ocrDrop','#ocrInput', async fs=>{
+  const f=fs&&fs[0]; if(!f) return;
+  ocrFile=f; ocrBytes=null;
+  $('#ocrInfo').textContent=T('selected')(f.name);
+  $('#ocrResult').className='result'; $('#ocrResult').innerHTML='';
+  $('#ocrStatus').textContent=''; ocrProgress(null);
+  $('#ocrGo').disabled=false;
+});
+
+function ocrProgress(frac){
+  const box=$('#ocrProg'), bar=$('#ocrBar');
+  if(frac===null||frac===undefined){ box.classList.remove('on'); bar.style.width='0'; return; }
+  box.classList.add('on'); bar.style.width=Math.max(0,Math.min(1,frac))*100+'%';
+}
+// tesseract.min.js is only pulled in the first time OCR is actually used, so the
+// other tabs stay light. It is a local file, not a network call.
+function ocrLoadLib(){
+  if(window.Tesseract) return Promise.resolve();
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='lib/tess/tesseract.min.js';
+    s.onload=()=>window.Tesseract?res():rej(fail('e_ocr_lib'));
+    s.onerror=()=>rej(fail('e_ocr_lib'));
+    document.head.appendChild(s);
+  });
+}
+async function ocrGetWorker(lang){
+  if(ocrWorker && ocrLang===lang) return ocrWorker;
+  if(ocrWorker){ try{ await ocrWorker.terminate(); }catch(_){} ocrWorker=null; }
+  try{
+    // oem 1 = LSTM only, which is why only the *-lstm cores are vendored
+    ocrWorker=await Tesseract.createWorker(lang, 1, {
+      workerPath:'lib/tess/worker.min.js',
+      corePath:'lib/tess',
+      langPath:'lib/tess',
+      logger:m=>{ if(m&&m.status==='loading tesseract core') $('#ocrStatus').textContent=T('ocrLoadEngine'); }
+    });
+  }catch(e){ throw fail('e_ocr_worker'); }
+  ocrLang=lang;
+  return ocrWorker;
+}
+// Strip anything Helvetica's WinAnsi encoding can't represent. Without this a single
+// stray glyph from the OCR makes drawText throw and loses the whole page.
+function ocrSafeText(t){
+  return String(t||'')
+    .replace(/[\u0000-\u001F\u007F]/g,'')      // control characters
+    .replace(/[^\u0020-\u00FF]/g,'')           // anything outside Latin-1
+    .trim();
+}
+// Map Tesseract's word boxes (pixels, y down, page shown upright) into the PDF's
+// unrotated user space (points, y up), compensating for the page's own /Rotate.
+// A viewer applies /Rotate to image and text alike, so both must live in the same
+// unrotated space or the text layer drifts off the words.
+function ocrDrawLayer(P, words, s, font){
+  const r=((P.getRotation().angle%360)+360)%360;
+  const W=P.getWidth(), H=P.getHeight();
+  const Hu=(r%180===0)?H:W;                   // height of the upright view, in points
+  let n=0;
+  for(const w of (words||[])){
+    if((w.confidence||0)<OCR_MIN_CONF) continue;
+    const t=ocrSafeText(w.text); if(!t) continue;
+    const b=w.bbox; if(!b) continue;
+    const x0=b.x0/s, x1=b.x1/s, y0=b.y0/s, y1=b.y1/s;   // upright points, y from top
+    const bw=x1-x0; let fs=Math.max(1,y1-y0);
+    const tw=font.widthOfTextAtSize(t,fs);              // squeeze to the word's box
+    if(tw>0 && bw>0 && tw>bw*1.05) fs=Math.max(1,fs*(bw/tw));
+    const bx=x0, by=Hu-y1;                              // upright baseline, y up
+    let px,py,rot;
+    if(r===90){ px=W-by; py=bx;   rot=90; }
+    else if(r===180){ px=W-bx; py=H-by; rot=180; }
+    else if(r===270){ px=by;   py=H-bx; rot=270; }
+    else { px=bx; py=by; rot=0; }
+    try{ P.drawText(t,{x:px,y:py,size:fs,font,opacity:0,rotate:degrees(rot)}); n++; }
+    catch(_){ /* one unencodable word must not sink the page */ }
+  }
+  return n;
+}
+
+$('#ocrStop').onclick=()=>{ ocrAbort=true; $('#ocrStatus').textContent=T('working'); };
+
+$('#ocrGo').onclick=async()=>{
+  if(!ocrFile) return;
+  ocrAbort=false;
+  busy($('#ocrGo'),true); $('#ocrStop').style.display='inline-flex';
+  $('#ocrResult').className='result'; $('#ocrResult').innerHTML='';
+  const dpi=+$('#ocrDpi').value || 300, s=dpi/72;
+  const lang=$('#ocrLang').value || 'eng';
+  const skipTexty=$('#ocrSkip').checked;
+  let doc=null;
+  try{
+    $('#ocrStatus').textContent=T('ocrLoadEngine'); ocrProgress(0);
+    await ocrLoadLib();
+    const worker=await ocrGetWorker(lang);
+
+    if(!ocrBytes) ocrBytes=await bytesOf(ocrFile);
+    const src=await PDFDocument.load(ocrBytes);
+    const out=await PDFDocument.create();
+    const font=await out.embedFont(StandardFonts.Helvetica);
+    doc=await pdfjsLib.getDocument({data:ocrBytes.slice(0)}).promise;
+
+    const copied=await out.copyPages(src, src.getPageIndices());
+    const total=copied.length;
+    let ocred=0, skipped=0, words=0, empty=0;
+
+    for(let i=0;i<total;i++){
+      if(ocrAbort) throw fail('e_ocr_cancel');
+      const P=copied[i]; out.addPage(P);
+      const page=await doc.getPage(i+1);
+
+      if(skipTexty){
+        $('#ocrStatus').textContent=T('ocrPageStat')({page:i+1,total,what:T('ocrReading')});
+        const tc=await page.getTextContent();
+        const chars=tc.items.reduce((a,it)=>a+String(it.str||'').trim().length,0);
+        if(chars>=OCR_TEXT_MIN){
+          skipped++; ocrProgress((i+1)/total);
+          $('#ocrStatus').textContent=T('ocrPageStat')({page:i+1,total,what:T('ocrHasText')});
+          continue;
+        }
+      }
+      $('#ocrStatus').textContent=T('ocrPageStat')({page:i+1,total,what:T('ocrRecognising')});
+      // render upright so Tesseract reads it the right way up
+      const rot=((page.rotate||0)%360+360)%360;
+      const vp=page.getViewport({scale:s, rotation:rot});
+      const cv=document.createElement('canvas');
+      cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+      await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+      if(ocrAbort) throw fail('e_ocr_cancel');
+
+      const {data}=await worker.recognize(cv);
+      const added=ocrDrawLayer(P, data&&data.words, s, font);
+      words+=added; if(added) ocred++; else empty++;
+      ocrProgress((i+1)/total);
+      await new Promise(r=>setTimeout(r,0));
+    }
+
+    if(ocred===0 && skipped===0) throw fail('e_ocr_none');
+    $('#ocrStatus').textContent=T('ocrSaving');
+    const blob=new Blob([await out.save()],{type:'application/pdf'});
+    const stem=(ocrFile.name||'file').replace(/\.pdf$/i,'');
+    showResult('#ocrResult',true,T('okOcr'),T('okOcrMeta')({ocred,skipped,words,empty}),
+      blob, stem+'_searchable.pdf');
+    $('#ocrStatus').textContent='';
+  }catch(e){
+    // a deliberate Stop is not a failure — don't label it one
+    const cancelled = e && e.code==='e_ocr_cancel';
+    showResult('#ocrResult',false,cancelled?T('ocrStopped'):T('errOcr'),msgOf(e));
+    $('#ocrStatus').textContent='';
+  }finally{
+    if(doc){ Promise.resolve(doc.destroy()).catch(()=>{}); }
+    ocrProgress(null);
+    $('#ocrStop').style.display='none';
+    busy($('#ocrGo'),false);
+  }
+};
+
+// ===== START OVER =====
+// Clears the state of whichever function is on screen. Note every file input is
+// blanked too: without that, picking the SAME file again fires no change event and
+// the page would look dead.
+function resetTab(tab){
+  const sec=$('#'+tab);
+  sec.querySelectorAll('input[type=file]').forEach(i=>i.value='');
+  sec.querySelectorAll('input[type=text]').forEach(i=>i.value='');
+  sec.querySelectorAll('.result').forEach(r=>{ r.className='result'; r.innerHTML=''; });
+  if(tab==='merge'){ wsClear(WS.merge); wsRender(WS.merge); }
+  if(tab==='split'){ wsClear(WS.split); wsRender(WS.split); $('#splitInfo').textContent='';
+    $('#splitGo').disabled=true; $('#splitEach').disabled=true; $('#splitCut').disabled=true; }
+  if(tab==='organize'){
+    orgToken++;                                   // stops any thumbnail build in flight
+    if(orgDoc){ Promise.resolve(orgDoc.destroy()).catch(()=>{}); orgDoc=null; }
+    orgBytes=null; orgPages=[]; orgBuilt=0;
+    $('#orgChips').innerHTML=''; $('#orgActions').style.display='none'; $('#orgStatus').textContent='';
+  }
+  if(tab==='convert'){ toPdfFiles=[]; $('#toPdfList').innerHTML=''; $('#toPdfGo').disabled=true;
+    fromFile=null; $('#fromInfo').textContent=''; $('#fromGo').disabled=true; }
+  if(tab==='ocr'){
+    ocrAbort=true;                                // stops a run that is still going
+    ocrFile=null; ocrBytes=null;
+    $('#ocrInfo').textContent=''; $('#ocrStatus').textContent='';
+    $('#ocrGo').disabled=true; $('#ocrStop').style.display='none'; ocrProgress(null);
+  }
+  window.scrollTo(0,0);
+}
+$('#resetBtn').onclick=()=>resetTab(document.querySelector('.navitem.active').dataset.tab);
+
 
 applyStatic();
 </script>
