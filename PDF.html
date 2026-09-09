@@ -145,31 +145,6 @@
   .gcard .bar svg{width:16px;height:16px}
   .gcard input.rename{width:100%;padding:5px 8px;border:1px solid var(--accent);
     border-radius:5px;font:inherit;font-size:13px;text-align:center}
-  /* Organize: page thumbnail tiles */
-  .pagechips{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:12px;margin-top:14px}
-  .tile{position:relative;display:flex;flex-direction:column;gap:7px;padding:8px;background:#fff;
-    border:1px solid var(--border-in);border-radius:8px;cursor:grab;user-select:none;transition:.15s}
-  .tile:hover{border-color:var(--accent);box-shadow:0 1px 6px rgba(37,99,235,.12)}
-  .tile.dragging{opacity:.35}
-  /* Square thumb box: an image that fits the square still fits after a 90° turn,
-     so rotation is a pure CSS transform and never clips. */
-  .tile .thumb{aspect-ratio:1;display:flex;align-items:center;justify-content:center;
-    background:#f5f6f8;border-radius:4px;overflow:hidden}
-  .tile .thumb img{max-width:100%;max-height:100%;display:block;
-    box-shadow:0 1px 3px rgba(0,0,0,.22);background:#fff;transition:transform .2s ease}
-  .tile .thumb .ph{width:15px;height:15px;border:2px solid var(--border-in);border-top-color:var(--accent);
-    border-radius:50%;animation:sp .8s linear infinite}
-  .tile .cap{display:flex;align-items:center;gap:2px;font-size:12.5px;color:var(--heading)}
-  .tile .cap .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .tile .cap button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:13px;
-    padding:2px 3px;border-radius:4px;line-height:1}
-  .tile .cap button:hover{background:#eef3fd;color:var(--accent)}
-  .tile .rot{position:absolute;top:12px;left:12px;background:var(--accent);color:#fff;font-size:10.5px;
-    font-weight:600;padding:1px 5px;border-radius:3px}
-  .tile.del{cursor:default;border-style:dashed}
-  .tile.del .thumb{opacity:.28}
-  .tile.del .cap .n{text-decoration:line-through;color:var(--muted)}
-  .tile.del .rot{display:none}
   /* ---- Files / Pages segmented toggle ---- */
   .viewsw{display:inline-flex;border:1px solid var(--border-in);border-radius:7px;overflow:hidden;
     background:#fff;margin-bottom:16px}
@@ -332,15 +307,16 @@
   <section class="panel-group" id="organize" style="display:none">
     <div class="panel">
       <p class="lead" data-i18n="orgLead"></p>
-      <div class="drop" id="orgDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
-      <input type="file" id="orgInput" accept="application/pdf" hidden>
-      <div class="pagechips" id="orgChips"></div>
-      <p class="hint" id="orgStatus" style="margin-top:10px"></p>
-      <div class="row" id="orgActions" style="display:none">
-        <button class="btn" id="orgGo" data-i18n="orgGo">Export new file</button>
-        <span class="hint" data-i18n="orgHint"></span>
+      <div class="drop" id="organizeDrop"><b data-i18n="dropPdfsB">Drop PDFs here</b><span data-i18n="dropOrClick">or click to choose</span></div>
+      <input type="file" id="organizeInput" accept="application/pdf" multiple hidden>
+      <div class="viewsw" id="organizeViewSw" style="display:none;margin-top:16px"></div>
+      <div class="gwrap" id="organizeList"></div>
+      <div class="pgrid" id="organizePages" style="display:none"></div>
+      <p class="hint" id="organizeStatus"></p>
+      <div class="row">
+        <button class="btn" id="organizeGo" data-i18n="orgGo" disabled>Export new file</button>
       </div>
-      <div class="result" id="orgResult"></div>
+      <div class="result" id="organizeResult"></div>
     </div>
   </section>
 
@@ -501,7 +477,7 @@ const I18N = {
     chooseOnePdf:"Choose one PDF", rangeLabel:"Page ranges to extract", rangePh:"e.g. 1-3,5,8-10",
     rangeHint:"Extract by range puts these pages in one file. Split into groups makes each comma-separated part its own file — see the Groups view.",
     splitGo:"Extract by range", splitEach:"One file per page (.zip)",
-    orgLead:"Choose a PDF, drag the tiles to reorder, click to rotate or mark a page for deletion.",
+    orgLead:"Add one or more PDFs, then drag the page tiles to reorder them, rotate, duplicate or mark pages for deletion. Everything exports as a single document.",
     orgGo:"Export new file", orgHint:"Drag to reorder · ↻ rotate · ✕ delete",
     orgLoading:(p)=>`Building previews… ${p.done} / ${p.total}`,
     orgKeep:(p)=>p.keep===p.total?`${p.total} pages — drag a tile to reorder`
@@ -583,7 +559,7 @@ const I18N = {
     chooseOnePdf:"Chọn 1 file PDF", rangeLabel:"Khoảng trang cần lấy", rangePh:"Ví dụ: 1-3,5,8-10",
     rangeHint:"Tách theo khoảng gộp các trang này vào một file. Tách thành nhóm sẽ tạo mỗi phần cách nhau bằng dấu phẩy thành một file riêng — xem mục Nhóm.",
     splitGo:"Tách theo khoảng", splitEach:"Mỗi trang một file (.zip)",
-    orgLead:"Chọn một PDF, kéo các ô để đổi thứ tự, bấm để xoay hoặc đánh dấu xóa trang.",
+    orgLead:"Thêm một hoặc nhiều PDF, rồi kéo các ô trang để đổi thứ tự, xoay, nhân đôi hoặc đánh dấu xóa. Tất cả sẽ được xuất thành một tài liệu duy nhất.",
     orgGo:"Xuất file mới", orgHint:"Kéo để đổi thứ tự · ↻ để xoay · ✕ để xóa",
     orgLoading:(p)=>`Đang tạo ảnh xem trước… ${p.done} / ${p.total}`,
     orgKeep:(p)=>p.keep===p.total?`${p.total} trang — kéo một ô để đổi thứ tự`
@@ -634,11 +610,11 @@ function applyStatic(){
   document.querySelectorAll('.result a.btn').forEach(a=>{ a.textContent=T('download'); });
   document.querySelectorAll('.result .dlname').forEach(i=>{
     i.title=T('dlRename'); i.setAttribute('aria-label',T('dlRename')); });
-  // Organize tiles and status are built in JS, not from data-i18n, so re-render them
-  // on a language switch (cached thumbnails are reused — no pdf.js work).
-  if(typeof orgPages!=='undefined' && orgPages.length) renderChips();
-  // Same for the Merge/Split page workspaces (labels, tooltips, status text).
-  if(typeof WS!=='undefined'){ [WS.merge,WS.split].forEach(w=>{ if(w && w.files.length) wsRender(w); }); }
+  // The page workspaces build their cards, tiles and status text in JS rather than from
+  // data-i18n, so re-render them on a language switch (cached thumbnails are reused).
+  if(typeof WS!=='undefined'){
+    [WS.merge,WS.split,WS.organize].forEach(w=>{ if(w && w.files.length) wsRender(w); });
+  }
   $('#langEn').classList.toggle('on',lang==='en'); $('#langVi').classList.toggle('on',lang==='vi');
 }
 function setLang(l){ lang=l; try{localStorage.setItem('pdftk_lang',l);}catch(e){} applyStatic(); }
@@ -720,7 +696,7 @@ function makeWS(tab, opts){
                 grid:$('#'+tab+'Pages'), status:$('#'+tab+'Status'),
                 groups:$('#'+tab+'GroupsBox') } };   // only the Split tab has one
 }
-const WS = { merge:null, split:null };
+const WS = { merge:null, split:null, organize:null };
 
 // ---- loading -------------------------------------------------------------
 async function wsAddFiles(ws, fs){
@@ -1130,6 +1106,7 @@ function wsKept(ws){ return ws.pages.filter(p=>!p.del); }
 function wsSyncButtons(ws){
   const has=wsKept(ws).length>0;
   if(ws.tab==='merge'){ $('#mergeGo').disabled=!has; return; }
+  if(ws.tab==='organize'){ $('#organizeGo').disabled=!has; return; }
   $('#splitGo').disabled=!has; $('#splitEach').disabled=!has;
   // enabled by an armed scissors OR by anything typed in the range box
   const spec=($('#splitRanges').value||'').trim();
@@ -1215,122 +1192,21 @@ $('#splitEach').onclick=async()=>{
   finally{ busy($('#splitEach'),false); }
 };
 // ===== ORGANIZE =====
-// orgBytes stays untouched for pdf-lib on export. pdf.js is given a COPY, because
-// getDocument() transfers the ArrayBuffer to its worker and detaches the original.
-//
-// Each page is rendered to a thumbnail EXACTLY ONCE, strictly sequentially, at load
-// time; the PNG is cached on the page object. Never re-render on rotate — overlapping
-// render() calls on the same pdf.js page object queue up and wedge the library. Rotation
-// is a CSS transform on the cached image instead (the .thumb box is square, so a turn
-// can't clip it).
-let orgBytes=null, orgPages=[], orgDoc=null, orgToken=0, orgBuilt=0;
-const THUMB_PX = 260;   // rendered bitmap width; box shows it at ~130px for crispness
-
-wireDrop('#orgDrop','#orgInput', async fs=>{
-  const f=fs&&fs[0]; if(!f) return;
-  const token=++orgToken;                       // invalidates work from a previous file
-  if(orgDoc){ try{ await orgDoc.destroy(); }catch(_){} orgDoc=null; }
-  orgPages=[]; $('#orgChips').innerHTML=''; $('#orgActions').style.display='none';
-  $('#orgResult').className='result'; $('#orgStatus').textContent=T('working');
+// Organize is the page workspace with the scissors turned off: load one or more PDFs,
+// reorder / rotate / duplicate / delete pages across all of them, export one document.
+WS.organize = makeWS('organize', {multi:true, cuts:false});
+wireDrop('#organizeDrop','#organizeInput', fs=>wsAddFiles(WS.organize, fs));
+$('#organizeGo').onclick=async()=>{
+  const ws=WS.organize; busy($('#organizeGo'),true);
   try{
-    orgBytes=await bytesOf(f);
-    const s=await PDFDocument.load(orgBytes);
-    orgPages=Array.from({length:s.getPageCount()},(_,i)=>({n:i+1,rot:0,del:false,thumb:null}));
-    orgBuilt=0;
-    renderChips();                              // tiles appear at once, thumbnails stream in
-    $('#orgActions').style.display='flex';
-    const doc=await pdfjsLib.getDocument({data:orgBytes.slice(0)}).promise;
-    if(token!==orgToken){ try{ await doc.destroy(); }catch(_){} return; }
-    orgDoc=doc;
-    await buildThumbs(token);
-  }catch(e){
-    if(token!==orgToken) return;
-    $('#orgStatus').textContent='';
-    showResult('#orgResult',false,T('errReadPdf'),msgOf(e&&e.code?e:fail('e_read')));
-  }
-});
-
-async function buildThumbs(token){
-  // for..of holds the array captured here; a mid-build reorder reassigns orgPages to a
-  // new array of the SAME page objects, so every page is still rendered exactly once.
-  for(const p of orgPages){
-    if(token!==orgToken) return;                // a newer file was dropped
-    updateStatus();
-    try{
-      const page=await orgDoc.getPage(p.n);
-      const base=page.getViewport({scale:1});
-      // bake the page's own /Rotate in so the thumbnail starts upright
-      const vp=page.getViewport({scale:THUMB_PX/base.width, rotation:base.rotation});
-      const cv=document.createElement('canvas');
-      cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
-      await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
-      if(token!==orgToken) return;
-      p.thumb=cv.toDataURL('image/png');
-    }catch(_){ p.thumb='fail'; }
-    paintThumb(p); orgBuilt++; updateStatus();
-    await new Promise(r=>setTimeout(r,0));       // yield so the tab stays responsive
-  }
-  if(token===orgToken) updateStatus();
-}
-
-// Drop the cached image into whichever tile currently holds this page.
-function paintThumb(p){
-  const i=orgPages.indexOf(p); if(i<0) return;
-  const box=$('#orgChips').querySelector(`[data-i="${i}"] .thumb`); if(!box) return;
-  if(p.thumb==='fail'){
-    box.innerHTML=`<span style="font-size:11.5px;color:var(--muted);padding:0 6px;text-align:center">${T('orgThumbFail')}</span>`;
-  }else if(p.thumb){
-    const img=document.createElement('img');
-    img.src=p.thumb; img.alt=T('page')(p.n); img.draggable=false;
-    img.style.transform=`rotate(${p.rot}deg)`;
-    box.innerHTML=''; box.appendChild(img);
-  }
-}
-function updateStatus(){
-  const el=$('#orgStatus');
-  if(!orgPages.length){ el.textContent=''; return; }
-  // While thumbnails are still being built, progress wins — renderChips() also calls
-  // this on every rotate/delete/reorder and must not clobber the progress line.
-  el.textContent = orgBuilt<orgPages.length
-    ? T('orgLoading')({done:orgBuilt,total:orgPages.length})
-    : T('orgKeep')({keep:orgPages.filter(p=>!p.del).length,total:orgPages.length});
-}
-
-function renderChips(){
-  const box=$('#orgChips'); box.innerHTML='';
-  orgPages.forEach((p,i)=>{
-    const c=document.createElement('div');
-    c.className='tile'+(p.del?' del':''); c.draggable=!p.del; c.dataset.i=i;
-    c.innerHTML=
-      `<div class="thumb"><span class="ph"></span></div>`+
-      (p.rot?`<span class="rot">${p.rot}°</span>`:'')+
-      `<div class="cap"><span class="n">${T('page')(p.n)}</span>`+
-        `<button title="${T('rotTitle')}">↻</button><button title="${T('delTitle')}">✕</button></div>`;
-    const [rotBtn,delBtn]=c.querySelectorAll('.cap button');
-    rotBtn.onclick=e=>{ e.stopPropagation(); p.rot=(p.rot+90)%360; renderChips(); };
-    delBtn.onclick=e=>{ e.stopPropagation(); p.del=!p.del; renderChips(); };
-    c.addEventListener('dragstart',()=>c.classList.add('dragging'));
-    c.addEventListener('dragend',()=>{c.classList.remove('dragging');
-      orgPages=[...box.children].map(el=>orgPages[+el.dataset.i]); renderChips();});
-    c.addEventListener('dragover',e=>{e.preventDefault();const d=box.querySelector('.dragging');if(!d||d===c)return;
-      const r=c.getBoundingClientRect();box.insertBefore(d,(e.clientX>r.left+r.width/2)?c.nextSibling:c);});
-    box.appendChild(c);
-    paintThumb(p);                               // cached — no pdf.js work here
-  });
-  updateStatus();
-}
-
-$('#orgGo').onclick=async()=>{
-  busy($('#orgGo'),true);
-  try{ const keep=orgPages.filter(p=>!p.del);
+    const keep=wsKept(ws);
     if(!keep.length) throw fail('e_no_keep');
-    const s=await PDFDocument.load(orgBytes);
-    const out=await PDFDocument.create(); const pages=await out.copyPages(s, keep.map(p=>p.n-1));
-    pages.forEach((pg,k)=>{ const r=keep[k].rot; if(r){ pg.setRotation(degrees((pg.getRotation().angle+r)%360)); } out.addPage(pg); });
+    const out=await wsBuild(ws, keep);
     const blob=new Blob([await out.save()],{type:'application/pdf'});
-    showResult('#orgResult',true,T('okOrg'),T('okOrgMeta')(keep.length),blob,'organized.pdf');
-  }catch(e){ showResult('#orgResult',false,T('errOrg'),msgOf(e)); }
-  finally{ busy($('#orgGo'),false); }
+    showResult('#organizeResult',true,T('okOrg'),T('okOrgMeta')(keep.length),
+      blob, (ws.files.length===1 ? wsStem(ws,0)+'_organized' : 'organized')+'.pdf');
+  }catch(e){ showResult('#organizeResult',false,T('errOrg'),msgOf(e)); }
+  finally{ busy($('#organizeGo'),false); }
 };
 // ===== CONVERT: images -> PDF =====
 let toPdfFiles=[];
@@ -1576,12 +1452,7 @@ function resetTab(tab){
   if(tab==='merge'){ wsClear(WS.merge); wsRender(WS.merge); }
   if(tab==='split'){ wsClear(WS.split); wsRender(WS.split); $('#splitInfo').textContent='';
     $('#splitGo').disabled=true; $('#splitEach').disabled=true; $('#splitCut').disabled=true; }
-  if(tab==='organize'){
-    orgToken++;                                   // stops any thumbnail build in flight
-    if(orgDoc){ Promise.resolve(orgDoc.destroy()).catch(()=>{}); orgDoc=null; }
-    orgBytes=null; orgPages=[]; orgBuilt=0;
-    $('#orgChips').innerHTML=''; $('#orgActions').style.display='none'; $('#orgStatus').textContent='';
-  }
+  if(tab==='organize'){ wsClear(WS.organize); wsRender(WS.organize); }
   if(tab==='convert'){ toPdfFiles=[]; $('#toPdfList').innerHTML=''; $('#toPdfGo').disabled=true;
     fromFile=null; $('#fromInfo').textContent=''; $('#fromGo').disabled=true; }
   if(tab==='ocr'){
