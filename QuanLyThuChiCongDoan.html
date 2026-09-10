@@ -157,19 +157,20 @@ hr.sep { border: none; border-top: 1px dashed #cbd5e1; margin: 14px 0; }
 .pdoc .pattach img { max-width: 100%; max-height: 180mm; }
 
 /* ===== MẪU ỦY NHIỆM CHI NGÂN HÀNG OCB — QLCLDV_MB03_26 (1 đơn vị hưởng) =====
-   Một tờ A4 dọc = 2 liên (Liên 1 Ngân hàng giữ · Liên 2 Khách hàng giữ),
-   mỗi liên đúng khổ 21 x 14,8 cm như file Word mẫu của ngân hàng. */
+   Mỗi liên in riêng MỘT trang (Liên 1 Ngân hàng giữ · Liên 2 Khách hàng giữ),
+   khổ khối in 21 x 14,8 cm như file Word mẫu của ngân hàng. */
 .ocb { width: 198mm; height: 142mm; box-sizing: border-box; padding: 1.5mm 3mm 0;
   font-family: Calibri, "Segoe UI", Arial, Helvetica, sans-serif; color: #000;
   font-size: 8.5pt; line-height: 1.15; display: flex; flex-direction: column; overflow: hidden; }
+.ocb + .ocb { page-break-before: always; }   /* mỗi liên một trang */
 .ocb .i, .ocb i { font-style: italic; }
-.ocb .olien { font-style: italic; font-size: 7pt; height: 3.2mm; }
 .ocb .ohead { display: flex; align-items: flex-start; margin-bottom: 1.2mm; }
-.ocb .ohead img { width: 66mm; height: auto; display: block; }
-.ocb .otitle { flex: 1; text-align: center; padding-top: 1mm; }
+.ocb .ohead img { width: 66mm; height: auto; display: block; flex: none; }
+.ocb .ohright { flex: 1; text-align: right; }
+.ocb .otitle { padding-top: 1mm; }
 .ocb .otitle b { font-size: 11.5pt; letter-spacing: .3px; }
 .ocb .otitle span { display: block; font-style: italic; font-size: 8.5pt; }
-.ocb .otrans { width: 60mm; text-align: right; font-size: 7.5pt; padding-top: 4mm; white-space: nowrap; }
+.ocb .otrans { font-size: 7.5pt; padding-top: 1.2mm; white-space: nowrap; }
 .ocb .obox { border: .5pt solid #70AD47; display: flex; flex-direction: column; flex: 1; }
 .ocb .obar { background: #007E39; color: #fff; font-weight: 700; padding: .9mm 1.2mm .7mm;
   border-bottom: .5pt solid #70AD47; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -199,13 +200,14 @@ hr.sep { border: none; border-top: 1px dashed #cbd5e1; margin: 14px 0; }
 .ocb .ocols > div:last-child { border-right: none; }
 .ocb .osrole { text-align: center; font-weight: 700; padding: .8mm 1mm 0; }
 .ocb .osnote { text-align: center; font-style: italic; font-size: 6.5pt; padding: 0 1mm; }
-.ocb .osname { text-align: center; font-weight: 700; margin-top: auto; padding: 0 1mm 1.5mm; }
+/* Không in sẵn tên người ký — để trống cho ký tay */
 .ocb .ofoot { background: #008A3E; color: #fff; font-weight: 700; font-size: 7pt; padding: 1mm 2mm;
   display: flex; align-items: center; margin-top: 1mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .ocb .ofoot .fsp { flex: 1; }
 .ocb .ofoot svg { width: 3mm; height: 3mm; fill: #fff; margin-right: 1mm; vertical-align: -.4mm; }
 .ocb .obot { display: flex; justify-content: space-between; font-style: italic; font-size: 6.5pt; padding-top: .5mm; }
-.ocbcut { border-top: 1px dashed #94a3b8; margin: 1.2mm 0; height: 0; }
+.ocb .obot .bl { text-align: left; }        /* mã số QLCLDV — lề trái */
+.ocb .obot .br { text-align: right; }       /* Liên 1 / Liên 2 — lề phải */
 </style>
 <style id="pageRule">@page { size: A4 portrait; margin: 12mm; }</style>
 </head>
@@ -1114,7 +1116,7 @@ function renderModUNC() {
       '<button class="btn sec" onclick="resetUNCForm()">Làm mới</button>' +
       '<span class="note" id="fmsg_UNC"></span>' +
     '</div>' +
-    '<div class="note" style="margin-top:6px">In ra <b>1 tờ A4 dọc gồm 2 liên</b> đúng mẫu <b>QLCLDV_MB03_26 — ỦY NHIỆM CHI (1 đơn vị hưởng)</b> của OCB: Liên 1 ngân hàng giữ, Liên 2 khách hàng giữ. Cắt theo đường kẻ giữa tờ.</div></div>' +
+    '<div class="note" style="margin-top:6px">In ra <b>2 trang, mỗi liên một trang</b> đúng mẫu <b>QLCLDV_MB03_26 — ỦY NHIỆM CHI (1 đơn vị hưởng)</b> của OCB: trang 1 là Liên 1 (ngân hàng giữ), trang 2 là Liên 2 (khách hàng giữ). Ngày và tên người ký để trống để ghi/ký tay.</div></div>' +
     '<div class="card"><h3>Danh sách Ủy nhiệm chi</h3><div id="list_unc"></div></div>';
     $('mod-unc').dataset.init = '1';
     ATT_BUF['att_UNC'] = [];
@@ -1283,7 +1285,7 @@ function uncTableHTML() {
   for (const u of list) {
     const pc = DB.phieu.find(x => x.id === u.pcRef);
     h += '<tr><td><b>' + esc(u.so) + '</b></td><td>' + fmtDate(u.ngay) + '</td><td>' + esc(u.nhanTen) + '</td><td>' + esc(u.nhanSTK) + '</td><td>' + esc(u.nhanNH) + '</td><td>' + esc((u.noiDung || '').slice(0, 55)) + '</td><td class="num">' + fmt(u.soTien) + '</td><td>' + esc(pc ? pc.so : '') + '</td>' +
-      '<td><button class="mini" onclick="printUNC(\'' + u.id + '\')" title="In đúng mẫu ngân hàng OCB — 1 tờ A4, 2 liên">🖨 Mẫu NH</button>' +
+      '<td><button class="mini" onclick="printUNC(\'' + u.id + '\')" title="In đúng mẫu ngân hàng OCB — 2 trang, mỗi liên một trang">🖨 Mẫu NH</button>' +
       '<button class="mini" onclick="printUNCNoiBo(\'' + u.id + '\')" title="Bản rút gọn lưu nội bộ (kèm ảnh chứng từ)">🗂 Nội bộ</button>' +
       '<button class="mini" onclick="editUNC(\'' + u.id + '\')">✎</button><button class="mini del" onclick="delUNC(\'' + u.id + '\')">✕</button></td></tr>';
   }
@@ -1301,6 +1303,9 @@ const OCB_TT = {
 const OCB_SVG_TEL = '<svg viewBox="0 0 24 24"><path d="M6.6 10.8c1.2 2.4 3.2 4.4 5.6 5.6l2-2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.5.6.6 0 1 .4 1 1V19c0 .6-.4 1-1 1C10.6 20 4 13.4 4 5c0-.6.4-1 1-1h3.2c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.5.1.3 0 .7-.2 1l-2 2z"/></svg>';
 const OCB_SVG_WEB = '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm6.9 6h-2.9a15 15 0 00-1.3-3.6A8 8 0 0118.9 8zM12 4.1c.6.9 1.2 2.2 1.6 3.9h-3.2c.4-1.7 1-3 1.6-3.9zM4.3 14a8 8 0 010-4h3.3a17 17 0 000 4H4.3zm.8 2h2.9c.3 1.3.8 2.6 1.3 3.6A8 8 0 015.1 16zm2.9-8H5.1a8 8 0 013.2-3.6A15 15 0 007 8zM12 19.9c-.6-.9-1.2-2.2-1.6-3.9h3.2c-.4 1.7-1 3-1.6 3.9zM14 14h-4a15 15 0 010-4h4a15 15 0 010 4zm.7 5.6c.5-1 1-2.3 1.3-3.6h2.9a8 8 0 01-4.2 3.6zM16.4 14a17 17 0 000-4h3.3a8 8 0 010 4h-3.3z"/></svg>';
 function ocbBox(on) { return '<span class="ochk">' + (on ? '✕' : '&nbsp;') + '</span>'; }
+/* Số tiền trên mẫu ngân hàng: phân cách nghìn bằng DẤU PHẨY, không ghi đơn vị tiền
+   (khác phần còn lại của app dùng định dạng Việt Nam 27.750.033). */
+function ocbSo(n) { return (Number(n) || 0).toLocaleString('en-US'); }
 /* Ô giá trị trên mẫu: chữ dài thì tự nhỏ lại cho vừa dòng, không cắt mất nội dung.
    `max` = số ký tự vừa đủ một dòng của ô đó ở cỡ chữ 8,5pt. */
 function ocbV(val, max, extra) {
@@ -1314,15 +1319,15 @@ function ocbLine(iso) {   /* dd / mm / yyyy tách ra để in vào ô ngày củ
   return p.length === 3 ? p[2] + ' / ' + p[1] + ' / ' + p[0] : iso;
 }
 function ocbLien(u, lienText) {
-  const s = DB.settings;
   const laSTK = (u.nhanLoai || 'STK') !== 'GTTT';
   return '<div class="ocb">' +
-    '<div class="olien">' + esc(lienText) + '</div>' +
     '<div class="ohead">' +
       '<img src="' + LOGO_OCB + '" alt="OCB">' +
-      '<div class="otitle"><b>ỦY NHIỆM CHI</b><span>(PAYMENT ORDER)</span></div>' +
-      '<div class="otrans">Mã giao dịch <i>(Trans. No.)</i>: ' + (esc(u.maGD) || '.................') +
-        '<br>Ngày <i>(Date)</i>: ' + ocbLine(u.ngay) + '</div>' +
+      '<div class="ohright">' +
+        '<div class="otitle"><b>ỦY NHIỆM CHI</b><span>(PAYMENT ORDER)</span></div>' +
+        '<div class="otrans">Mã giao dịch <i>(Trans. No.)</i>: ' + (esc(u.maGD) || '........................') +
+          '&nbsp;&nbsp;&nbsp;&nbsp;Ngày <i>(Date)</i>: ……… / ……… / …………</div>' +
+      '</div>' +
     '</div>' +
     '<div class="obox">' +
       '<div class="obar">BÊN TRẢ TIỀN <i>(REMITTER)</i></div>' +
@@ -1340,7 +1345,7 @@ function ocbLien(u, lienText) {
       '<div class="or"><span class="ol">Tại Ngân hàng <i>(With Bank)</i>:</span>' + ocbV(u.nhanNH, 40) +
         '<span class="ol">Tỉnh/ Thành phố <i>(Province/ City)</i>:</span>' + ocbV(u.nhanTinh, 26, 'flex:.8') + '</div>' +
       '<div class="obar">SỐ TIỀN <i>(AMOUNT)</i></div>' +
-      '<div class="or"><span class="ol">Bằng số <i>(In figures)</i>:</span><span class="ov">' + fmt(u.soTien) + ' VND</span></div>' +
+      '<div class="or"><span class="ol">Bằng số <i>(In figures)</i>:</span><span class="ov">' + ocbSo(u.soTien) + '</span></div>' +
       '<div class="or"><span class="ol">Bằng chữ <i>(In words)</i>:</span>' + ocbV(u.bangChu || soThanhChu(u.soTien), 96) + '</div>' +
       '<div class="osec2">' +
         '<div class="c1"><div class="obar">NỘI DUNG <i>(DETAILS)</i></div>' +
@@ -1354,12 +1359,10 @@ function ocbLien(u, lienText) {
           '<div class="ocols">' +
             '<div style="flex:0 0 43.6%">' +
               '<div class="osrole">Kế toán trưởng <i>(Chief accountant)</i></div>' +
-              '<div class="osnote">(Ký, ghi họ tên/ Signature, full name)</div>' +
-              '<div class="osname">' + esc(s.keToan) + '</div></div>' +
+              '<div class="osnote">(Ký, ghi họ tên/ Signature, full name)</div></div>' +
             '<div style="flex:1">' +
               '<div class="osrole">Chủ tài khoản <i>(Account Holder)</i></div>' +
-              '<div class="osnote">(Ký, ghi họ tên, đóng dấu/ Signature, full name, seal)</div>' +
-              '<div class="osname">' + esc(s.chuTich) + '</div></div>' +
+              '<div class="osnote">(Ký, ghi họ tên, đóng dấu/ Signature, full name, seal)</div></div>' +
           '</div></div>' +
         '<div class="sR"><div class="obar">PHẦN DÀNH CHO NGÂN HÀNG <i>(FOR BANK ONLY)</i></div>' +
           '<div class="or" style="font-weight:700"><span class="ol">Ngày <i>(Date)</i>: ………… / ………… / …………</span></div>' +
@@ -1373,12 +1376,12 @@ function ocbLien(u, lienText) {
     '<div class="ofoot"><span class="fsp">' + esc(OCB_TT.hoiSo) + '</span>' +
       '<span>' + OCB_SVG_TEL + esc(OCB_TT.hotline) + '</span>' +
       '<span style="margin-left:4mm">' + OCB_SVG_WEB + esc(OCB_TT.web) + '</span></div>' +
-    '<div class="obot"><span>' + esc(lienText) + ' · ' + esc(OCB_TT.maForm) + '</span><span>' + esc(OCB_TT.maBieu) + '</span></div>' +
+    '<div class="obot"><span class="bl">' + esc(OCB_TT.maForm) + ' · ' + esc(OCB_TT.maBieu) + '</span>' +
+      '<span class="br">' + esc(lienText) + '</span></div>' +
   '</div>';
 }
 function uncOCBHTML(u) {
   return ocbLien(u, 'Liên 1: Ngân hàng giữ (For Bank)') +
-    '<div class="ocbcut"></div>' +
     ocbLien(u, 'Liên 2: Khách hàng giữ (For Customer)');
 }
 /* Sau khi dựng xong mẫu: đo thật rồi giảm cỡ chữ từng bước cho tới khi vừa ô,
@@ -1401,7 +1404,7 @@ function ocbFitAll() {
 }
 function printUNC(id) {
   const u = DB.unc.find(x => x.id === id); if (!u) return;
-  printDoc(uncOCBHTML(u), 'A4 portrait', '4mm 5mm');
+  printDoc(uncOCBHTML(u), 'A4 portrait', '8mm 5mm');
   ocbFitAll();
 }
 /* Bản ủy nhiệm chi rút gọn dùng lưu nội bộ (kèm ảnh chứng từ) */
