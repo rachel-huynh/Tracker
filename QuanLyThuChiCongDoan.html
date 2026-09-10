@@ -169,7 +169,7 @@ hr.sep { border: none; border-top: 1px dashed #cbd5e1; margin: 14px 0; }
 .ocb .ohright { flex: 1; text-align: right; }
 .ocb .otitle { padding-top: 1mm; }
 .ocb .otitle b { font-size: 11.5pt; letter-spacing: .3px; }
-.ocb .otitle span { display: block; font-style: italic; font-size: 8.5pt; }
+.ocb .otitle span { display: block; font-style: italic; font-weight: 700; font-size: 8.5pt; }
 .ocb .otrans { font-size: 7.5pt; padding-top: 1.2mm; white-space: nowrap; }
 .ocb .obox { border: .5pt solid #70AD47; display: flex; flex-direction: column; flex: 1; }
 .ocb .obar { background: #007E39; color: #fff; font-weight: 700; padding: .9mm 1.2mm .7mm;
@@ -202,10 +202,11 @@ hr.sep { border: none; border-top: 1px dashed #cbd5e1; margin: 14px 0; }
 .ocb .osnote { text-align: center; font-style: italic; font-size: 6.5pt; padding: 0 1mm; }
 /* Không in sẵn tên người ký — để trống cho ký tay */
 .ocb .ofoot { background: #008A3E; color: #fff; font-weight: 700; font-size: 7pt; padding: 1mm 2mm;
-  display: flex; align-items: center; margin-top: 1mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  display: flex; align-items: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .ocb .ofoot .fsp { flex: 1; }
 .ocb .ofoot svg { width: 3mm; height: 3mm; fill: #fff; margin-right: 1mm; vertical-align: -.4mm; }
-.ocb .obot { display: flex; justify-content: space-between; font-style: italic; font-size: 6.5pt; padding-top: .5mm; }
+/* Dòng mã số + Liên: nằm NGAY TRÊN thanh footer xanh */
+.ocb .obot { display: flex; justify-content: space-between; font-style: italic; font-size: 6.5pt; padding: .8mm 0 .6mm; }
 .ocb .obot .bl { text-align: left; }        /* mã số QLCLDV — lề trái */
 .ocb .obot .br { text-align: right; }       /* Liên 1 / Liên 2 — lề phải */
 </style>
@@ -1298,7 +1299,7 @@ function uncTableHTML() {
    --------------------------------------------------------------- */
 const OCB_TT = {
   hoiSo: 'Hội sở chính: Tòa nhà The Hallmark, Số 15 Trần Bạch Đằng, P. An Khánh, TP. Hồ Chí Minh',
-  hotline: '1900 1846', web: 'www.ocb.com.vn', maForm: 'QLCLDV_MB03_26', maBieu: 'QLCLDV/02/25'
+  hotline: '1900 1846', web: 'www.ocb.com.vn', maForm: 'QLCLDV_MB03_26'
 };
 const OCB_SVG_TEL = '<svg viewBox="0 0 24 24"><path d="M6.6 10.8c1.2 2.4 3.2 4.4 5.6 5.6l2-2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.5.6.6 0 1 .4 1 1V19c0 .6-.4 1-1 1C10.6 20 4 13.4 4 5c0-.6.4-1 1-1h3.2c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.5.1.3 0 .7-.2 1l-2 2z"/></svg>';
 const OCB_SVG_WEB = '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm6.9 6h-2.9a15 15 0 00-1.3-3.6A8 8 0 0118.9 8zM12 4.1c.6.9 1.2 2.2 1.6 3.9h-3.2c.4-1.7 1-3 1.6-3.9zM4.3 14a8 8 0 010-4h3.3a17 17 0 000 4H4.3zm.8 2h2.9c.3 1.3.8 2.6 1.3 3.6A8 8 0 015.1 16zm2.9-8H5.1a8 8 0 013.2-3.6A15 15 0 007 8zM12 19.9c-.6-.9-1.2-2.2-1.6-3.9h3.2c-.4 1.7-1 3-1.6 3.9zM14 14h-4a15 15 0 010-4h4a15 15 0 010 4zm.7 5.6c.5-1 1-2.3 1.3-3.6h2.9a8 8 0 01-4.2 3.6zM16.4 14a17 17 0 000-4h3.3a8 8 0 010 4h-3.3z"/></svg>';
@@ -1373,11 +1374,11 @@ function ocbLien(u, lienText) {
           '</div></div>' +
       '</div>' +
     '</div>' +
+    '<div class="obot"><span class="bl">' + esc(OCB_TT.maForm) + '</span>' +
+      '<span class="br">' + esc(lienText) + '</span></div>' +
     '<div class="ofoot"><span class="fsp">' + esc(OCB_TT.hoiSo) + '</span>' +
       '<span>' + OCB_SVG_TEL + esc(OCB_TT.hotline) + '</span>' +
       '<span style="margin-left:4mm">' + OCB_SVG_WEB + esc(OCB_TT.web) + '</span></div>' +
-    '<div class="obot"><span class="bl">' + esc(OCB_TT.maForm) + ' · ' + esc(OCB_TT.maBieu) + '</span>' +
-      '<span class="br">' + esc(lienText) + '</span></div>' +
   '</div>';
 }
 function uncOCBHTML(u) {
