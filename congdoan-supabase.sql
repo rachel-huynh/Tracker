@@ -55,6 +55,11 @@ create table if not exists public.cd_unc (
   updated_by  text
 );
 
+-- Các trường riêng của mẫu Ủy nhiệm chi ngân hàng OCB (QLCLDV_MB03_26):
+-- mã giao dịch, chi nhánh / địa chỉ bên trả tiền, tỉnh-thành / địa chỉ / GTTT bên
+-- thụ hưởng, bên chịu phí. Gói chung 1 cột jsonb để không phải sửa lược đồ về sau.
+alter table public.cd_unc add column if not exists ocb jsonb default '{}'::jsonb;
+
 -- 3) DANH SÁCH THĂM VIẾNG ĐOÀN VIÊN (hạn mức 3.000.000 đ/người/năm) ---------
 create table if not exists public.cd_tham_vieng (
   id          text primary key,
