@@ -250,6 +250,7 @@
   <div class="navitem" data-tab="organize">Organize pages</div>
   <div class="navitem" data-tab="convert">Convert format</div>
   <div class="navitem" data-tab="ocr">OCR</div>
+  <div class="navitem" data-tab="compress">Compress</div>
   <div class="foot" id="privacyNote"></div>
 </aside>
 
@@ -383,6 +384,64 @@
       <p class="hint" data-i18n="ocrNote" style="margin-top:14px"></p>
     </div>
   </section>
+
+  <section class="panel-group" id="compress" style="display:none">
+    <div class="panel">
+      <p class="lead" data-i18n="cmpLead"></p>
+      <div class="drop" id="compressDrop"><b data-i18n="cmpDropB">Drop PDFs or images here</b><span data-i18n="dropOrClick">or click to choose</span></div>
+      <input type="file" id="compressInput" accept="application/pdf,image/png,image/jpeg" multiple hidden>
+      <ul class="filelist" id="compressList"></ul>
+      <div class="split2" style="margin-top:16px">
+        <div class="field">
+          <label data-i18n="cmpModeLabel">How to handle PDFs</label>
+          <select id="compressMode">
+            <option value="keep" data-i18n-opt="cmpModeKeep">Keep text (safe)</option>
+            <option value="raster" data-i18n-opt="cmpModeRaster">Rasterise pages (strong)</option>
+          </select>
+          <p class="hint" id="compressModeHint"></p>
+        </div>
+        <div class="field">
+          <label data-i18n="cmpQualityLabel">Image quality</label>
+          <select id="compressQ">
+            <option value="0.5">50% — smallest</option>
+            <option value="0.65">65%</option>
+            <option value="0.75" selected>75% — balanced</option>
+            <option value="0.85">85%</option>
+            <option value="0.92">92% — best looking</option>
+          </select>
+          <p class="hint" data-i18n="cmpQualityHint"></p>
+        </div>
+      </div>
+      <div class="split2">
+        <div class="field">
+          <label data-i18n="cmpMaxLabel">Shrink large images to</label>
+          <select id="compressMax">
+            <option value="0" data-i18n-opt="cmpMaxNone">Leave the size alone</option>
+            <option value="1600">1600 px on the long edge</option>
+            <option value="2000" selected>2000 px on the long edge</option>
+            <option value="3000">3000 px on the long edge</option>
+          </select>
+        </div>
+        <div class="field" id="compressDpiField">
+          <label data-i18n="cmpDpiLabel">Rasterise at</label>
+          <select id="compressDpi">
+            <option value="100">100 dpi</option>
+            <option value="120">120 dpi</option>
+            <option value="150" selected>150 dpi</option>
+            <option value="200">200 dpi</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn" id="compressGo" data-i18n="cmpGo" disabled>Reduce size</button>
+        <button class="btn ghost" id="compressStop" data-i18n="ocrStop" style="display:none">Stop</button>
+      </div>
+      <div class="prog" id="compressProg"><div class="bar" id="compressBar"></div></div>
+      <p class="hint" id="compressStatus"></p>
+      <div class="result" id="compressResult"></div>
+      <p class="hint" data-i18n="cmpNote" style="margin-top:14px"></p>
+    </div>
+  </section>
   </div>
 </div>
 
@@ -433,6 +492,25 @@ const I18N = {
     wsNoGroups:"Nothing to group yet — type page ranges above, or click a scissors icon in the Pages view.",
     e_no_groups:"No groups to split into. Type page ranges (e.g. 1-3,5-7) or set a split point with the scissors.",
     tipRename:"Rename this file", dlRename:"Rename the file before saving",
+    cmpLead:"Make PDFs and images smaller. Drop several at once — you get a .zip back, or a single file if you only added one.",
+    cmpDropB:"Drop PDFs or images here",
+    cmpModeLabel:"How to handle PDFs", cmpQualityLabel:"Image quality",
+    cmpMaxLabel:"Shrink large images to", cmpMaxNone:"Leave the size alone",
+    cmpDpiLabel:"Rasterise at",
+    cmpModeKeep:"Keep text (safe)", cmpModeRaster:"Rasterise pages (strong)",
+    cmpHintKeep:"Rebuilds the PDF and drops unused objects. Text stays searchable — but the saving is usually small, and on an already-tidy file it can be nothing at all.",
+    cmpHintRaster:"Turns every page into a JPEG. Big savings on scans, but the text becomes a picture: no more searching, selecting or copying — and any OCR layer is lost.",
+    cmpQualityHint:"Applies to images, and to PDF pages when rasterising.",
+    cmpGo:"Reduce size",
+    cmpNote:"A file is only replaced when the new one is genuinely smaller; anything that would grow is passed through untouched.",
+    cmpWorking:(p)=>`${p.done} / ${p.total} — ${p.name}`,
+    cmpListRow:(p)=>p.after==null?p.size:`${p.size} → ${p.after}  (${p.pct})`,
+    okCmp:"Done",
+    okCmpMeta:(p)=>`${p.files} file(s) · ${p.before} → ${p.after} (${p.pct})`+
+      (p.skipped?`\n${p.skipped} file(s) were already as small as they get and were left as they are`:''),
+    errCmp:"Couldn't reduce the file size",
+    e_cmp_none:"Nothing to work on. Add a PDF or an image first.",
+    e_cmp_type:(p)=>`Only PDF, PNG and JPG can be reduced: ${p.file}`,
     ocrLead:"Recognise the text in a scanned PDF and add an invisible text layer, so the file becomes searchable and selectable. The original pages are kept exactly as they are.",
     ocrDpiLabel:"Scan resolution", ocrLangLabel:"Text language",
     ocrDpiHint:"300 dpi suits most office scans. Higher is slower and rarely more accurate.",
@@ -465,10 +543,11 @@ const I18N = {
     okSplitCut:"Split at cut marks", okSplitCutMeta:(p)=>`${p.parts} files in .zip · ${p.pages} pages`,
     e_no_cuts:"No split points set. Click a scissors icon between two pages first.",
     e_ws_empty:"No pages left. Restore a page or add a file.",
-    nav:{merge:"Merge",split:"Split",organize:"Organize pages",convert:"Convert format",ocr:"OCR — searchable PDF"},
+    nav:{merge:"Merge",split:"Split",organize:"Organize pages",convert:"Convert format",ocr:"OCR — searchable PDF",compress:"Reduce file size"},
     crumb:{merge:"Functions · Merge documents",split:"Functions · Split pages",
       organize:"Functions · Reorder / rotate / delete",convert:"Functions · Convert",
-      ocr:"Functions · Recognise text in a scan"},
+      ocr:"Functions · Recognise text in a scan",
+      compress:"Functions · Make PDFs and images smaller"},
     privacyNote:"All files are processed in your browser. Nothing is uploaded.",
     mergeLead:"Choose PDFs to merge, then drag rows to set the order.",
     dropPdfsB:"Drop PDFs here", dropOrClick:"or click to choose", mergeNamePh:"Output file name (merged.pdf)",
@@ -515,6 +594,25 @@ const I18N = {
     wsNoGroups:"Chưa có nhóm nào — hãy nhập khoảng trang ở trên, hoặc bấm biểu tượng cái kéo trong mục Trang.",
     e_no_groups:"Không có nhóm nào để tách. Hãy nhập khoảng trang (ví dụ 1-3,5-7) hoặc đặt điểm tách bằng cái kéo.",
     tipRename:"Đổi tên tệp này", dlRename:"Đổi tên tệp trước khi lưu",
+    cmpLead:"Làm nhẹ PDF và ảnh. Có thể thả nhiều file cùng lúc — kết quả trả về là .zip, hoặc một file duy nhất nếu bạn chỉ thêm một.",
+    cmpDropB:"Kéo thả PDF hoặc ảnh vào đây",
+    cmpModeLabel:"Cách xử lý PDF", cmpQualityLabel:"Chất lượng ảnh",
+    cmpMaxLabel:"Thu nhỏ ảnh lớn về", cmpMaxNone:"Giữ nguyên kích thước",
+    cmpDpiLabel:"Chuyển thành ảnh ở",
+    cmpModeKeep:"Giữ chữ (an toàn)", cmpModeRaster:"Chuyển trang thành ảnh (mạnh)",
+    cmpHintKeep:"Dựng lại PDF và loại bỏ đối tượng thừa. Chữ vẫn tìm kiếm được — nhưng mức giảm thường nhỏ, với file vốn đã gọn thì có thể không giảm chút nào.",
+    cmpHintRaster:"Biến mỗi trang thành một ảnh JPEG. Giảm rất mạnh với bản scan, nhưng chữ sẽ thành hình: không còn tìm kiếm, bôi chọn hay sao chép được — và lớp OCR sẽ mất.",
+    cmpQualityHint:"Áp dụng cho ảnh, và cho các trang PDF khi chuyển thành ảnh.",
+    cmpGo:"Giảm dung lượng",
+    cmpNote:"Chỉ thay thế khi file mới thực sự nhỏ hơn; file nào bị phình ra sẽ được giữ nguyên bản gốc.",
+    cmpWorking:(p)=>`${p.done}/${p.total} — ${p.name}`,
+    cmpListRow:(p)=>p.after==null?p.size:`${p.size} → ${p.after}  (${p.pct})`,
+    okCmp:"Đã xong",
+    okCmpMeta:(p)=>`${p.files} file · ${p.before} → ${p.after} (${p.pct})`+
+      (p.skipped?`\n${p.skipped} file vốn đã nhỏ hết mức nên được giữ nguyên`:''),
+    errCmp:"Không giảm được dung lượng",
+    e_cmp_none:"Chưa có gì để xử lý. Hãy thêm một file PDF hoặc ảnh.",
+    e_cmp_type:(p)=>`Chỉ giảm được PDF, PNG và JPG: ${p.file}`,
     ocrLead:"Nhận dạng chữ trong PDF đã scan và thêm một lớp chữ ẩn, để file có thể tìm kiếm và bôi chọn được. Các trang gốc được giữ nguyên.",
     ocrDpiLabel:"Độ phân giải khi scan", ocrLangLabel:"Ngôn ngữ của chữ",
     ocrDpiHint:"300 dpi phù hợp với phần lớn bản scan văn phòng. Cao hơn sẽ chậm hơn mà ít khi chính xác hơn.",
@@ -547,10 +645,11 @@ const I18N = {
     okSplitCut:"Đã tách tại điểm đã cắt", okSplitCutMeta:(p)=>`${p.parts} tệp trong .zip · ${p.pages} trang`,
     e_no_cuts:"Chưa đặt điểm tách. Hãy bấm vào biểu tượng cái kéo giữa hai trang trước.",
     e_ws_empty:"Không còn trang nào. Hãy khôi phục một trang hoặc thêm tệp.",
-    nav:{merge:"Gộp PDF",split:"Tách trang",organize:"Sắp xếp trang",convert:"Chuyển đổi định dạng",ocr:"OCR — PDF tìm kiếm được"},
+    nav:{merge:"Gộp PDF",split:"Tách trang",organize:"Sắp xếp trang",convert:"Chuyển đổi định dạng",ocr:"OCR — PDF tìm kiếm được",compress:"Giảm dung lượng"},
     crumb:{merge:"Chức năng · Gộp tài liệu",split:"Chức năng · Tách trang",
       organize:"Chức năng · Sắp xếp / xoay / xóa",convert:"Chức năng · Chuyển đổi",
-      ocr:"Chức năng · Nhận dạng chữ trong bản scan"},
+      ocr:"Chức năng · Nhận dạng chữ trong bản scan",
+      compress:"Chức năng · Làm nhẹ PDF và ảnh"},
     privacyNote:"Mọi file được xử lý ngay trong trình duyệt. Không có gì được tải lên máy chủ.",
     mergeLead:"Chọn các PDF cần gộp, rồi kéo từng dòng để sắp thứ tự.",
     dropPdfsB:"Kéo thả PDF vào đây", dropOrClick:"hoặc bấm để chọn file", mergeNamePh:"Tên file kết quả (merged.pdf)",
@@ -598,6 +697,7 @@ function applyStatic(){
   document.documentElement.lang=lang;
   document.querySelectorAll('[data-i18n]').forEach(el=>{const v=T(el.dataset.i18n); if(typeof v==='string') el.textContent=v;});
   document.querySelectorAll('[data-i18n-ph]').forEach(el=>{el.placeholder=T(el.dataset.i18nPh);});
+  document.querySelectorAll('[data-i18n-opt]').forEach(el=>{el.textContent=T(el.dataset.i18nOpt);});
   document.querySelectorAll('.navitem').forEach(b=>{b.textContent=T('nav')[b.dataset.tab];});
   const a=document.querySelector('.navitem.active').dataset.tab;
   $('#pageTitle').textContent=T('nav')[a]; $('#pageCrumb').textContent=T('crumb')[a];
@@ -615,6 +715,7 @@ function applyStatic(){
   if(typeof WS!=='undefined'){
     [WS.merge,WS.split,WS.organize].forEach(w=>{ if(w && w.files.length) wsRender(w); });
   }
+  if(typeof cmpSync==='function') cmpSync();   // mode hint + dpi visibility are language-dependent
   $('#langEn').classList.toggle('on',lang==='en'); $('#langVi').classList.toggle('on',lang==='vi');
 }
 function setLang(l){ lang=l; try{localStorage.setItem('pdftk_lang',l);}catch(e){} applyStatic(); }
@@ -1440,6 +1541,187 @@ $('#ocrGo').onclick=async()=>{
   }
 };
 
+// ===== REDUCE FILE SIZE ====================================================
+// What is actually achievable in a browser, and what is not:
+//
+//   images        re-encode through a canvas as JPEG, optionally scaled down.
+//                 Genuinely effective -- usually 70-90% smaller.
+//   PDF "keep"    copy the pages into a fresh document with object streams on.
+//                 Unused objects fall away, text stays searchable. The saving is
+//                 modest and on a tidy file it is often zero. pdf-lib cannot subset
+//                 fonts or recompress content streams, so nothing more is on offer.
+//   PDF "raster"  render each page with pdf.js and store it as a JPEG. Huge on
+//                 scans, destructive everywhere else: the text becomes a picture.
+//
+// Nothing is ever made worse: if the new bytes are not smaller, the original is
+// passed through and counted as skipped.
+let cmpFiles=[], cmpAbort=false;
+const CMP_OK = /\.(pdf|png|jpe?g)$/i;
+
+function fmtBytes(n){
+  if(n<1024) return n+' B';
+  if(n<1024*1024) return (n/1024).toFixed(0)+' KB';
+  return (n/1024/1024).toFixed(n<10*1024*1024?1:0)+' MB';
+}
+function pctSaved(before, after){
+  if(!before) return '0%';
+  const p=Math.round((1-after/before)*100);   // positive means it got smaller
+  if(p===0) return '0%';
+  return (p>0?'−':'+')+Math.abs(p)+'%';       // −30% saved vs +12% grown
+}
+wireDrop('#compressDrop','#compressInput', fs=>{
+  const ok=fs.filter(f=>CMP_OK.test(f.name));
+  if(!ok.length) return;
+  cmpFiles.push(...ok);
+  cmpRenderList();
+  $('#compressResult').className='result'; $('#compressResult').innerHTML='';
+  $('#compressStatus').textContent=''; cmpProgress(null);
+});
+function cmpRenderList(results){
+  const ul=$('#compressList'); ul.innerHTML='';
+  cmpFiles.forEach((f,i)=>{
+    const r=results && results[i];
+    const li=document.createElement('li');
+    li.innerHTML='<span class="idx">'+(i+1)+'</span><span class="name"></span>'+
+      '<span class="pno"></span><button class="x">&#10005;</button>';
+    li.querySelector('.name').textContent=f.name;       // untrusted filename text
+    li.querySelector('.pno').textContent = T('cmpListRow')({
+      size:fmtBytes(f.size),
+      after:r?fmtBytes(r.size):null,
+      pct:r?pctSaved(f.size,r.size):'' });
+    li.querySelector('.x').onclick=()=>{ cmpFiles.splice(i,1); cmpRenderList(); cmpSync(); };
+    ul.appendChild(li);
+  });
+  cmpSync();
+}
+function cmpSync(){
+  $('#compressGo').disabled = cmpFiles.length===0;
+  const raster = $('#compressMode').value==='raster';
+  $('#compressModeHint').textContent = T(raster?'cmpHintRaster':'cmpHintKeep');
+  $('#compressDpiField').style.visibility = raster ? 'visible' : 'hidden';
+}
+$('#compressMode').onchange=cmpSync;
+function cmpProgress(frac){
+  const box=$('#compressProg'), bar=$('#compressBar');
+  if(frac===null||frac===undefined){ box.classList.remove('on'); bar.style.width='0'; return; }
+  box.classList.add('on'); bar.style.width=Math.max(0,Math.min(1,frac))*100+'%';
+}
+
+// ---- the three compressors ----------------------------------------------
+async function cmpImage(file, q, maxDim){
+  const bmp=await createImageBitmap(file);
+  let w=bmp.width, h=bmp.height;
+  if(maxDim && Math.max(w,h)>maxDim){
+    const s=maxDim/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s);
+  }
+  const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+  const g=cv.getContext('2d');
+  g.fillStyle='#fff'; g.fillRect(0,0,w,h);   // JPEG has no alpha: flatten onto white
+  g.drawImage(bmp,0,0,w,h);
+  if(bmp.close) bmp.close();
+  const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',q));
+  return { bytes:new Uint8Array(await blob.arrayBuffer()), ext:'.jpg' };
+}
+async function cmpPdfKeep(bytes){
+  const src=await PDFDocument.load(bytes);
+  const out=await PDFDocument.create();
+  const pages=await out.copyPages(src, src.getPageIndices());
+  pages.forEach(p=>out.addPage(p));
+  return { bytes:await out.save({useObjectStreams:true}), ext:'.pdf' };
+}
+async function cmpPdfRaster(bytes, q, dpi){
+  const doc=await pdfjsLib.getDocument({data:bytes.slice(0)}).promise;
+  try{
+    const out=await PDFDocument.create();
+    const scale=dpi/72;
+    for(let i=1;i<=doc.numPages;i++){
+      if(cmpAbort) throw fail('e_ocr_cancel');
+      const page=await doc.getPage(i);
+      const rot=((page.rotate||0)%360+360)%360;
+      const vp=page.getViewport({scale, rotation:rot});
+      const cv=document.createElement('canvas');
+      cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+      const g=cv.getContext('2d');
+      g.fillStyle='#fff'; g.fillRect(0,0,cv.width,cv.height);
+      await page.render({canvasContext:g, viewport:vp}).promise;
+      const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',q));
+      const img=await out.embedJpg(await blob.arrayBuffer());
+      // back to points so the page keeps its real physical size
+      const pw=cv.width*72/dpi, ph=cv.height*72/dpi;
+      const p=out.addPage([pw,ph]);
+      p.drawImage(img,{x:0,y:0,width:pw,height:ph});
+    }
+    return { bytes:await out.save(), ext:'.pdf' };
+  } finally { Promise.resolve(doc.destroy()).catch(()=>{}); }
+}
+
+$('#compressStop').onclick=()=>{ cmpAbort=true; $('#compressStatus').textContent=T('working'); };
+
+$('#compressGo').onclick=async()=>{
+  if(!cmpFiles.length) return;
+  cmpAbort=false;
+  busy($('#compressGo'),true); $('#compressStop').style.display='inline-flex';
+  $('#compressResult').className='result'; $('#compressResult').innerHTML='';
+  const q=parseFloat($('#compressQ').value)||0.75;
+  const maxDim=parseInt($('#compressMax').value,10)||0;
+  const dpi=parseInt($('#compressDpi').value,10)||150;
+  const raster=$('#compressMode').value==='raster';
+  try{
+    const results=[]; let before=0, after=0, skipped=0;
+    for(let i=0;i<cmpFiles.length;i++){
+      if(cmpAbort) throw fail('e_ocr_cancel');
+      const f=cmpFiles[i];
+      $('#compressStatus').textContent=T('cmpWorking')({done:i+1,total:cmpFiles.length,name:f.name});
+      cmpProgress(i/cmpFiles.length);
+      const isPdf=/\.pdf$/i.test(f.name);
+      const orig=new Uint8Array(await bytesOf(f));
+      let made;
+      try{
+        made = isPdf
+          ? (raster ? await cmpPdfRaster(orig, q, dpi) : await cmpPdfKeep(orig))
+          : await cmpImage(f, q, maxDim);
+      }catch(e){
+        if(e && e.code==='e_ocr_cancel') throw e;
+        made = null;                                   // unreadable: keep the original
+      }
+      const stem=f.name.replace(/\.[^.]+$/,'');
+      // never hand back something bigger than what came in
+      const useNew = made && made.bytes.length < orig.length;
+      if(!useNew) skipped++;
+      const bytes = useNew ? made.bytes : orig;
+      const ext   = useNew ? made.ext : (f.name.match(/\.[^.]+$/)||['.bin'])[0];
+      results.push({ name:stem+'_small'+ext, bytes, size:bytes.length });
+      before+=orig.length; after+=bytes.length;
+      cmpRenderList(results);
+      await new Promise(r=>setTimeout(r,0));
+    }
+    cmpProgress(1);
+    let blob, dlName;
+    if(results.length===1){
+      blob=new Blob([results[0].bytes],{type:/\.pdf$/i.test(results[0].name)?'application/pdf':'image/jpeg'});
+      dlName=results[0].name;
+    }else{
+      const zip=new JSZip();
+      results.forEach(r=>zip.file(r.name, r.bytes));
+      blob=await zip.generateAsync({type:'blob'});
+      dlName='compressed.zip';
+    }
+    showResult('#compressResult',true,T('okCmp'),
+      T('okCmpMeta')({files:results.length,before:fmtBytes(before),after:fmtBytes(after),
+                      pct:pctSaved(before,after),skipped}),
+      blob, dlName);
+    $('#compressStatus').textContent='';
+  }catch(e){
+    const cancelled = e && e.code==='e_ocr_cancel';
+    showResult('#compressResult',false,cancelled?T('ocrStopped'):T('errCmp'),msgOf(e));
+    $('#compressStatus').textContent='';
+  }finally{
+    cmpProgress(null);
+    $('#compressStop').style.display='none';
+    busy($('#compressGo'),false);
+  }
+};
+
 // ===== START OVER =====
 // Clears the state of whichever function is on screen. Note every file input is
 // blanked too: without that, picking the SAME file again fires no change event and
@@ -1455,6 +1737,11 @@ function resetTab(tab){
   if(tab==='organize'){ wsClear(WS.organize); wsRender(WS.organize); }
   if(tab==='convert'){ toPdfFiles=[]; $('#toPdfList').innerHTML=''; $('#toPdfGo').disabled=true;
     fromFile=null; $('#fromInfo').textContent=''; $('#fromGo').disabled=true; }
+  if(tab==='compress'){
+    cmpAbort=true; cmpFiles=[];
+    $('#compressList').innerHTML=''; $('#compressStatus').textContent='';
+    $('#compressStop').style.display='none'; cmpProgress(null); cmpSync();
+  }
   if(tab==='ocr'){
     ocrAbort=true;                                // stops a run that is still going
     ocrFile=null; ocrBytes=null;
