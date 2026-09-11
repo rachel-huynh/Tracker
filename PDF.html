@@ -335,8 +335,9 @@
         </div>
         <div class="field">
           <div class="subhead" data-i18n="fromPdf">PDF to images</div>
-          <div class="drop" id="fromPdfDrop"><b data-i18n="chooseOnePdf">Choose one PDF</b></div>
-          <input type="file" id="fromPdfInput" accept="application/pdf" hidden>
+          <div class="drop" id="fromPdfDrop"><b data-i18n="dropPdfsB">Drop PDFs here</b><span data-i18n="dropOrClick">or click to choose</span></div>
+          <input type="file" id="fromPdfInput" accept="application/pdf" multiple hidden>
+          <ul class="filelist" id="fromPdfList"></ul>
           <p class="hint" id="fromInfo"></p>
           <button class="btn" id="fromGo" data-i18n="fromGo" disabled style="margin-top:8px">Convert to PNG (.zip)</button>
           <div class="result" id="fromResult"></div>
@@ -1328,20 +1329,62 @@ $('#toPdfGo').onclick=async()=>{
 };
 
 // ===== CONVERT: PDF -> images (pdf.js) =====
-let fromFile=null;
-wireDrop('#fromPdfDrop','#fromPdfInput', fs=>{ fromFile=fs[0]; $('#fromInfo').textContent=T('selected')(fromFile.name); $('#fromGo').disabled=false; });
+let fromFiles=[];
+wireDrop('#fromPdfDrop','#fromPdfInput', fs=>{
+  fromFiles.push(...fs.filter(f=>/\.pdf$/i.test(f.name)));
+  renderFromList();
+  $('#fromResult').className='result'; $('#fromResult').innerHTML='';
+  $('#fromInfo').textContent='';
+});
+function renderFromList(){
+  const ul=$('#fromPdfList'); ul.innerHTML='';
+  fromFiles.forEach((f,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML='<span class="idx">'+(i+1)+'</span><span class="name"></span><button class="x">&#10005;</button>';
+    li.querySelector('.name').textContent=f.name;      // untrusted filename text
+    li.querySelector('.x').onclick=()=>{ fromFiles.splice(i,1); renderFromList(); };
+    ul.appendChild(li);
+  });
+  $('#fromGo').disabled = fromFiles.length===0;
+}
 $('#fromGo').onclick=async()=>{
+  if(!fromFiles.length) return;
   busy($('#fromGo'),true);
-  try{ const data=await bytesOf(fromFile); const pdf=await pdfjsLib.getDocument({data}).promise;
-    const zip=new JSZip(); const stem=(fromFile.name||'file').replace(/\.pdf$/i,''); const scale=150/72;
-    for(let i=1;i<=pdf.numPages;i++){ const page=await pdf.getPage(i); const vp=page.getViewport({scale});
-      const canvas=document.createElement('canvas'); canvas.width=Math.ceil(vp.width); canvas.height=Math.ceil(vp.height);
-      await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
-      const b=await new Promise(r=>canvas.toBlob(r,'image/png'));
-      zip.file(`${stem}_page_${String(i).padStart(3,'0')}.png`, b); }
+  try{
+    const zip=new JSZip(); const scale=150/72; let pages=0;
+    const many=fromFiles.length>1;
+    for(let fi=0; fi<fromFiles.length; fi++){
+      const f=fromFiles[fi];
+      $('#fromInfo').textContent=T('cmpWorking')({done:fi+1,total:fromFiles.length,name:f.name});
+      const stem=(f.name||'file').replace(/\.pdf$/i,'');
+      const pdf=await pdfjsLib.getDocument({data:await bytesOf(f)}).promise;
+      try{
+        for(let i=1;i<=pdf.numPages;i++){
+          const page=await pdf.getPage(i);
+          const vp=page.getViewport({scale});
+          const canvas=document.createElement('canvas');
+          canvas.width=Math.ceil(vp.width); canvas.height=Math.ceil(vp.height);
+          await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+          const b=await new Promise(r=>canvas.toBlob(r,'image/png'));
+          // with several PDFs the file index keeps entries unique even if two share a name
+          const name = many
+            ? String(fi+1).padStart(2,'0')+'_'+stem+'_page_'+String(i).padStart(3,'0')+'.png'
+            : stem+'_page_'+String(i).padStart(3,'0')+'.png';
+          zip.file(name, b);
+          pages++;
+        }
+      } finally { Promise.resolve(pdf.destroy()).catch(()=>{}); }
+      await new Promise(r=>setTimeout(r,0));
+    }
     const blob=await zip.generateAsync({type:'blob'});
-    showResult('#fromResult',true,T('okFrom'),T('okFromMeta')(pdf.numPages),blob,`${stem}_images.zip`);
-  }catch(e){ showResult('#fromResult',false,T('errConv'),msgOf(fail('e_read'))); }
+    const stem1=(fromFiles[0].name||'file').replace(/\.pdf$/i,'');
+    showResult('#fromResult',true,T('okFrom'),T('okFromMeta')(pages),blob,
+      (many?'images':stem1+'_images')+'.zip');
+    $('#fromInfo').textContent='';
+  }catch(e){
+    showResult('#fromResult',false,T('errConv'),msgOf(e&&e.code?e:fail('e_read')));
+    $('#fromInfo').textContent='';
+  }
   finally{ busy($('#fromGo'),false); }
 };
 
@@ -1736,7 +1779,7 @@ function resetTab(tab){
     $('#splitGo').disabled=true; $('#splitEach').disabled=true; $('#splitCut').disabled=true; }
   if(tab==='organize'){ wsClear(WS.organize); wsRender(WS.organize); }
   if(tab==='convert'){ toPdfFiles=[]; $('#toPdfList').innerHTML=''; $('#toPdfGo').disabled=true;
-    fromFile=null; $('#fromInfo').textContent=''; $('#fromGo').disabled=true; }
+    fromFiles=[]; $('#fromPdfList').innerHTML=''; $('#fromInfo').textContent=''; $('#fromGo').disabled=true; }
   if(tab==='compress'){
     cmpAbort=true; cmpFiles=[];
     $('#compressList').innerHTML=''; $('#compressStatus').textContent='';
