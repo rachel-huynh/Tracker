@@ -68,6 +68,8 @@ table.tbl td input:hover { border-color: #cbd5e1; }
 table.tbl td input:focus { border-color: #3b82f6; background: #fff; outline: none; }
 table.tbl td input.num { text-align: right; }
 .tblwrap { overflow-x: auto; }
+/* Cột diễn giải / nội dung: hiển thị ĐẦY ĐỦ, tự xuống dòng thay vì cắt bớt bằng "…" */
+table.tbl td.wrap { min-width: 240px; max-width: 520px; white-space: normal; word-break: break-word; line-height: 1.45; }
 .searchrow { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
 .searchrow input, .searchrow select { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
 .searchrow input[type=text] { min-width: 240px; }
@@ -953,7 +955,7 @@ function phieuTableHTML(loaiArr, modKey) {
     h += '<tr><td><b>' + esc(p.so) + '</b></td><td>' + fmtDate(p.ngay) + '</td>' +
       '<td><span class="badge ' + p.loai.toLowerCase() + '">' + p.loai + '</span></td>' +
       '<td>' + esc(p.nguoi) + (p.boPhan ? '<div class="hint">' + esc(p.boPhan) + '</div>' : '') + '</td>' +
-      '<td>' + esc((p.dienGiai || '').slice(0, 70)) + ((p.dienGiai || '').length > 70 ? '…' : '') +
+      '<td class="wrap">' + esc(p.dienGiai || '').replace(/\n/g, '<br>') +
       (p.loai === 'HU' && p.puRef ? '<div class="hint">↩ hoàn cho ' + esc((DB.phieu.find(x => x.id === p.puRef) || {}).so || '?') + '</div>' : '') + '</td>' +
       '<td>' + esc(p.maSo) + '</td><td class="num">' + fmt(p.soTien) + '</td>' +
       '<td><span class="badge ' + (p.hinhThuc === 'TM' ? 'tm' : 'ck') + '">' + (p.hinhThuc === 'TM' ? 'TM' : 'CK') + '</span></td>' +
@@ -1285,7 +1287,7 @@ function uncTableHTML() {
     '<div class="tblwrap"><table class="tbl"><tr><th>Số</th><th>Ngày</th><th>Người nhận</th><th>STK nhận</th><th>Ngân hàng</th><th>Nội dung</th><th class="num">Số tiền</th><th>Từ PC</th><th>Thao tác</th></tr>';
   for (const u of list) {
     const pc = DB.phieu.find(x => x.id === u.pcRef);
-    h += '<tr><td><b>' + esc(u.so) + '</b></td><td>' + fmtDate(u.ngay) + '</td><td>' + esc(u.nhanTen) + '</td><td>' + esc(u.nhanSTK) + '</td><td>' + esc(u.nhanNH) + '</td><td>' + esc((u.noiDung || '').slice(0, 55)) + '</td><td class="num">' + fmt(u.soTien) + '</td><td>' + esc(pc ? pc.so : '') + '</td>' +
+    h += '<tr><td><b>' + esc(u.so) + '</b></td><td>' + fmtDate(u.ngay) + '</td><td>' + esc(u.nhanTen) + '</td><td>' + esc(u.nhanSTK) + '</td><td>' + esc(u.nhanNH) + '</td><td class="wrap">' + esc(u.noiDung || '').replace(/\n/g, '<br>') + '</td><td class="num">' + fmt(u.soTien) + '</td><td>' + esc(pc ? pc.so : '') + '</td>' +
       '<td><button class="mini" onclick="printUNC(\'' + u.id + '\')" title="In đúng mẫu ngân hàng OCB — 2 trang, mỗi liên một trang">🖨 Mẫu NH</button>' +
       '<button class="mini" onclick="printUNCNoiBo(\'' + u.id + '\')" title="Bản rút gọn lưu nội bộ (kèm ảnh chứng từ)">🗂 Nội bộ</button>' +
       '<button class="mini" onclick="editUNC(\'' + u.id + '\')">✎</button><button class="mini del" onclick="delUNC(\'' + u.id + '\')">✕</button></td></tr>';
@@ -1922,7 +1924,7 @@ function renderModDashboard() {
     '<div class="card"><h3>10 phiếu gần nhất</h3><div class="tblwrap"><table class="tbl"><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>HT</th><th></th></tr>';
   recent.forEach(p => {
     h += '<tr><td><b>' + esc(p.so) + '</b></td><td>' + fmtDate(p.ngay) + '</td><td><span class="badge ' + p.loai.toLowerCase() + '">' + p.loai + '</span></td>' +
-      '<td>' + esc((p.dienGiai || '').slice(0, 80)) + '</td><td class="num">' + fmt(p.soTien) + '</td>' +
+      '<td class="wrap">' + esc(p.dienGiai || '').replace(/\n/g, '<br>') + '</td><td class="num">' + fmt(p.soTien) + '</td>' +
       '<td><span class="badge ' + (p.hinhThuc === 'TM' ? 'tm' : 'ck') + '">' + (p.hinhThuc === 'TM' ? 'TM' : 'CK') + '</span></td>' +
       '<td><button class="mini" onclick="printPhieu(\'' + p.id + '\')">🖨</button><button class="mini" onclick="editPhieu(\'' + p.id + '\')">✎</button></td></tr>';
   });
