@@ -6146,6 +6146,29 @@ function renderForecast(d){
   const hasStarHist=MH.months.length&&MH.my.revpar.some(v=>v!=null);
   if(!hasStarHist && !state.store.rf && !state.store.cf){ el.innerHTML=noData(); return; }
   const M=hasStarHist?MH.months:[], n=M.length;
+  /* ---- forecast ENTITY: the same models, run on Sofitel / the comp set / the industry ----
+     All three publish occupancy, ADR and RevPAR monthly in the STAR report, so the identical
+     seasonal-naive and dampened-YoY models apply unchanged — only the input series differs.
+     Property and comp set come from the merged STAR history; the industry from the Industry
+     sheet (merged across files) mapped onto the same month axis. */
+  const FC_ENTS=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry']];
+  const fcEnt=FC_ENTS.some(e2=>e2[0]===state.fcEnt)?state.fcEnt:'my';
+  window.__setFcEnt=window.__setFcEnt||(v=>{ state.fcEnt=v; renderForecast(derive()); });
+  const fcEntName=FC_ENTS.find(e2=>e2[0]===fcEnt)[1];
+  const indMon={occ:industryMonthly('occ'),adr:industryMonthly('adr'),revpar:industryMonthly('revpar')};
+  const entSeries=e2=> e2==='ind'
+      ? {occ:M.map(k2=>indMon.occ[k2]??null), adr:M.map(k2=>indMon.adr[k2]??null), revpar:M.map(k2=>indMon.revpar[k2]??null)}
+      : {occ:MH[e2].occ, adr:MH[e2].adr, revpar:MH[e2].revpar};
+  const fcEntHas=e2=>{ const s2=entSeries(e2); return s2.revpar.some(v=>v!=null)||s2.occ.some(v=>v!=null); };
+  const fcEntBtns=`<span class="noprint" style="float:right;font-weight:400">${FC_ENTS.map(([k2,l2])=>
+      `<button class="heatbtn ${fcEnt===k2?'on':''}" onclick="__setFcEnt('${k2}')"${fcEntHas(k2)?'':' disabled title="Not in the loaded STAR files"'}>${l2}</button>`).join(' ')}</span>`;
+  /* STAR money converts at STR's OWN rate, never the hotel's — the two FX books never mix.
+     Forecast months have no published rate, so they borrow the last actual month's. */
+  const fcFx=mk2=>strFxOf(mk2)||(M.length?strFxOf(M[n-1]):null)||fxOf(mk2);
+  const starCvM=(v,mk2)=>v==null?null:(state.cur==='USD'? v/fcFx(mk2) : v);
+  /* The full-year outlook table below turns RevPAR into rooms revenue, total revenue and GOP
+     using THIS hotel's room count, revenue mix and margin, so it stays on the property no
+     matter which entity the forecast charts show. */
   const series={occ:MH.my.occ, adr:MH.my.adr, revpar:MH.my.revpar};
   /* run-rate growth: median YoY of the last ≤6 months with a LY pair */
   const growth={},vol={};
@@ -6160,6 +6183,13 @@ function renderForecast(d){
      rendering an empty table. Empty when there is no STAR history for the current month
      at all — the "Full-year outlook"/"RevPAR forecast" panels below check this and show
      an explanatory placeholder instead of an empty table/chart. */
+  const fcSer=fcEnt==='my'?series:entSeries(fcEnt);
+  const fcRR=(()=>{ if(fcEnt==='my') return {growth,vol};
+    const gr={},vl={};
+    for(const k2 of Object.keys(fcSer)){
+      const gg=[]; for(let i2=Math.max(12,n-6);i2<n;i2++){ const a2=fcSer[k2][i2],b2=fcSer[k2][i2-12]; if(a2!=null&&b2) gg.push(a2/b2-1); }
+      gr[k2]=gg.length?median(gg):null; vl[k2]=stdev(gg);
+    } return {growth:gr,vol:vl}; })();
   const hN=n?Math.max(1,12-(+M[n-1].slice(5,7))):0;
   const H=[...Array(hN)].map((_,i)=>addMonths(M[n-1],i+1));
   const fc=H.map((ym,h)=>{
@@ -6174,6 +6204,14 @@ function renderForecast(d){
     if(o.occ!=null) o.occ=Math.min(o.occ,99);
     return o;
   });
+  /* the same model on the SELECTED entity — drives the RevPAR forecast chart only; the
+     property''s own `fc` above still feeds the full-year revenue / GOP table */
+  const fcE=fcEnt==='my'?fc:H.map((ym,h2)=>{ const li2=n-12+(h2+1), o2={ym};
+    for(const k2 of Object.keys(fcSer)){ const base2=li2>=0&&li2<n?fcSer[k2][li2]:null;
+      o2[k2]=base2!=null&&fcRR.growth[k2]!=null?base2*(1+fcRR.growth[k2]):null;
+      o2[k2+'Lo']=base2!=null&&fcRR.growth[k2]!=null?base2*(1+fcRR.growth[k2]-fcRR.vol[k2]):null;
+      o2[k2+'Hi']=base2!=null&&fcRR.growth[k2]!=null?base2*(1+fcRR.growth[k2]+fcRR.vol[k2]):null; }
+    if(o2.occ!=null) o2.occ=Math.min(o2.occ,99); return o2; });
   /* RGI projection: linear trend of last 12 index values */
   const rgiProj=olsNext(MH.idx.revpar.slice(-12),[...Array(H.length)].map((_,i)=>i+1));
   /* convert RevPAR forecast into money using latest P&L structure */
@@ -6269,10 +6307,16 @@ function renderForecast(d){
        the backtest-calibrated error cone by day-of-month.
      ADR↔Occ: daily link is weak (r≈0.24) but compression pricing kicks in above ~80% occ. */
   const un={};
-  for(const k2 of Object.keys(state.store.months)){ const c2=state.store.months[k2].star?.comp; if(!c2?.occ) continue;
+  for(const k2 of Object.keys(state.store.months)){ const c2=starOf(k2)?.comp; if(!c2?.occ) continue;
     c2.occ.months.forEach((mk2,i2)=>{ if(!mk2) return; un[mk2]=un[mk2]||{};
-      if(c2.occ.my[i2]!=null) un[mk2].occ=c2.occ.my[i2]; });}
-  const um=Object.keys(un).sort(), uocc=um.map(m2=>un[m2].occ??null);
+      if(c2.occ.my[i2]!=null) un[mk2].occ=c2.occ.my[i2];
+      if(c2.occ.comp?.[i2]!=null) un[mk2].comp=c2.occ.comp[i2]; });}
+  const um=Object.keys(un).sort();
+  /* the occupancy model runs on the SELECTED entity. The Comp sheet carries my + comp, so
+     the industry series is taken from the Industry sheet instead. */
+  const uocc=um.map(m2=> fcEnt==='comp' ? (un[m2].comp??null)
+                       : fcEnt==='ind'  ? (indMon.occ[m2]??null)
+                       : (un[m2].occ??null));
   const ddPred=t=>{ const dfs=[]; for(let i2=t-1;i2>=t-3;i2--){ if(i2-12>=0&&uocc[i2]!=null&&uocc[i2-12]!=null) dfs.push(uocc[i2]-uocc[i2-12]); }
     return (t-12>=0&&uocc[t-12]!=null)? uocc[t-12]+(dfs.length>=2?0.5*median(dfs):0) : null; };
   const bErr=[]; for(let t=13;t<um.length;t++){ if(uocc[t]==null) continue; const p2=ddPred(t); if(p2!=null) bErr.push(Math.abs(p2-uocc[t])); }
@@ -6281,7 +6325,7 @@ function renderForecast(d){
   let modelHtml='', adrPanelHtml='', occFc=null, adrPts=null, adrDec=null, adrCloud=null;
   window.__setAdrEnt=window.__setAdrEnt||(v=>{ state.adrEnt=v; renderForecast(derive()); });
   window.__setAdrDay=window.__setAdrDay||(v=>{ state.adrDay=v; renderForecast(derive()); });
-  const dKeys=Object.keys(state.store.months).filter(k2=>state.store.months[k2].star?.daily?.occ?.my).sort();
+  const dKeys=Object.keys(state.store.months).filter(k2=>starOf(k2)?.daily?.occ?.[fcEnt]||starOf(k2)?.daily?.occ?.my).sort();
   if(um.length>=16&&occMAE!=null){
     const lastD=[]; for(let i2=um.length-1;i2>=um.length-3;i2--){ if(i2-12>=0&&uocc[i2]!=null&&uocc[i2-12]!=null) lastD.push(uocc[i2]-uocc[i2-12]); }
     const adj=lastD.length>=2?0.5*median(lastD):0;
@@ -6293,7 +6337,7 @@ function renderForecast(d){
       <td>${f2.ly!=null?n1(f2.ly,1)+'%':'—'}</td>${chgTd(f2.v!=null&&f2.ly?(f2.v-f2.ly)/f2.ly*100:null)}</tr>`).join('');
     /* pickup cone: calibrated on the complete stored months */
     const cuts=[7,10,14,20,25], cone={}; cuts.forEach(c3=>cone[c3]=[]);
-    for(const k2 of dKeys){ const dO=state.store.months[k2].star.daily.occ.my;
+    for(const k2 of dKeys){ const dgo=starOf(k2)?.daily?.occ; const dO=dgo&&dgo[fcEnt]; if(!dO) continue;
       const [y3,m3]=k2.split('-').map(Number), nD=new Date(y3,m3,0).getDate();
       const vals=dO.slice(0,nD); if(vals.filter(v=>v!=null).length<nD-2) continue;
       const act=avgA(vals.filter(v=>v!=null));
@@ -6345,11 +6389,11 @@ function renderForecast(d){
     }
     modelHtml=`
     <div class="cols c2">
-      <div class="panel"><h3>Occupancy forecast — dampened YoY drift <span class="tag g">backtest winner</span></h3>
+      <div class="panel"><h3>Occupancy forecast — ${escH(fcEntName)} · dampened YoY drift <span class="tag g">backtest winner</span>${fcEntBtns}</h3>
         <div class="chartbox"><canvas id="chOccFc"></canvas></div>
         <table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast Occ</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${fcRows}</tbody></table>
         <div class="small" style="margin-top:6px">Model: same-month-LY + ½·median(YoY change of last 3 months). Chosen over seasonal-naive, full drift, MPI-bridge and AR variants by rolling backtest on the merged STAR history (${fmtMonthKey(um[0])} → ${fmtMonthKey(um[um.length-1])}, ${bErr.length} test months): MAE <b>${n1(occMAE,1)} pts</b>, 80% of errors ≤ ${n1(occP80,1)} pts. Monthly occupancy is genuinely volatile here — read the band, not the point.</div></div>
-      <div class="panel"><h3>Month-end projection — pickup cone</h3>
+      <div class="panel"><h3>Month-end projection — ${escH(fcEntName)} · pickup cone</h3>
         ${projHtml}
         <table><thead><tr><th>Known through day</th><th>Month-end error (± pts MAE)</th><th>Months tested</th></tr></thead>
         <tbody>${coneRows.map(r2=>`<tr><td>${r2.d}</td><td data-v="${r2.mae}">±${n1(r2.mae,1)}</td><td>${r2.n}</td></tr>`).join('')}</tbody></table>
@@ -6519,7 +6563,7 @@ function renderForecast(d){
       <h3 style="margin:0">Independent outlook — not derived from the rolling forecast</h3>
       <div class="small">The two charts below are this dashboard's <b>own</b> statistical projection, built from STAR trend data (same-month-last-year × trailing run-rate). They are deliberately independent of the management rolling forecast above, so the two can be compared as a cross-check rather than one confirming the other.</div></div>
     ${adrPanelHtml}
-    <div class="panel"><h3>RevPAR forecast — seasonal-naive × run-rate YoY (median of last 6 months: ${pct(growth.revpar)} ± ${pct(vol.revpar)})</h3>
+    <div class="panel"><h3>RevPAR forecast — ${escH(fcEntName)} · seasonal-naive × run-rate YoY (median of last 6 months: ${pct(fcRR.growth.revpar)} ± ${pct(fcRR.vol.revpar)})${fcEntBtns}</h3>
       <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>`:noStarHistHtml}
     ${modelHtml}
     ${otaHtml}`;
@@ -6528,15 +6572,15 @@ function renderForecast(d){
      an empty chart into a canvas that (per the placeholder branch above) doesn't exist. */
   if(hasStarHist){
   let labels=[...M,...H].map(fmtMonthKey);
-  let act=[...series.revpar.map((v,i)=>v==null?null:cvM(v,M[i])),...H.map(()=>null)];
-  let fcl=[...M.map(()=>null),...fc.map(f=>f.revpar==null?null:cvM(f.revpar,f.ym))];
+  let act=[...fcSer.revpar.map((v,i)=>v==null?null:starCvM(v,M[i])),...H.map(()=>null)];
+  let fcl=[...M.map(()=>null),...fcE.map(f=>f.revpar==null?null:starCvM(f.revpar,f.ym))];
   fcl[M.length-1]=act[M.length-1];
-  let lo=[...M.map(()=>null),...fc.map(f=>f.revparLo==null?null:cvM(f.revparLo,f.ym))];
-  let hi=[...M.map(()=>null),...fc.map(f=>f.revparHi==null?null:cvM(f.revparHi,f.ym))];
+  let lo=[...M.map(()=>null),...fcE.map(f=>f.revparLo==null?null:starCvM(f.revparLo,f.ym))];
+  let hi=[...M.map(()=>null),...fcE.map(f=>f.revparHi==null?null:starCvM(f.revparHi,f.ym))];
   const cut0=state.tsFrom?M.findIndex(m2=>m2>=state.tsFrom):0;
   if(cut0>0){ labels=labels.slice(cut0); act=act.slice(cut0); fcl=fcl.slice(cut0); lo=lo.slice(cut0); hi=hi.slice(cut0); }
   mkChart('chFc',{type:'line',data:{labels,datasets:[
-      {label:'RevPAR actual',data:act,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
+      {label:fcEntName+' RevPAR actual',data:act,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
       {label:'Forecast',data:fcl,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
       {label:'Low',data:lo,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
       {label:'High',data:hi,borderColor:'rgba(201,162,39,.25)',pointRadius:0}]},
@@ -6553,7 +6597,7 @@ function renderForecast(d){
     const loA=fcA.map((v,i2)=>i2>=histN&&v!=null?Math.max(0,v-occMAE):null);
     const hiA=fcA.map((v,i2)=>i2>=histN&&v!=null?Math.min(99,v+occMAE):null);
     mkChart('chOccFc',{type:'line',data:{labels:lb,datasets:[
-        {label:'Occupancy actual',data:actA,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
+        {label:fcEntName+' occupancy actual',data:actA,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
         {label:'Forecast',data:fcA,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
         {label:'Low',data:loA,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
         {label:'High',data:hiA,borderColor:'rgba(201,162,39,.25)',pointRadius:0}]},
