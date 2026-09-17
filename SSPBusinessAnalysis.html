@@ -90,6 +90,15 @@ section.tab.printshow{display:block}
 .kpi .s b.up{color:var(--green)}.kpi .s b.dn{color:var(--red)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(15,30,58,.06)}
 .panel h3{color:var(--navy);font-size:13px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--line);padding-bottom:6px}
+/* Panel header carrying a control strip. Two separate float:right spans stacked into a ragged
+   second row once the title got long (entity buttons landing UNDER the view buttons, both
+   right-aligned, neither aligned to each other). Flex keeps title left / controls right on one
+   line and wraps the whole strip as a unit when the panel is narrow. */
+.panel h3.h3ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.panel h3.h3ctl>.ttl{flex:1 1 auto;min-width:0}
+.fcctl{margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;
+  font-weight:400;text-transform:none;letter-spacing:0}
+.fcctl .sep{width:1px;height:16px;background:var(--line);margin:0 2px;flex:0 0 auto}
 /* minmax(0,1fr), NOT 1fr: a bare 1fr track is minmax(auto,1fr), so a grid item containing a
    wide table grows its own track past its share and pushes the whole page into horizontal
    scroll (the Market tab's 9-column scorecard took its half to 759px of a 1001px row).
@@ -6165,6 +6174,12 @@ function renderForecast(d){
      This is the model's track record, not a fit — nothing after month t is used to predict t. */
   const fcVs=!!state.fcVs;
   window.__setFcVs=window.__setFcVs||(v=>{ state.fcVs=v; renderForecast(derive()); });
+  /* The forecast series carries ONE borrowed value: the last actual, copied in so the dashed
+     line starts where the solid one ends. It is a drawing join, not a prediction, and the
+     tooltip was reporting it as "Forecast: <the actual>" — which reads as the model having
+     predicted that month perfectly. Hide that single point from the tooltip; the line still
+     connects. `j` is the index in the array AS PLOTTED (after any focus-period slice). */
+  const joinTip={plugins:{tooltip:{filter:it=>it.dataset._joinAt!==it.dataIndex}}};
   const rollPred=(ser,t)=>{ const gg=[];
     for(let i2=Math.max(12,t-6);i2<t;i2++){ const a3=ser[i2],b3=ser[i2-12]; if(a3!=null&&b3) gg.push(a3/b3-1); }
     const gr=gg.length?median(gg):null, base=t-12>=0?ser[t-12]:null;
@@ -6196,11 +6211,19 @@ function renderForecast(d){
       : {occ:MH[e2].occ, adr:MH[e2].adr, revpar:MH[e2].revpar};
   const fcEntHas=e2=>{ if(e2==='all') return ['my','comp','ind'].filter(x=>fcEntHas(x)).length>=2;
     const s2=entSeries(e2); return s2.revpar.some(v=>v!=null)||s2.occ.some(v=>v!=null); };
-  const fcVsBtns=`<span class="noprint" style="float:right;font-weight:400;margin-left:10px">
-      <button class="heatbtn ${fcVs?'':'on'}" onclick="__setFcVs(false)">Forecast</button>
-      <button class="heatbtn ${fcVs?'on':''}" onclick="__setFcVs(true)"${fcEnt==='all'?' disabled title="Pick a single entity — six lines plus three backtests is unreadable"':''}>Actual vs forecast</button></span>`;
-  const fcEntBtns=`<span class="noprint" style="float:right;font-weight:400">${FC_ENTS.map(([k2,l2])=>
-      `<button class="heatbtn ${fcEnt===k2?'on':''}" onclick="__setFcEnt('${k2}')"${fcEntHas(k2)?'':' disabled title="Not in the loaded STAR files"'}>${l2}</button>`).join(' ')}</span>`;
+  const fcVsBtns=`<button class="heatbtn ${fcVs?'':'on'}" onclick="__setFcVs(false)">Forecast</button>
+      <button class="heatbtn ${fcVs?'on':''}" onclick="__setFcVs(true)" title="Actual vs forecast — what the model said for each month, a month earlier"${fcEnt==='all'?' disabled title="Pick a single entity — six lines plus three backtests is unreadable"':''}>Backtest</button>`;
+  const fcEntBtns=FC_ENTS.map(([k2,l2])=>
+      `<button class="heatbtn ${fcEnt===k2?'on':''}" onclick="__setFcEnt('${k2}')"${fcEntHas(k2)?'':' disabled title="Not in the loaded STAR files"'}>${l2}</button>`).join(' ');
+  /* One control strip, identical on all three forecast panels: pick WHO first, then WHICH
+     view. Both switches are global, so repeating them per panel keeps them next to whichever
+     chart is being read instead of forcing a scroll back to a single strip. */
+  const fcCtl=`<span class="noprint fcctl">${fcEntBtns}<span class="sep"></span>${fcVsBtns}</span>`;
+  /* The 3-month tables are driven by fcBase, which falls back to the property in 'all' mode —
+     so in the overlay view the chart shows three entities while the table below shows one.
+     Say so rather than letting an "All three" heading sit above Sofitel-only numbers. */
+  const allTblNote=fcEnt==='all'
+    ? `<div class="small" style="margin-top:6px"><span class="tag a">table = Sofitel SSP</span> The chart above overlays all three; the 3-month table below is the property only — switch entity for the comp set's or the industry's figures.</div>` : '';
   /* STAR money converts at STR's OWN rate, never the hotel's — the two FX books never mix.
      Forecast months have no published rate, so they borrow the last actual month's. */
   const fcFx=mk2=>strFxOf(mk2)||(M.length?strFxOf(M[n-1]):null)||fxOf(mk2);
@@ -6234,7 +6257,7 @@ function renderForecast(d){
     : '';
   const btR=fcVs?backtest(fcSer.revpar):null;      // model track record on RevPAR
   const fcVsNote=(fcVs&&btR&&btR.n>=6)
-    ? `<div class="small" style="margin-top:6px"><b>Actual vs forecast.</b> The grey dotted line is the SAME model replayed one month at a time across history, using only the months before each point — its track record, not a fit. Over ${btR.n} testable months (${fmtMonthKey(M[btR.firstT])} – ${fmtMonthKey(M[btR.lastT])}${btR.n<BT_MONTHS?`, fewer than the ${BT_MONTHS}-month window because this series has gaps STR did not publish`:``}) it was out by <b>${moneyFmt(starCvM(btR.mae,M[n-1]),1)}</b> on average (<b>${pct(btR.mape)}</b>). Where grey sits below navy the model under-called the month; above, it over-called. The Focus period trims the chart, not this score.</div>`
+    ? `<div class="small" style="margin-top:6px"><b>Actual vs forecast.</b> The grey dotted line is the forecast <b>for each month as it stood the month before</b> — the same model replayed one step at a time, using only data available at the time. That is the like-for-like comparison: grey vs navy at the same month. (The gold line is the forward forecast; its first point is borrowed from the last actual purely to join the two lines, so it is left out of the tooltip.) Over ${btR.n} testable months (${fmtMonthKey(M[btR.firstT])} – ${fmtMonthKey(M[btR.lastT])}${btR.n<BT_MONTHS?`, fewer than the ${BT_MONTHS}-month window because this series has gaps STR did not publish`:``}) it was out by <b>${moneyFmt(starCvM(btR.mae,M[n-1]),1)}</b> on average (<b>${pct(btR.mape)}</b>). Where grey sits below navy the model under-called the month; above, it over-called. The Focus period trims the chart, not this score.</div>`
     : (fcVs?`<div class="small" style="margin-top:6px">Not enough history yet to replay the model for ${escH(fcEntName)} — needs at least 6 testable months after the first 13.</div>`:'');
   const fcRR=(()=>{ if(fcBase==='my') return {growth,vol};
     const gr={},vl={};
@@ -6468,13 +6491,13 @@ function renderForecast(d){
     }
     modelHtml=`
     <div class="cols c2">
-      <div class="panel"><h3>Occupancy forecast — ${escH(fcEntName)} · dampened YoY drift <span class="tag g">backtest winner</span>${fcVsBtns}${fcEntBtns}</h3>
+      <div class="panel"><h3 class="h3ctl"><span class="ttl">Occupancy — ${escH(fcEntName)}</span>${fcCtl}</h3>
         <div class="chartbox"><canvas id="chOccFc"></canvas></div>${fcGapNote}
-        <table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast Occ</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${fcRows}</tbody></table>
-        <div class="small" style="margin-top:6px">Model: same-month-LY + ½·median(YoY change of last 3 months). Chosen over seasonal-naive, full drift, MPI-bridge and AR variants by rolling backtest on the merged STAR history (${fmtMonthKey(um[0])} → ${fmtMonthKey(um[um.length-1])}, ${bErr.length} test months): MAE <b>${n1(occMAE,1)} pts</b>, 80% of errors ≤ ${n1(occP80,1)} pts. Monthly occupancy is genuinely volatile here — read the band, not the point.</div></div>
-      <div class="panel"><h3>ADR forecast — ${escH(fcEntName)} · dampened YoY drift${fcEntBtns}</h3>
+        ${allTblNote}<table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast Occ</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${fcRows}</tbody></table>
+        <div class="small" style="margin-top:6px"><span class="tag g">backtest winner</span> Model: same-month-LY + ½·median(YoY change of last 3 months). Chosen over seasonal-naive, full drift, MPI-bridge and AR variants by rolling backtest on the merged STAR history (${fmtMonthKey(um[0])} → ${fmtMonthKey(um[um.length-1])}, ${bErr.length} test months): MAE <b>${n1(occMAE,1)} pts</b>, 80% of errors ≤ ${n1(occP80,1)} pts. Monthly occupancy is genuinely volatile here — read the band, not the point.</div></div>
+      <div class="panel"><h3 class="h3ctl"><span class="ttl">ADR — ${escH(fcEntName)}</span>${fcCtl}</h3>
         <div class="chartbox"><canvas id="chAdrFc"></canvas></div>
-        ${adrMAE!=null?`<table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast ADR</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${adrFcRows}</tbody></table>
+        ${adrMAE!=null?`${allTblNote}<table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast ADR</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${adrFcRows}</tbody></table>
         <div class="small" style="margin-top:6px">Same shape as the occupancy model beside it, but <b>multiplicative</b>: same-month-LY × (1 + ½·median(YoY % change of last 3 months)). Rate is a level that moves proportionally, so the drift is applied as a percentage rather than added in dong — otherwise the same drift would mean different things at ₫3m and ₫6m, and would not survive the currency toggle. Rolling one-step-ahead backtest over ${aErr.length} test months: MAE <b>${fcMoney(adrMAE,um[um.length-1])}</b>, 80% of errors ≤ ${fcMoney(adrP80,um[um.length-1])}.</div>`
         :`<div class="small">${na('Not enough ADR history for '+escH(fcEntName)+' to calibrate a band — needs 6 testable months after the first 13')}</div>`}</div>
     </div>
@@ -6647,7 +6670,7 @@ function renderForecast(d){
       <h3 style="margin:0">Independent outlook — not derived from the rolling forecast</h3>
       <div class="small">The two charts below are this dashboard's <b>own</b> statistical projection, built from STAR trend data (same-month-last-year × trailing run-rate). They are deliberately independent of the management rolling forecast above, so the two can be compared as a cross-check rather than one confirming the other.</div></div>
     ${adrPanelHtml}
-    <div class="panel"><h3>RevPAR forecast — ${escH(fcEntName)}${fcEnt==='all'?'':' · seasonal-naive × run-rate YoY (median of last 6 months: '+pct(fcRR.growth.revpar)+' ± '+pct(fcRR.vol.revpar)+')'}${fcVsBtns}${fcEntBtns}</h3>
+    <div class="panel"><h3 class="h3ctl"><span class="ttl">RevPAR forecast — ${escH(fcEntName)}${fcEnt==='all'?'':' · seasonal-naive × run-rate YoY (median of last 6 months: '+pct(fcRR.growth.revpar)+' ± '+pct(fcRR.vol.revpar)+')'}</span>${fcCtl}</h3>
       <div class="chartbox tall"><canvas id="chFc"></canvas></div>${fcGapNote}${fcVsNote}</div>`:noStarHistHtml}
     ${modelHtml}
     ${otaHtml}`;
@@ -6692,7 +6715,8 @@ function renderForecast(d){
       const lj=aE.reduce((a2,v2,i2)=>(v2!=null&&i2<M.length)?i2:a2,-1); if(lj>=0) fE[lj]=aE[lj];
       if(cut0>0){ aE=aE.slice(cut0); fE=fE.slice(cut0); }
       dsFc.push({label:elabel,data:aE,borderColor:FC_COLOR[ek],tension:.3,pointRadius:2});
-      dsFc.push({label:elabel+' forecast',data:fE,borderColor:FC_COLOR[ek],borderDash:[6,4],tension:.3,pointRadius:2});
+      dsFc.push({label:elabel+' forecast',data:fE,borderColor:FC_COLOR[ek],borderDash:[6,4],tension:.3,pointRadius:2,
+        _joinAt:lj>=0?lj-(cut0>0?cut0:0):-1});
     }
   } else {
     dsFc=[{label:fcEntName+' RevPAR actual',data:act,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
@@ -6702,12 +6726,16 @@ function renderForecast(d){
     if(fcVs&&btR&&btR.n>=6){
       let bl=[...btR.pred.map((v,i)=>v==null?null:starCvM(v,M[i])),...H.map(()=>null)];
       if(cut0>0) bl=bl.slice(cut0);
-      dsFc.push({label:'What the model would have said',data:bl,borderColor:'#6B7280',
+      dsFc.push({label:'Forecast made the month before',data:bl,borderColor:'#6B7280',
         borderDash:[2,3],borderWidth:1.5,tension:.3,pointRadius:0});
     }
   }
+  const joinFc=lastActI>=0?lastActI-(cut0>0?cut0:0):-1;
+  if(fcEnt!=='all'&&dsFc[1]) dsFc[1]._joinAt=joinFc;
   mkChart('chFc',{type:'line',data:{labels,datasets:dsFc},
-    options:{plugins:{legend:{labels:{filter:i=>!/Low|High/.test(i.text)}}},scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}}},maintainAspectRatio:false}});
+    options:{plugins:{legend:{labels:{filter:i=>!/Low|High/.test(i.text)}},
+      tooltip:joinTip.plugins.tooltip},
+      scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}}},maintainAspectRatio:false}});
   }
   /* model lab charts */
   if(occFc){
@@ -6718,6 +6746,7 @@ function renderForecast(d){
     const fcA=[...um.slice(-histN).map(()=>null),...occFc.map(f2=>f2.v)];
     const lastActJ=actA.reduce((a2,v2,i2)=>(v2!=null&&i2<histN)?i2:a2,-1);   // see chFc note
     if(lastActJ>=0) fcA[lastActJ]=actA[lastActJ];
+    const occJoin=lastActJ;
     const loA=fcA.map((v,i2)=>i2>=histN&&v!=null?Math.max(0,v-occMAE):null);
     const hiA=fcA.map((v,i2)=>i2>=histN&&v!=null?Math.min(99,v+occMAE):null);
     let dsOcc;
@@ -6726,28 +6755,36 @@ function renderForecast(d){
       for(const [ek,elabel] of FC_ENTS.filter(e2=>e2[0]!=='all')){
         if(!fcEntHas(ek)) continue;
         const oS=um.map(m2=> ek==='comp'?(un[m2].comp??null) : ek==='ind'?(indMon.occ[m2]??null) : (un[m2].occ??null));
-        const pr=t2=>{ const dfs=[]; for(let i2=t2-1;i2>=t2-3;i2--){ if(i2-12>=0&&oS[i2]!=null&&oS[i2-12]!=null) dfs.push(oS[i2]-oS[i2-12]); }
-          return (t2-12>=0&&oS[t2-12]!=null)? clamp(oS[t2-12]+(dfs.length>=2?0.5*median(dfs):0),0,99) : null; };
+        /* Mirror the single-entity model EXACTLY: drift measured ONCE on the last three
+           available YoY point-differences, then applied at each horizon against the same
+           month last year. The first cut recomputed the drift per horizon — which read past
+           the end of the series (oS[um.length] is undefined), so fewer pairs qualified and
+           the drift decayed toward zero — and indexed the LY base a month early. Both showed
+           up as the overlay disagreeing with its own single-entity view: 78.85% vs 88.65%. */
+        const lastE=[]; for(let i2=um.length-1;i2>=um.length-3;i2--){ if(i2-12>=0&&oS[i2]!=null&&oS[i2-12]!=null) lastE.push(oS[i2]-oS[i2-12]); }
+        const adjE=lastE.length>=2?0.5*median(lastE):0;
         const aO=[...oS.slice(-histN),...occFc.map(()=>null)];
-        const fO=[...um.slice(-histN).map(()=>null),...occFc.map((f2,h2)=>pr(um.length+h2))];
+        const fO=[...um.slice(-histN).map(()=>null),...occFc.map((f2,h2)=>{ const li=um.length-12+(h2+1);
+          const base=(li>=0&&li<um.length)?oS[li]:null; return base!=null?clamp(base+adjE,0,99):null; })];
         const lj=aO.reduce((a2,v2,i2)=>(v2!=null&&i2<histN)?i2:a2,-1); if(lj>=0) fO[lj]=aO[lj];
         dsOcc.push({label:elabel,data:aO,borderColor:FC_COLOR[ek],tension:.3,pointRadius:2});
-        dsOcc.push({label:elabel+' forecast',data:fO,borderColor:FC_COLOR[ek],borderDash:[6,4],tension:.3,pointRadius:2});
+        dsOcc.push({label:elabel+' forecast',data:fO,borderColor:FC_COLOR[ek],borderDash:[6,4],tension:.3,pointRadius:2,_joinAt:lj});
       }
     } else {
       dsOcc=[{label:fcEntName+' occupancy actual',data:actA,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
-        {label:'Forecast',data:fcA,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
+        {label:'Forecast',data:fcA,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3,_joinAt:occJoin},
         {label:'Low',data:loA,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
         {label:'High',data:hiA,borderColor:'rgba(201,162,39,.25)',pointRadius:0}];
       if(fcVs){
         const bpFrom=Math.max(13,um.length-BT_MONTHS);
         const bp=um.map((_,t2)=>t2>=bpFrom?ddPred(t2):null);
-        dsOcc.push({label:'What the model would have said',data:[...bp.slice(-histN),...occFc.map(()=>null)],
+        dsOcc.push({label:'Forecast made the month before',data:[...bp.slice(-histN),...occFc.map(()=>null)],
           borderColor:'#6B7280',borderDash:[2,3],borderWidth:1.5,tension:.3,pointRadius:0});
       }
     }
     mkChart('chOccFc',{type:'line',data:{labels:lb,datasets:dsOcc},
-      options:{plugins:{legend:{labels:{filter:i2=>!/Low|High/.test(i2.text)}}},
+      options:{plugins:{legend:{labels:{filter:i2=>!/Low|High/.test(i2.text)}},
+        tooltip:joinTip.plugins.tooltip},
         scales:{y:{ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   }
   /* ADR forecast chart — same construction as the occupancy one beside it */
@@ -6760,16 +6797,39 @@ function renderForecast(d){
     const lj2=aAct.reduce((a2,v2,i2)=>(v2!=null&&i2<histN2)?i2:a2,-1); if(lj2>=0) aFc[lj2]=aAct[lj2];
     const aLo=aFc.map((v,i2)=>i2>=histN2&&v!=null?Math.max(0,v-starCvM(adrMAE,um[um.length-1])):null);
     const aHi=aFc.map((v,i2)=>i2>=histN2&&v!=null?v+starCvM(adrMAE,um[um.length-1]):null);
-    const dsA=[{label:fcEntName+' ADR actual',data:aAct,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
-      {label:'Forecast',data:aFc,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
+    let dsA;
+    if(fcEnt==='all'){
+      /* Overlay the three entities, same as the RevPAR and occupancy charts. This branch was
+         missing, so 'All three' fell through to the single-series build and drew the PROPERTY
+         series under the label "All three ADR actual" — one line pretending to be three. */
+      dsA=[];
+      for(const [ek,elabel] of FC_ENTS.filter(e2=>e2[0]!=='all')){
+        if(!fcEntHas(ek)) continue;
+        const aS=um.map(m2=> ek==='comp'?(un[m2].adrComp??null) : ek==='ind'?(indMon.adr[m2]??null) : (un[m2].adr??null));
+        /* drift measured once on the last three available YoY ratios, exactly as the
+           single-entity model does — never read forward of the series */
+        const lastE=[]; for(let i2=um.length-1;i2>=um.length-3;i2--){ if(i2-12>=0&&aS[i2]!=null&&aS[i2-12]) lastE.push(aS[i2]/aS[i2-12]-1); }
+        const adjE=lastE.length>=2?0.5*median(lastE):0;
+        const aA=[...um.slice(-histN2).map((mk2,i2)=>starCvM(aS[um.length-histN2+i2],mk2)),...adrFc.map(()=>null)];
+        const aF=[...um.slice(-histN2).map(()=>null),...adrFc.map((f2,h2)=>{ const li=um.length-12+(h2+1);
+          const base=(li>=0&&li<um.length)?aS[li]:null; return base!=null?starCvM(base*(1+adjE),f2.ym):null; })];
+        const ljE=aA.reduce((a2,v2,i2)=>(v2!=null&&i2<histN2)?i2:a2,-1); if(ljE>=0) aF[ljE]=aA[ljE];
+        dsA.push({label:elabel,data:aA,borderColor:FC_COLOR[ek],tension:.3,pointRadius:2});
+        dsA.push({label:elabel+' forecast',data:aF,borderColor:FC_COLOR[ek],borderDash:[6,4],tension:.3,pointRadius:2,_joinAt:ljE});
+      }
+    } else {
+    dsA=[{label:fcEntName+' ADR actual',data:aAct,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
+      {label:'Forecast',data:aFc,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3,_joinAt:lj2},
       {label:'Low',data:aLo,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
       {label:'High',data:aHi,borderColor:'rgba(201,162,39,.25)',pointRadius:0}];
     if(fcVs){ const bpA=um.map((_,t2)=>t2>=Math.max(13,um.length-BT_MONTHS)?ddPredA(t2):null);
-      dsA.push({label:'What the model would have said',
+      dsA.push({label:'Forecast made the month before',
         data:[...bpA.slice(-histN2).map((v,i2)=>starCvM(v,um[um.length-histN2+i2])),...adrFc.map(()=>null)],
         borderColor:'#6B7280',borderDash:[2,3],borderWidth:1.5,tension:.3,pointRadius:0}); }
+    }
     mkChart('chAdrFc',{type:'line',data:{labels:lb2,datasets:dsA},
-      options:{plugins:{legend:{labels:{filter:i2=>!/Low|High/.test(i2.text)}}},
+      options:{plugins:{legend:{labels:{filter:i2=>!/Low|High/.test(i2.text)}},
+        tooltip:joinTip.plugins.tooltip},
         scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}}},maintainAspectRatio:false}});
   } else destroyChart('chAdrFc');  if(adrCloud&&adrPanelHtml){
     const ent2=state.adrEnt||'my';
