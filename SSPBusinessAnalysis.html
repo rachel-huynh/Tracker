@@ -6301,7 +6301,7 @@ function renderForecast(d){
      innerHTML replacement only detaches the canvas, the Chart object would otherwise stay
      in state.charts holding a dead reference (same reason renderHeat destroys chTsExp). */
   if(!otaVisible()) destroyChart('chOta');
-  if(!hasStarHist){ destroyChart('chFc'); destroyChart('chOccFc'); destroyChart('chAdrOcc'); }
+  if(!hasStarHist){ destroyChart('chFc'); destroyChart('chOccFc'); destroyChart('chAdrFc'); destroyChart('chAdrOcc'); }
   const ota=otaVisible()?state.store.rev?.ota:null; let otaHtml='',otaChart=null;
   if(ota){
     const sspH=ota.hotels.find(h=>/sofitel/i.test(h));
@@ -6362,19 +6362,38 @@ function renderForecast(d){
   for(const k2 of Object.keys(state.store.months)){ const c2=starOf(k2)?.comp; if(!c2?.occ) continue;
     c2.occ.months.forEach((mk2,i2)=>{ if(!mk2) return; un[mk2]=un[mk2]||{};
       if(c2.occ.my[i2]!=null) un[mk2].occ=c2.occ.my[i2];
-      if(c2.occ.comp?.[i2]!=null) un[mk2].comp=c2.occ.comp[i2]; });}
+      if(c2.occ.comp?.[i2]!=null) un[mk2].comp=c2.occ.comp[i2];
+      if(c2.adr?.my?.[i2]!=null) un[mk2].adr=c2.adr.my[i2];
+      if(c2.adr?.comp?.[i2]!=null) un[mk2].adrComp=c2.adr.comp[i2]; });}
   const um=Object.keys(un).sort();
   /* the occupancy model runs on the SELECTED entity. The Comp sheet carries my + comp, so
      the industry series is taken from the Industry sheet instead. */
   const uocc=um.map(m2=> fcBase==='comp' ? (un[m2].comp??null)
                        : fcBase==='ind'  ? (indMon.occ[m2]??null)
                        : (un[m2].occ??null));
+  const uadr=um.map(m2=> fcBase==='comp' ? (un[m2].adrComp??null)
+                       : fcBase==='ind'  ? (indMon.adr[m2]??null)
+                       : (un[m2].adr??null));
+  /* ADR uses the SAME dampened-YoY-drift shape as occupancy, but MULTIPLICATIVE: occupancy is
+     a percentage so its drift is added in points, while rate is a level that moves
+     proportionally — adding dong would make the drift mean something different at ₫3m than at
+     ₫6m, and would not survive the currency toggle. So: adr(t) = adr(t−12) × (1 + ½·median of
+     the last three YoY % changes). Same halving, same 3-month window, same one-step-ahead
+     backtest for the band. */
+  const ddPredA=t2=>{ const dfs=[];
+    for(let i2=t2-1;i2>=t2-3;i2--){ if(i2-12>=0&&uadr[i2]!=null&&uadr[i2-12]) dfs.push(uadr[i2]/uadr[i2-12]-1); }
+    return (t2-12>=0&&uadr[t2-12]!=null)? uadr[t2-12]*(1+(dfs.length>=2?0.5*median(dfs):0)) : null; };
+  const aErr=[]; for(let t2=13;t2<um.length;t2++){ if(uadr[t2]==null) continue;
+    const p3=ddPredA(t2); if(p3!=null) aErr.push(Math.abs(p3-uadr[t2])); }
+  const adrMAE=aErr.length>=6?avgA(aErr):null;
+  const adrP80=aErr.length>=6?[...aErr].sort((x,y)=>x-y)[Math.floor(aErr.length*.8)]:null;
+  const fcMoney=(v,mk2)=>v==null?na():moneyFmt(starCvM(v,mk2),1);
   const ddPred=t=>{ const dfs=[]; for(let i2=t-1;i2>=t-3;i2--){ if(i2-12>=0&&uocc[i2]!=null&&uocc[i2-12]!=null) dfs.push(uocc[i2]-uocc[i2-12]); }
     return (t-12>=0&&uocc[t-12]!=null)? uocc[t-12]+(dfs.length>=2?0.5*median(dfs):0) : null; };
   const bErr=[]; for(let t=13;t<um.length;t++){ if(uocc[t]==null) continue; const p2=ddPred(t); if(p2!=null) bErr.push(Math.abs(p2-uocc[t])); }
   const occMAE=bErr.length>=6?avgA(bErr):null;
   const occP80=bErr.length>=6?[...bErr].sort((a,b)=>a-b)[Math.floor(bErr.length*.8)]:null;
-  let modelHtml='', adrPanelHtml='', occFc=null, adrPts=null, adrDec=null, adrCloud=null;
+  let modelHtml='', adrPanelHtml='', occFc=null, adrPts=null, adrDec=null, adrCloud=null, adrFc=null, adrFcRows='';
   window.__setAdrEnt=window.__setAdrEnt||(v=>{ state.adrEnt=v; renderForecast(derive()); });
   window.__setAdrDay=window.__setAdrDay||(v=>{ state.adrDay=v; renderForecast(derive()); });
   const dKeys=Object.keys(state.store.months).filter(k2=>starOf(k2)?.daily?.occ?.[fcBase]||starOf(k2)?.daily?.occ?.my).sort();
@@ -6384,7 +6403,15 @@ function renderForecast(d){
     occFc=[1,2,3].map(h2=>{ const ym=addMonths(um[um.length-1],h2), li=um.length-12+h2;
       const base=(li>=0&&li<um.length)?uocc[li]:null;
       return {ym, ly:base, v:base!=null?clamp(base+adj,0,99):null}; });
-    const fcRows=occFc.map(f2=>`<tr><td>${fmtMonthKey(f2.ym)}</td><td><b>${f2.v!=null?n1(f2.v,1)+'%':'—'}</b></td>
+    /* ADR forecast, same horizon as occupancy */
+    const lastA=[]; for(let i2=um.length-1;i2>=um.length-3;i2--){ if(i2-12>=0&&uadr[i2]!=null&&uadr[i2-12]) lastA.push(uadr[i2]/uadr[i2-12]-1); }
+    const adjA=lastA.length>=2?0.5*median(lastA):0;
+    adrFc=[1,2,3].map(h2=>{ const ym=addMonths(um[um.length-1],h2), li=um.length-12+h2;
+      const base=(li>=0&&li<um.length)?uadr[li]:null;
+      return {ym, ly:base, v:base!=null?base*(1+adjA):null}; });
+    adrFcRows=adrFc.map(f2=>`<tr><td>${fmtMonthKey(f2.ym)}</td><td><b>${fcMoney(f2.v,f2.ym)}</b></td>
+      <td class="small">${(f2.v!=null&&adrMAE!=null)?fcMoney(Math.max(0,f2.v-adrMAE),f2.ym)+' – '+fcMoney(f2.v+adrMAE,f2.ym):''}</td>
+      <td>${fcMoney(f2.ly,f2.ym)}</td>${chgTd(f2.v!=null&&f2.ly?(f2.v/f2.ly-1)*100:null)}</tr>`).join('');    const fcRows=occFc.map(f2=>`<tr><td>${fmtMonthKey(f2.ym)}</td><td><b>${f2.v!=null?n1(f2.v,1)+'%':'—'}</b></td>
       <td class="small">${f2.v!=null?n1(Math.max(0,f2.v-occMAE),1)+' – '+n1(Math.min(99,f2.v+occMAE),1)+'%':''}</td>
       <td>${f2.ly!=null?n1(f2.ly,1)+'%':'—'}</td>${chgTd(f2.v!=null&&f2.ly?(f2.v-f2.ly)/f2.ly*100:null)}</tr>`).join('');
     /* pickup cone: calibrated on the complete stored months */
@@ -6445,12 +6472,17 @@ function renderForecast(d){
         <div class="chartbox"><canvas id="chOccFc"></canvas></div>${fcGapNote}
         <table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast Occ</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${fcRows}</tbody></table>
         <div class="small" style="margin-top:6px">Model: same-month-LY + ½·median(YoY change of last 3 months). Chosen over seasonal-naive, full drift, MPI-bridge and AR variants by rolling backtest on the merged STAR history (${fmtMonthKey(um[0])} → ${fmtMonthKey(um[um.length-1])}, ${bErr.length} test months): MAE <b>${n1(occMAE,1)} pts</b>, 80% of errors ≤ ${n1(occP80,1)} pts. Monthly occupancy is genuinely volatile here — read the band, not the point.</div></div>
-      <div class="panel"><h3>Month-end projection — ${escH(fcEntName)} · pickup cone</h3>
+      <div class="panel"><h3>ADR forecast — ${escH(fcEntName)} · dampened YoY drift${fcEntBtns}</h3>
+        <div class="chartbox"><canvas id="chAdrFc"></canvas></div>
+        ${adrMAE!=null?`<table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast ADR</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${adrFcRows}</tbody></table>
+        <div class="small" style="margin-top:6px">Same shape as the occupancy model beside it, but <b>multiplicative</b>: same-month-LY × (1 + ½·median(YoY % change of last 3 months)). Rate is a level that moves proportionally, so the drift is applied as a percentage rather than added in dong — otherwise the same drift would mean different things at ₫3m and ₫6m, and would not survive the currency toggle. Rolling one-step-ahead backtest over ${aErr.length} test months: MAE <b>${fcMoney(adrMAE,um[um.length-1])}</b>, 80% of errors ≤ ${fcMoney(adrP80,um[um.length-1])}.</div>`
+        :`<div class="small">${na('Not enough ADR history for '+escH(fcEntName)+' to calibrate a band — needs 6 testable months after the first 13')}</div>`}</div>
+    </div>
+    <div class="panel"><h3>Month-end projection — ${escH(fcEntName)} · pickup cone</h3>
         ${projHtml}
         <table><thead><tr><th>Known through day</th><th>Month-end error (± pts MAE)</th><th>Months tested</th></tr></thead>
         <tbody>${coneRows.map(r2=>`<tr><td>${r2.d}</td><td data-v="${r2.mae}">±${n1(r2.mae,1)}</td><td>${r2.n}</td></tr>`).join('')}</tbody></table>
-        <div class="small" style="margin-top:6px">Backtest verdict on ${dKeys.length} stored months: <b>no day-of-week or LY-shape model beat the plain running MTD average</b> — so the honest projection is "the month lands where MTD is", with this cone as the calibrated uncertainty. It tightens sharply after mid-month; before day 10 treat any projection as indicative only.</div></div>
-    </div>`;
+        <div class="small" style="margin-top:6px">Backtest verdict on ${dKeys.length} stored months: <b>no day-of-week or LY-shape model beat the plain running MTD average</b> — so the honest projection is "the month lands where MTD is", with this cone as the calibrated uncertainty. It tightens sharply after mid-month; before day 10 treat any projection as indicative only.</div></div>`;
     const entBtns=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry'],['all','Side by side']]
       .map(([k3,l])=>`<button class="heatbtn ${adrEnt===k3?'on':''}" onclick="__setAdrEnt('${k3}')">${l}</button>`).join(' ');
     const dayBtns=[['all','All days'],['wd','Weekday'],['we','Weekend']]
@@ -6718,7 +6750,28 @@ function renderForecast(d){
       options:{plugins:{legend:{labels:{filter:i2=>!/Low|High/.test(i2.text)}}},
         scales:{y:{ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   }
-  if(adrCloud&&adrPanelHtml){
+  /* ADR forecast chart — same construction as the occupancy one beside it */
+  if(adrFc&&adrMAE!=null){
+    let histN2=Math.min(18,um.length);
+    if(state.tsFrom){ const i0=um.findIndex(m2=>m2>=state.tsFrom); if(i0>=0) histN2=Math.max(3,um.length-i0); }
+    const lb2=[...um.slice(-histN2),...adrFc.map(f2=>f2.ym)].map(fmtMonthKey);
+    const aAct=[...um.slice(-histN2).map((mk2,i2)=>starCvM(uadr[um.length-histN2+i2],mk2)),...adrFc.map(()=>null)];
+    const aFc=[...um.slice(-histN2).map(()=>null),...adrFc.map(f2=>starCvM(f2.v,f2.ym))];
+    const lj2=aAct.reduce((a2,v2,i2)=>(v2!=null&&i2<histN2)?i2:a2,-1); if(lj2>=0) aFc[lj2]=aAct[lj2];
+    const aLo=aFc.map((v,i2)=>i2>=histN2&&v!=null?Math.max(0,v-starCvM(adrMAE,um[um.length-1])):null);
+    const aHi=aFc.map((v,i2)=>i2>=histN2&&v!=null?v+starCvM(adrMAE,um[um.length-1]):null);
+    const dsA=[{label:fcEntName+' ADR actual',data:aAct,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
+      {label:'Forecast',data:aFc,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
+      {label:'Low',data:aLo,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
+      {label:'High',data:aHi,borderColor:'rgba(201,162,39,.25)',pointRadius:0}];
+    if(fcVs){ const bpA=um.map((_,t2)=>t2>=Math.max(13,um.length-BT_MONTHS)?ddPredA(t2):null);
+      dsA.push({label:'What the model would have said',
+        data:[...bpA.slice(-histN2).map((v,i2)=>starCvM(v,um[um.length-histN2+i2])),...adrFc.map(()=>null)],
+        borderColor:'#6B7280',borderDash:[2,3],borderWidth:1.5,tension:.3,pointRadius:0}); }
+    mkChart('chAdrFc',{type:'line',data:{labels:lb2,datasets:dsA},
+      options:{plugins:{legend:{labels:{filter:i2=>!/Low|High/.test(i2.text)}}},
+        scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}}},maintainAspectRatio:false}});
+  } else destroyChart('chAdrFc');  if(adrCloud&&adrPanelHtml){
     const ent2=state.adrEnt||'my';
     const decOf=p2=>{ if(p2.length<30) return null; const s4=[...p2].sort((a,b)=>a.x-b.x);
       return [...Array(10)].map((_,i2)=>{ const sl=s4.slice(Math.floor(i2*s4.length/10),Math.floor((i2+1)*s4.length/10));
