@@ -6151,15 +6151,54 @@ function renderForecast(d){
      seasonal-naive and dampened-YoY models apply unchanged — only the input series differs.
      Property and comp set come from the merged STAR history; the industry from the Industry
      sheet (merged across files) mapped onto the same month axis. */
-  const FC_ENTS=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry']];
+  const FC_ENTS=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry'],['all','All three']];
+  const FC_COLOR={my:'#0B1F3A',comp:'#C0392B',ind:'#6B7280'};
   const fcEnt=FC_ENTS.some(e2=>e2[0]===state.fcEnt)?state.fcEnt:'my';
   window.__setFcEnt=window.__setFcEnt||(v=>{ state.fcEnt=v; renderForecast(derive()); });
   const fcEntName=FC_ENTS.find(e2=>e2[0]===fcEnt)[1];
+  /* 'all' overlays the three entities. Everything that genuinely needs ONE entity (the
+     forecast table, the pickup cone, the backtest MAE) falls back to the property, and the
+     charts override with their own three-series build. */
+  const fcBase=fcEnt==='all'?'my':fcEnt;
+  /* Actual vs forecast: replay the SAME model one step at a time over history, using only
+     the months before each point, and draw what it would have said against what happened.
+     This is the model's track record, not a fit — nothing after month t is used to predict t. */
+  const fcVs=!!state.fcVs;
+  window.__setFcVs=window.__setFcVs||(v=>{ state.fcVs=v; renderForecast(derive()); });
+  const rollPred=(ser,t)=>{ const gg=[];
+    for(let i2=Math.max(12,t-6);i2<t;i2++){ const a3=ser[i2],b3=ser[i2-12]; if(a3!=null&&b3) gg.push(a3/b3-1); }
+    const gr=gg.length?median(gg):null, base=t-12>=0?ser[t-12]:null;
+    return (base!=null&&gr!=null)?base*(1+gr):null; };
+  /* Window the track record to the RECENT past. The merged history reaches back to 2010 and
+     contains the COVID collapse — 21 months where RevPAR fell to ₫73k against a ₫1.87m
+     median. Scoring a year-on-year model across that is meaningless, and dividing by those
+     months turned the percentage error into 47-66%. 36 months is long enough to be a fair
+     test and recent enough to describe the model you are about to rely on.
+     NOTE the score spans those 36 months whatever the Focus period is set to — the focus
+     trims the CHART only, so fewer points can be visible than were scored. The caption names
+     the scoring window explicitly rather than implying it matches the axis. */
+  const BT_MONTHS=36;
+  const backtest=(ser)=>{ const from=Math.max(13,ser.length-BT_MONTHS);
+    const pred=ser.map((_,t)=>t>=from?rollPred(ser,t):null);
+    const errs=[],pcts=[]; let firstT=null,lastT=null;
+    ser.forEach((v,t)=>{ if(v!=null&&pred[t]!=null){ errs.push(Math.abs(pred[t]-v)); if(v) pcts.push(Math.abs(pred[t]/v-1));
+      if(firstT==null) firstT=t; lastT=t; } });
+    /* report the first month actually SCORED, not the window start — they differ whenever the
+       series has a hole. The comp set has no STR data for the whole of 2023, so its window
+       opens in Sep-2023 but nothing is testable until Feb-2025: the 2023 months have no
+       actual, every 2024 month has no same-month-LY to project from, and Jan-2025 has no
+       year-on-year pairs yet. Naming the window start read as 19 consecutive months from
+       Sep-2023, which is not what was measured. */
+    return {pred, n:errs.length, from, firstT, lastT, mae:errs.length?avgA(errs):null, mape:pcts.length?avgA(pcts):null}; };
   const indMon={occ:industryMonthly('occ'),adr:industryMonthly('adr'),revpar:industryMonthly('revpar')};
   const entSeries=e2=> e2==='ind'
       ? {occ:M.map(k2=>indMon.occ[k2]??null), adr:M.map(k2=>indMon.adr[k2]??null), revpar:M.map(k2=>indMon.revpar[k2]??null)}
       : {occ:MH[e2].occ, adr:MH[e2].adr, revpar:MH[e2].revpar};
-  const fcEntHas=e2=>{ const s2=entSeries(e2); return s2.revpar.some(v=>v!=null)||s2.occ.some(v=>v!=null); };
+  const fcEntHas=e2=>{ if(e2==='all') return ['my','comp','ind'].filter(x=>fcEntHas(x)).length>=2;
+    const s2=entSeries(e2); return s2.revpar.some(v=>v!=null)||s2.occ.some(v=>v!=null); };
+  const fcVsBtns=`<span class="noprint" style="float:right;font-weight:400;margin-left:10px">
+      <button class="heatbtn ${fcVs?'':'on'}" onclick="__setFcVs(false)">Forecast</button>
+      <button class="heatbtn ${fcVs?'on':''}" onclick="__setFcVs(true)"${fcEnt==='all'?' disabled title="Pick a single entity — six lines plus three backtests is unreadable"':''}>Actual vs forecast</button></span>`;
   const fcEntBtns=`<span class="noprint" style="float:right;font-weight:400">${FC_ENTS.map(([k2,l2])=>
       `<button class="heatbtn ${fcEnt===k2?'on':''}" onclick="__setFcEnt('${k2}')"${fcEntHas(k2)?'':' disabled title="Not in the loaded STAR files"'}>${l2}</button>`).join(' ')}</span>`;
   /* STAR money converts at STR's OWN rate, never the hotel's — the two FX books never mix.
@@ -6183,8 +6222,21 @@ function renderForecast(d){
      rendering an empty table. Empty when there is no STAR history for the current month
      at all — the "Full-year outlook"/"RevPAR forecast" panels below check this and show
      an explanatory placeholder instead of an empty table/chart. */
-  const fcSer=fcEnt==='my'?series:entSeries(fcEnt);
-  const fcRR=(()=>{ if(fcEnt==='my') return {growth,vol};
+  const fcSer=fcBase==='my'?series:entSeries(fcBase);
+  /* Months on the axis that this entity has no RevPAR for, at the TAIL — the industry has no
+     figure for a provisional month because that month has no Industry sheet. Named in the
+     caption so the line bridging them is not mistaken for forecast coverage. */
+  const fcTailGap=(()=>{ const g=[];
+    for(let i2=M.length-1;i2>=0;i2--){ if(fcSer.revpar[i2]!=null&&fcSer.occ[i2]!=null) break; g.unshift(M[i2]); }
+    return g; })();
+  const fcGapNote=fcTailGap.length
+    ? `<div class="small" style="margin-top:6px"><span class="tag a">no ${escH(fcEntName)} data</span> STR publishes no ${escH(fcEntName)} figure for ${fcTailGap.map(fmtMonthKey).join(', ')} — a provisional month carries no Industry sheet. The actual line stops at the last real month and the dashed line bridges the gap to reach the forecast; it is <b>not</b> a forecast for ${fcTailGap.length>1?'those months':'that month'}.</div>`
+    : '';
+  const btR=fcVs?backtest(fcSer.revpar):null;      // model track record on RevPAR
+  const fcVsNote=(fcVs&&btR&&btR.n>=6)
+    ? `<div class="small" style="margin-top:6px"><b>Actual vs forecast.</b> The grey dotted line is the SAME model replayed one month at a time across history, using only the months before each point — its track record, not a fit. Over ${btR.n} testable months (${fmtMonthKey(M[btR.firstT])} – ${fmtMonthKey(M[btR.lastT])}${btR.n<BT_MONTHS?`, fewer than the ${BT_MONTHS}-month window because this series has gaps STR did not publish`:``}) it was out by <b>${moneyFmt(starCvM(btR.mae,M[n-1]),1)}</b> on average (<b>${pct(btR.mape)}</b>). Where grey sits below navy the model under-called the month; above, it over-called. The Focus period trims the chart, not this score.</div>`
+    : (fcVs?`<div class="small" style="margin-top:6px">Not enough history yet to replay the model for ${escH(fcEntName)} — needs at least 6 testable months after the first 13.</div>`:'');
+  const fcRR=(()=>{ if(fcBase==='my') return {growth,vol};
     const gr={},vl={};
     for(const k2 of Object.keys(fcSer)){
       const gg=[]; for(let i2=Math.max(12,n-6);i2<n;i2++){ const a2=fcSer[k2][i2],b2=fcSer[k2][i2-12]; if(a2!=null&&b2) gg.push(a2/b2-1); }
@@ -6206,7 +6258,7 @@ function renderForecast(d){
   });
   /* the same model on the SELECTED entity — drives the RevPAR forecast chart only; the
      property''s own `fc` above still feeds the full-year revenue / GOP table */
-  const fcE=fcEnt==='my'?fc:H.map((ym,h2)=>{ const li2=n-12+(h2+1), o2={ym};
+  const fcE=fcBase==='my'?fc:H.map((ym,h2)=>{ const li2=n-12+(h2+1), o2={ym};
     for(const k2 of Object.keys(fcSer)){ const base2=li2>=0&&li2<n?fcSer[k2][li2]:null;
       o2[k2]=base2!=null&&fcRR.growth[k2]!=null?base2*(1+fcRR.growth[k2]):null;
       o2[k2+'Lo']=base2!=null&&fcRR.growth[k2]!=null?base2*(1+fcRR.growth[k2]-fcRR.vol[k2]):null;
@@ -6314,8 +6366,8 @@ function renderForecast(d){
   const um=Object.keys(un).sort();
   /* the occupancy model runs on the SELECTED entity. The Comp sheet carries my + comp, so
      the industry series is taken from the Industry sheet instead. */
-  const uocc=um.map(m2=> fcEnt==='comp' ? (un[m2].comp??null)
-                       : fcEnt==='ind'  ? (indMon.occ[m2]??null)
+  const uocc=um.map(m2=> fcBase==='comp' ? (un[m2].comp??null)
+                       : fcBase==='ind'  ? (indMon.occ[m2]??null)
                        : (un[m2].occ??null));
   const ddPred=t=>{ const dfs=[]; for(let i2=t-1;i2>=t-3;i2--){ if(i2-12>=0&&uocc[i2]!=null&&uocc[i2-12]!=null) dfs.push(uocc[i2]-uocc[i2-12]); }
     return (t-12>=0&&uocc[t-12]!=null)? uocc[t-12]+(dfs.length>=2?0.5*median(dfs):0) : null; };
@@ -6325,7 +6377,7 @@ function renderForecast(d){
   let modelHtml='', adrPanelHtml='', occFc=null, adrPts=null, adrDec=null, adrCloud=null;
   window.__setAdrEnt=window.__setAdrEnt||(v=>{ state.adrEnt=v; renderForecast(derive()); });
   window.__setAdrDay=window.__setAdrDay||(v=>{ state.adrDay=v; renderForecast(derive()); });
-  const dKeys=Object.keys(state.store.months).filter(k2=>starOf(k2)?.daily?.occ?.[fcEnt]||starOf(k2)?.daily?.occ?.my).sort();
+  const dKeys=Object.keys(state.store.months).filter(k2=>starOf(k2)?.daily?.occ?.[fcBase]||starOf(k2)?.daily?.occ?.my).sort();
   if(um.length>=16&&occMAE!=null){
     const lastD=[]; for(let i2=um.length-1;i2>=um.length-3;i2--){ if(i2-12>=0&&uocc[i2]!=null&&uocc[i2-12]!=null) lastD.push(uocc[i2]-uocc[i2-12]); }
     const adj=lastD.length>=2?0.5*median(lastD):0;
@@ -6337,7 +6389,7 @@ function renderForecast(d){
       <td>${f2.ly!=null?n1(f2.ly,1)+'%':'—'}</td>${chgTd(f2.v!=null&&f2.ly?(f2.v-f2.ly)/f2.ly*100:null)}</tr>`).join('');
     /* pickup cone: calibrated on the complete stored months */
     const cuts=[7,10,14,20,25], cone={}; cuts.forEach(c3=>cone[c3]=[]);
-    for(const k2 of dKeys){ const dgo=starOf(k2)?.daily?.occ; const dO=dgo&&dgo[fcEnt]; if(!dO) continue;
+    for(const k2 of dKeys){ const dgo=starOf(k2)?.daily?.occ; const dO=dgo&&dgo[fcBase]; if(!dO) continue;
       const [y3,m3]=k2.split('-').map(Number), nD=new Date(y3,m3,0).getDate();
       const vals=dO.slice(0,nD); if(vals.filter(v=>v!=null).length<nD-2) continue;
       const act=avgA(vals.filter(v=>v!=null));
@@ -6389,8 +6441,8 @@ function renderForecast(d){
     }
     modelHtml=`
     <div class="cols c2">
-      <div class="panel"><h3>Occupancy forecast — ${escH(fcEntName)} · dampened YoY drift <span class="tag g">backtest winner</span>${fcEntBtns}</h3>
-        <div class="chartbox"><canvas id="chOccFc"></canvas></div>
+      <div class="panel"><h3>Occupancy forecast — ${escH(fcEntName)} · dampened YoY drift <span class="tag g">backtest winner</span>${fcVsBtns}${fcEntBtns}</h3>
+        <div class="chartbox"><canvas id="chOccFc"></canvas></div>${fcGapNote}
         <table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast Occ</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${fcRows}</tbody></table>
         <div class="small" style="margin-top:6px">Model: same-month-LY + ½·median(YoY change of last 3 months). Chosen over seasonal-naive, full drift, MPI-bridge and AR variants by rolling backtest on the merged STAR history (${fmtMonthKey(um[0])} → ${fmtMonthKey(um[um.length-1])}, ${bErr.length} test months): MAE <b>${n1(occMAE,1)} pts</b>, 80% of errors ≤ ${n1(occP80,1)} pts. Monthly occupancy is genuinely volatile here — read the band, not the point.</div></div>
       <div class="panel"><h3>Month-end projection — ${escH(fcEntName)} · pickup cone</h3>
@@ -6563,8 +6615,8 @@ function renderForecast(d){
       <h3 style="margin:0">Independent outlook — not derived from the rolling forecast</h3>
       <div class="small">The two charts below are this dashboard's <b>own</b> statistical projection, built from STAR trend data (same-month-last-year × trailing run-rate). They are deliberately independent of the management rolling forecast above, so the two can be compared as a cross-check rather than one confirming the other.</div></div>
     ${adrPanelHtml}
-    <div class="panel"><h3>RevPAR forecast — ${escH(fcEntName)} · seasonal-naive × run-rate YoY (median of last 6 months: ${pct(fcRR.growth.revpar)} ± ${pct(fcRR.vol.revpar)})${fcEntBtns}</h3>
-      <div class="chartbox tall"><canvas id="chFc"></canvas></div></div>`:noStarHistHtml}
+    <div class="panel"><h3>RevPAR forecast — ${escH(fcEntName)}${fcEnt==='all'?'':' · seasonal-naive × run-rate YoY (median of last 6 months: '+pct(fcRR.growth.revpar)+' ± '+pct(fcRR.vol.revpar)+')'}${fcVsBtns}${fcEntBtns}</h3>
+      <div class="chartbox tall"><canvas id="chFc"></canvas></div>${fcGapNote}${fcVsNote}</div>`:noStarHistHtml}
     ${modelHtml}
     ${otaHtml}`;
   /* forecast chart — history window can be trimmed with the shared focus period (From).
@@ -6574,16 +6626,55 @@ function renderForecast(d){
   let labels=[...M,...H].map(fmtMonthKey);
   let act=[...fcSer.revpar.map((v,i)=>v==null?null:starCvM(v,M[i])),...H.map(()=>null)];
   let fcl=[...M.map(()=>null),...fcE.map(f=>f.revpar==null?null:starCvM(f.revpar,f.ym))];
-  fcl[M.length-1]=act[M.length-1];
+  /* Join the forecast to the LAST MONTH THAT ACTUALLY HAS DATA, not to the last month on the
+     axis. They are not always the same: a provisional (Weekly-STAR) latest month carries no
+     Industry sheet, so the industry series ends a month early while the axis and the forecast
+     horizon still run from the property's last month — the gold line then started after a
+     hole and floated detached from the navy one. Bridging at the real last point reconnects
+     it; fcTailGap below says in words which months are missing so the dashed segment spanning
+     them is not read as forecast coverage. */
+  const lastActI=act.reduce((a2,v2,i2)=>(v2!=null&&i2<M.length)?i2:a2,-1);
+  if(lastActI>=0) fcl[lastActI]=act[lastActI];
   let lo=[...M.map(()=>null),...fcE.map(f=>f.revparLo==null?null:starCvM(f.revparLo,f.ym))];
   let hi=[...M.map(()=>null),...fcE.map(f=>f.revparHi==null?null:starCvM(f.revparHi,f.ym))];
+
   const cut0=state.tsFrom?M.findIndex(m2=>m2>=state.tsFrom):0;
   if(cut0>0){ labels=labels.slice(cut0); act=act.slice(cut0); fcl=fcl.slice(cut0); lo=lo.slice(cut0); hi=hi.slice(cut0); }
-  mkChart('chFc',{type:'line',data:{labels,datasets:[
-      {label:fcEntName+' RevPAR actual',data:act,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
+  let dsFc;
+  if(fcEnt==='all'){
+    /* three entities overlaid: solid = actual, dashed = that entity's own forecast. The
+       ±band is dropped — six lines plus three ribbons is unreadable, and the point of this
+       view is the SHAPE of the three against each other, not the uncertainty of one. */
+    dsFc=[];
+    for(const [ek,elabel] of FC_ENTS.filter(e2=>e2[0]!=='all')){
+      if(!fcEntHas(ek)) continue;
+      const ser=ek==='my'?series:entSeries(ek);
+      const rr=(()=>{ const gr={},vl={};
+        for(const k3 of Object.keys(ser)){ const gg=[];
+          for(let i2=Math.max(12,n-6);i2<n;i2++){ const a3=ser[k3][i2],b3=ser[k3][i2-12]; if(a3!=null&&b3) gg.push(a3/b3-1); }
+          gr[k3]=gg.length?median(gg):null; vl[k3]=stdev(gg); } return gr; })();
+      let aE=[...ser.revpar.map((v,i)=>v==null?null:starCvM(v,M[i])),...H.map(()=>null)];
+      let fE=[...M.map(()=>null),...H.map((ym,h2)=>{ const li2=n-12+(h2+1);
+        const base=li2>=0&&li2<n?ser.revpar[li2]:null;
+        return (base!=null&&rr.revpar!=null)?starCvM(base*(1+rr.revpar),ym):null; })];
+      const lj=aE.reduce((a2,v2,i2)=>(v2!=null&&i2<M.length)?i2:a2,-1); if(lj>=0) fE[lj]=aE[lj];
+      if(cut0>0){ aE=aE.slice(cut0); fE=fE.slice(cut0); }
+      dsFc.push({label:elabel,data:aE,borderColor:FC_COLOR[ek],tension:.3,pointRadius:2});
+      dsFc.push({label:elabel+' forecast',data:fE,borderColor:FC_COLOR[ek],borderDash:[6,4],tension:.3,pointRadius:2});
+    }
+  } else {
+    dsFc=[{label:fcEntName+' RevPAR actual',data:act,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
       {label:'Forecast',data:fcl,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
       {label:'Low',data:lo,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
-      {label:'High',data:hi,borderColor:'rgba(201,162,39,.25)',pointRadius:0}]},
+      {label:'High',data:hi,borderColor:'rgba(201,162,39,.25)',pointRadius:0}];
+    if(fcVs&&btR&&btR.n>=6){
+      let bl=[...btR.pred.map((v,i)=>v==null?null:starCvM(v,M[i])),...H.map(()=>null)];
+      if(cut0>0) bl=bl.slice(cut0);
+      dsFc.push({label:'What the model would have said',data:bl,borderColor:'#6B7280',
+        borderDash:[2,3],borderWidth:1.5,tension:.3,pointRadius:0});
+    }
+  }
+  mkChart('chFc',{type:'line',data:{labels,datasets:dsFc},
     options:{plugins:{legend:{labels:{filter:i=>!/Low|High/.test(i.text)}}},scales:{y:{ticks:{callback:v=>moneyFmt(v,1)}}},maintainAspectRatio:false}});
   }
   /* model lab charts */
@@ -6593,14 +6684,37 @@ function renderForecast(d){
     const lb=[...um.slice(-histN),...occFc.map(f2=>f2.ym)].map(fmtMonthKey);
     const actA=[...uocc.slice(-histN),...occFc.map(()=>null)];
     const fcA=[...um.slice(-histN).map(()=>null),...occFc.map(f2=>f2.v)];
-    fcA[histN-1]=actA[histN-1];
+    const lastActJ=actA.reduce((a2,v2,i2)=>(v2!=null&&i2<histN)?i2:a2,-1);   // see chFc note
+    if(lastActJ>=0) fcA[lastActJ]=actA[lastActJ];
     const loA=fcA.map((v,i2)=>i2>=histN&&v!=null?Math.max(0,v-occMAE):null);
     const hiA=fcA.map((v,i2)=>i2>=histN&&v!=null?Math.min(99,v+occMAE):null);
-    mkChart('chOccFc',{type:'line',data:{labels:lb,datasets:[
-        {label:fcEntName+' occupancy actual',data:actA,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
+    let dsOcc;
+    if(fcEnt==='all'){
+      dsOcc=[];
+      for(const [ek,elabel] of FC_ENTS.filter(e2=>e2[0]!=='all')){
+        if(!fcEntHas(ek)) continue;
+        const oS=um.map(m2=> ek==='comp'?(un[m2].comp??null) : ek==='ind'?(indMon.occ[m2]??null) : (un[m2].occ??null));
+        const pr=t2=>{ const dfs=[]; for(let i2=t2-1;i2>=t2-3;i2--){ if(i2-12>=0&&oS[i2]!=null&&oS[i2-12]!=null) dfs.push(oS[i2]-oS[i2-12]); }
+          return (t2-12>=0&&oS[t2-12]!=null)? clamp(oS[t2-12]+(dfs.length>=2?0.5*median(dfs):0),0,99) : null; };
+        const aO=[...oS.slice(-histN),...occFc.map(()=>null)];
+        const fO=[...um.slice(-histN).map(()=>null),...occFc.map((f2,h2)=>pr(um.length+h2))];
+        const lj=aO.reduce((a2,v2,i2)=>(v2!=null&&i2<histN)?i2:a2,-1); if(lj>=0) fO[lj]=aO[lj];
+        dsOcc.push({label:elabel,data:aO,borderColor:FC_COLOR[ek],tension:.3,pointRadius:2});
+        dsOcc.push({label:elabel+' forecast',data:fO,borderColor:FC_COLOR[ek],borderDash:[6,4],tension:.3,pointRadius:2});
+      }
+    } else {
+      dsOcc=[{label:fcEntName+' occupancy actual',data:actA,borderColor:'#0B1F3A',tension:.3,pointRadius:2},
         {label:'Forecast',data:fcA,borderColor:'#C9A227',borderDash:[6,4],tension:.3,pointRadius:3},
         {label:'Low',data:loA,borderColor:'rgba(201,162,39,.25)',pointRadius:0,fill:'+1',backgroundColor:'rgba(201,162,39,.12)'},
-        {label:'High',data:hiA,borderColor:'rgba(201,162,39,.25)',pointRadius:0}]},
+        {label:'High',data:hiA,borderColor:'rgba(201,162,39,.25)',pointRadius:0}];
+      if(fcVs){
+        const bpFrom=Math.max(13,um.length-BT_MONTHS);
+        const bp=um.map((_,t2)=>t2>=bpFrom?ddPred(t2):null);
+        dsOcc.push({label:'What the model would have said',data:[...bp.slice(-histN),...occFc.map(()=>null)],
+          borderColor:'#6B7280',borderDash:[2,3],borderWidth:1.5,tension:.3,pointRadius:0});
+      }
+    }
+    mkChart('chOccFc',{type:'line',data:{labels:lb,datasets:dsOcc},
       options:{plugins:{legend:{labels:{filter:i2=>!/Low|High/.test(i2.text)}}},
         scales:{y:{ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   }
@@ -8020,14 +8134,42 @@ async function cloudPull(notify=true){
     return false;
   }catch(e){ if(notify) toast('Pull failed: '+e.message,true); throw e; }
 }
+/* Realtime tells us THAT the row changed; it does not hand us the row.
+   This used to read the whole store straight out of the change payload
+   (`row.data?.months`). Supabase Realtime caps a record at ~1 MB, so once the
+   store passed that — it is now over 8 MB — the payload arrived with `data`
+   stripped, the `if` fell through, and reviewers simply stopped auto-updating.
+   Silently: no error, no toast, nothing in the console. Never read the store
+   from the payload; treat the event as a doorbell and fetch. */
+let _rtBusy=false, _rtAgain=false;
 function cloudSubscribe(){
   sb.channel('ssp-store')
-    .on('postgres_changes',{event:'*',schema:'public',table:CLOUD.table,filter:'id=eq.'+CLOUD.rowId},p=>{
-      const row=p.new;
-      if(!row||row.client_id===CLIENT_ID) return;      // ignore own writes
-      if(row.data?.months){ state.store=row.data; saveStore(); state.month=null; refreshMonths(); renderAll();
-        toast('🔄 Live update from '+(row.updated_by||'a reviewer')); }
+    .on('postgres_changes',{event:'*',schema:'public',table:CLOUD.table,filter:'id=eq.'+CLOUD.rowId},row=>{
+      cloudLiveUpdate(row&&row.new||{});
     }).subscribe();
+}
+async function cloudLiveUpdate(row){
+  if(row.client_id===CLIENT_ID) return;                  // our own write, named in the payload
+  /* Coalesce: a burst of writes must not start a burst of multi-MB pulls. If one is already
+     running, remember that another is due and run it once at the end. */
+  if(_rtBusy){ _rtAgain=true; return; }
+  _rtBusy=true;
+  try{
+    let by=row.updated_by;
+    /* A truncated payload carries no client_id either, so our OWN publish would look like
+       someone else's. Probe the two small columns first — that query always fits — and bail
+       if the latest write turns out to be ours. */
+    if(row.client_id===undefined){
+      const {data:meta}=await sb.from(CLOUD.table).select('client_id,updated_by').eq('id',CLOUD.rowId).maybeSingle();
+      if(meta&&meta.client_id===CLIENT_ID) return;
+      by=by||meta?.updated_by;
+    }
+    if(await cloudPull(false)) toast('🔄 Live update from '+(by||'another user'));
+  }catch(e){ console.error('realtime refresh failed',e); }
+  finally{
+    _rtBusy=false;
+    if(_rtAgain){ _rtAgain=false; cloudLiveUpdate({}); }
+  }
 }
 
 /* =====================================================================
