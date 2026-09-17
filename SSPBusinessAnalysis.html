@@ -6048,6 +6048,24 @@ function renderHeat(d){
     return h+'</tbody></table></div></div>';
   };
 
+  /* ---- Next 30 days by day of week, one block per entity ----
+     Placed directly above the heatmaps because it is their forward-looking twin: the
+     heatmaps show the month x day-of-week pattern that HAS happened, this shows the same
+     shape carried forward. All three entities are printed rather than hidden behind a
+     selector, to match how the rest of this tab reads. */
+  const d30SectionHtml=()=>{
+    const blocks=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry']].map(([e,lbl])=>{
+      const D=buildD30(e); if(!D) return '';
+      return `<div class="panel"><h3>${lbl} — next 30 days by day of week</h3>${d30TableHtml(D,d30Money(D))}
+        <div class="small" style="margin-top:6px">Each day = that month's forecast level × the day-of-week factor (<b>vs month avg</b>), measured over ${D.B.occ.keys.length} months of STAR daily grids.
+          Bands are measured end-to-end — forecast level × shape against what actually happened — so they carry the month's uncertainty as well as the day's.
+          A single dated night lands within about ${n1(D.B.occ.mae.day,1)} pts on occupancy, so read this as which days run hot or cold, not as a price for one date.</div></div>`;
+    }).filter(Boolean);
+    if(!blocks.length) return '';
+    return `<div style="font-size:15px;font-weight:700;color:var(--navy);margin:22px 0 6px;padding-bottom:5px;border-bottom:2px solid var(--gold)">Next 30 days — forecast by day of week</div>
+      <div class="small" style="margin:-2px 0 8px">The forward-looking twin of the heatmaps below: those show the month × day-of-week pattern that already happened, this carries the same shape forward onto the next 30 days.</div>
+      ${blocks.join('')}`;
+  };
   const heatmapSectionHtml=()=>{
     const rows=HEAT_ENTS.map(([e,eLabel])=>{
       const panels=METRICS.map(([gmet,mLabel,gIdxName])=>{
@@ -6101,6 +6119,7 @@ function renderHeat(d){
         :'<div class="small" style="padding:20px">No '+gran+' series could be built from the stored months — '+(gran==='daily'||gran==='weekly'?'the stored STAR files carry no "Daily by Month" grids':'no Comp-sheet history parsed')+'. Re-drop the Monthly STAR files in Settings &amp; Data.</div>'}
       <div class="small" style="margin-top:6px">${gran==='daily'||gran==='weekly'?'Aggregated from the STAR daily grids ('+months.length+' stored months); weekly = Monday-start weeks':'From the merged 18-month STAR histories ('+ts.labels.length+' '+(gran==='yearly'?'years':'months')+')'}${met==='adr'?'; ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc)':''}.${ts.prov?.some(Boolean)?' <b>'+ts.prov.filter(Boolean).length+' point(s) marked “(p)” are provisional</b> — built from the Weekly STAR because the official Monthly STAR for that month has not been dropped yet; they refresh automatically once it is.':''} “vs previous year” overlays the same ${gran==='yearly'?'year −1':gran==='monthly'?'month':gran==='weekly'?'week':'calendar day'} one year back (dashed grey) — gaps mean that period is not stored yet.${(state.tsDay||'all')!=='all'?' <b>Day filter ('+(state.tsDay==='wd'?'weekdays':'weekends')+') applies to the Daily/Weekly views only</b> — monthly and coarser use the official STAR monthly figures.':''}</div></div>
     ${dowTableHtml()}
+    ${d30SectionHtml()}
     ${heatmapSectionHtml()}`;
 
   if(ts.labels.length){
@@ -6131,6 +6150,119 @@ function olsNext(vals,steps){ // simple linear projection of a series
   const b=(n*sxy-sx*sy)/(n*sxx-sx*sx), a=(sy-b*sx)/n;
   return steps.map(s=>a+b*(vals.length-1+s));
 }
+/* ---------- Next-30-days day-of-week forecast ----------
+   Top level so BOTH the Forecast tab and Patterns & Heatmaps can build it per entity: the
+   Forecast tab wraps it in a chart and a day-by-day list, Patterns prints the tables for all
+   three entities at once (that tab shows everything side by side rather than behind a
+   selector). One implementation, so the two views cannot disagree. */
+  /* ---- Next 30 days: monthly level x day-of-week shape ----------------------------
+     Two separate things are being predicted, and they are NOT equally reliable:
+       SHAPE  — which days run hot or cold. Measured from 32 months of STAR daily grids and
+                very stable (Tue/Wed ~1.10 of the month average, Sat ~0.88). A leave-one-
+                month-out test beats spreading the month evenly on all nine entity x metric
+                combinations, by 8-30%.
+       LEVEL  — where the month as a whole lands. This is the monthly forecast, and it is
+                where nearly all the error lives.
+     So a single day 30 days out carries the month's uncertainty plus the day's. Bands below
+     are measured end-to-end (forecast level x shape vs what actually happened), never
+     assumed, and the weekday/weekend rows are much tighter because averaging ~20 and ~10
+     days cancels most of the day-level noise. */
+function buildD30(fcBase){
+    const METS3=['occ','adr','revpar'], DOWN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const isWE=d=>d===5||d===6;                      // STR convention: Fri + Sat
+    const monthsOf=met=>{ const ms=[];
+      for(const mk of Object.keys(state.store.months).sort()){
+        const g=starOf(mk)?.daily?.[met]?.[fcBase]; if(!g) continue;
+        const [y,m]=mk.split('-').map(Number), nD=new Date(y,m,0).getDate(), rows=[];
+        for(let d=1;d<=nD;d++){ const v=g[d-1]; if(v!=null) rows.push({dow:new Date(y,m-1,d).getDay(),v}); }
+        if(rows.length>=20) ms.push({mk,rows,avg:rows.reduce((s,r)=>s+r.v,0)/rows.length}); }
+      return ms; };
+    const facFrom=(ms,skip)=>{ const acc={}; for(let k=0;k<7;k++) acc[k]=[];
+      for(const o of ms){ if(o.mk===skip||!o.avg) continue; for(const r of o.rows) acc[r.dow].push(r.v/o.avg); }
+      const f={}; for(let k=0;k<7;k++) f[k]=acc[k].length?median(acc[k]):1; return f; };
+    const drift=(lvl,met,upto)=>{ const dfs=[];
+      for(let i=upto-1;i>=upto-3;i--){ if(i-12>=0&&lvl[i]!=null&&lvl[i-12]) dfs.push(met==='occ'?lvl[i]-lvl[i-12]:lvl[i]/lvl[i-12]-1); }
+      return dfs.length>=2?0.5*median(dfs):0; };
+    const B={};
+    for(const met of METS3){
+      const ms=monthsOf(met); if(ms.length<14) return null;
+      const keys=ms.map(o=>o.mk), lvl=ms.map(o=>o.avg);
+      /* end-to-end bands: month level predicted from data BEFORE the month, shape from the
+         other months, scored against the real days */
+      let eDay=0,nDay=0,eWD=0,eWE=0,nM=0;
+      const byD={}; for(let k=0;k<7;k++) byD[k]={s:0,n:0};      // one dated night of that weekday
+      const byA={}; for(let k=0;k<7;k++) byA[k]={s:0,n:0};      // the AVERAGE of that weekday in a month
+      for(let t=13;t<ms.length;t++){
+        const ly=t-12; if(lvl[ly]==null) continue;
+        const adj=drift(lvl,met,t);
+        const pl=met==='occ'?lvl[ly]+adj:lvl[ly]*(1+adj);
+        const f=facFrom(ms,ms[t].mk), rows=ms[t].rows;
+        for(const r of rows){ const e2=Math.abs(pl*f[r.dow]-r.v); eDay+=e2; nDay++; byD[r.dow].s+=e2; byD[r.dow].n++; }
+        const agg=sel=>{ const A=rows.filter(r=>sel(r.dow)); if(!A.length) return null;
+          return Math.abs(A.reduce((s,r)=>s+pl*f[r.dow],0)/A.length - A.reduce((s,r)=>s+r.v,0)/A.length); };
+        /* the table shows the AVERAGE of each weekday across the window, so score that —
+           not a single dated night. It barely differs, because the month-level error is
+           common to all four Tuesdays and so does not average away, but quoting the number
+           that was actually measured beats quoting a near-enough one. */
+        for(let k=0;k<7;k++){ const A=rows.filter(r=>r.dow===k); if(!A.length) continue;
+          byA[k].s+=Math.abs(pl*f[k]-A.reduce((s2,r)=>s2+r.v,0)/A.length); byA[k].n++; }
+        const a=agg(d=>!isWE(d)), b=agg(isWE);
+        if(a!=null&&b!=null){ eWD+=a; eWE+=b; nM++; }
+      }
+      B[met]={keys,lvl,fac:facFrom(ms,null),
+        mae:{day:nDay?eDay/nDay:null, wd:nM?eWD/nM:null, we:nM?eWE/nM:null,
+             byDow:Object.fromEntries(Object.entries(byD).map(([k,v])=>[k,v.n?v.s/v.n:null])),
+             byDowAvg:Object.fromEntries(Object.entries(byA).map(([k,v])=>[k,v.n?v.s/v.n:null]))},
+        levelFor:ym=>{ const i=keys.indexOf(ym); if(i>=0) return lvl[i];
+          const j=keys.indexOf((+ym.slice(0,4)-1)+'-'+ym.slice(5,7)); if(j<0) return null;
+          const adj=drift(lvl,met,keys.length);
+          return met==='occ'?lvl[j]+adj:lvl[j]*(1+adj); }};
+    }
+    /* start from today, or from the day after the last stored day when the data is ahead */
+    const now=new Date(); const days=[];
+    for(let i=0;i<30;i++){
+      const dt=new Date(now.getFullYear(),now.getMonth(),now.getDate()+i);
+      const ym=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0'), dow=dt.getDay();
+      const row={dt,dow,label:DOWN[dow]+' '+dt.getDate()+' '+MONTHS[dt.getMonth()].slice(0,3)};
+      let ok=true;
+      for(const met of METS3){ const L=B[met].levelFor(ym);
+        if(L==null){ ok=false; break; } row[met]=L*B[met].fac[dow]; }
+      if(ok) days.push(row);
+    }
+    if(!days.length) return null;
+    const avgOf=(sel,met)=>{ const A=days.filter(d=>sel(d.dow)); return A.length?A.reduce((s,d)=>s+d[met],0)/A.length:null; };
+    const byDow=k=>{ const A=days.filter(d=>d.dow===k); if(!A.length) return null;
+      const o={n:A.length}; for(const m of METS3) o[m]=A.reduce((s,d)=>s+d[m],0)/A.length; return o; };
+    return {days,B,isWE,DOWN,byDow,
+      wd:Object.fromEntries(METS3.map(m=>[m,avgOf(d=>!isWE(d),m)])),
+      we:Object.fromEntries(METS3.map(m=>[m,avgOf(isWE,m)])),
+      nWD:days.filter(d=>!isWE(d.dow)).length, nWE:days.filter(d=>isWE(d.dow)).length};
+}
+/* The seven day-of-week rows plus the weekday / weekend roll-ups. Shared by the Forecast tab
+   and Patterns & Heatmaps so the two can never drift apart on the numbers or the bands.
+   `moneyFn` is passed in because the two tabs format money differently (the Forecast tab
+   already has a month-anchored helper); both must use STR's own rate, never the hotel's. */
+function d30TableHtml(D30,moneyFn){
+  const M=moneyFn, pc=v=>v==null?na():n1(v,1)+'%';
+  const cell=(v,er,f)=>v==null?`<td>${na()}</td>`
+    :`<td>${f(v)}<div class="small" style="color:var(--muted)">± ${f===pc?n1(er,1):M(er)}</div></td>`;
+  const dowRows=[0,1,2,3,4,5,6].map(k=>{ const a=D30.byDow(k); if(!a) return '';
+    const fc=D30.B.occ.fac[k];
+    return `<tr${D30.isWE(k)?' style="background:#f7f8fa"':''}>
+      <td><b>${D30.DOWN[k]}</b>${D30.isWE(k)?' <span class="small">weekend</span>':''}</td>
+      <td class="small">${a.n}</td>
+      <td class="${fc>=1?'pos':'neg'}">${n1(fc,2)}×</td>
+      ${cell(a.occ,D30.B.occ.mae.byDowAvg[k],pc)}${cell(a.adr,D30.B.adr.mae.byDowAvg[k],M)}${cell(a.revpar,D30.B.revpar.mae.byDowAvg[k],M)}</tr>`;
+  }).join('');
+  const sumRow=(lbl,src,mk,n)=>`<tr class="tot"><td><b>${lbl}</b> <span class="small">(${n} days)</span></td><td></td><td></td>
+      ${cell(src.occ,D30.B.occ.mae[mk],pc)}${cell(src.adr,D30.B.adr.mae[mk],M)}${cell(src.revpar,D30.B.revpar.mae[mk],M)}</tr>`;
+  return `<div style="overflow-x:auto"><table><thead><tr><th>Day</th><th>In window</th><th>vs month avg</th><th>Occupancy</th><th>ADR</th><th>RevPAR</th></tr></thead>
+    <tbody>${dowRows}${sumRow('Weekday',D30.wd,'wd',D30.nWD)}${sumRow('Weekend',D30.we,'we',D30.nWE)}</tbody></table></div>`;
+}
+/* STAR money for these tables: STR's own monthly rate, never fxOf. */
+function d30Money(D30){ const mk=D30.B.occ.keys[D30.B.occ.keys.length-1];
+  return v=>v==null?na():moneyFmt(state.cur==='USD'?v/(strFxOf(mk)||fxOf(mk)):v,1); }
+
 function renderForecast(d){
   const el=$('#tab-forecast');
   const st=starOf(state.month), ch=st?.comp;   // starOf → works under either comp set
@@ -6324,7 +6456,7 @@ function renderForecast(d){
      innerHTML replacement only detaches the canvas, the Chart object would otherwise stay
      in state.charts holding a dead reference (same reason renderHeat destroys chTsExp). */
   if(!otaVisible()) destroyChart('chOta');
-  if(!hasStarHist){ destroyChart('chFc'); destroyChart('chOccFc'); destroyChart('chAdrFc'); destroyChart('chAdrOcc'); }
+  if(!hasStarHist){ destroyChart('chFc'); destroyChart('chOccFc'); destroyChart('chAdrFc'); destroyChart('chD30'); destroyChart('chAdrOcc'); }
   const ota=otaVisible()?state.store.rev?.ota:null; let otaHtml='',otaChart=null;
   if(ota){
     const sspH=ota.hotels.find(h=>/sofitel/i.test(h));
@@ -6417,6 +6549,9 @@ function renderForecast(d){
   const occMAE=bErr.length>=6?avgA(bErr):null;
   const occP80=bErr.length>=6?[...bErr].sort((a,b)=>a-b)[Math.floor(bErr.length*.8)]:null;
   let modelHtml='', adrPanelHtml='', occFc=null, adrPts=null, adrDec=null, adrCloud=null, adrFc=null, adrFcRows='';
+  /* declared out here so the chart section below can see it — it is BUILT inside the model-lab
+     block, which is block-scoped, and a const there was invisible to the chart code */
+  let D30=null;
   window.__setAdrEnt=window.__setAdrEnt||(v=>{ state.adrEnt=v; renderForecast(derive()); });
   window.__setAdrDay=window.__setAdrDay||(v=>{ state.adrDay=v; renderForecast(derive()); });
   const dKeys=Object.keys(state.store.months).filter(k2=>starOf(k2)?.daily?.occ?.[fcBase]||starOf(k2)?.daily?.occ?.my).sort();
@@ -6489,6 +6624,38 @@ function renderForecast(d){
       const rYoY=chgPairs.length>=6?corr2(chgPairs.map(p2=>p2[0]),chgPairs.map(p2=>p2[1])):null;
       adrInsight=`Day-level correlation is <b>weak</b> (r = ${n1(rAll,2)}; log-log elasticity ${n1(elast,2)} — a 10% occupancy gain lifts same-day ADR only ~${n1(elast*10,1)}%). The real pattern is <b>compression pricing</b>: ADR sits flat around ${starMoney(baseAdr,1)} below ${thDec?n1(thDec.lo,0):'~80'}% occupancy, then climbs to ${starMoney(adrDec[8].y,1)} (+${n1(topLift,1)}%) in the 90–97% band${adrDec[9].y<adrDec[8].y?', and <b>dips again on the very fullest nights ('+starMoney(adrDec[9].y,1)+') — the sell-out days are being filled with lower-rated business</b>, worth a yield review':''}.${rYoY!=null?` Month-level YoY changes correlate <b>negatively</b> (r = ${n1(rYoY,2)}): months that pushed rate gave up occupancy and vice-versa — the gold curve shows where rate can be pushed without volume risk.`:''}`;
     }
+    D30=buildD30(fcBase);
+    const d30Html=D30?(()=>{
+      const M=v=>fcMoney(v,um[um.length-1]);
+      const pc=v=>v==null?na():n1(v,1)+'%';
+      const cell=(v,e,f)=>v==null?na():`${f(v)}<div class="small" style="color:var(--muted)">± ${f===pc?n1(e,1):M(e)}</div>`;
+      /* MAIN VIEW — one row per day of week. Each carries its OWN measured band, because
+         they are not equally predictable: the quiet days move less, so they are easier to
+         call than the peaks. Sunday-first to match the Day-of-Week tables elsewhere. */
+      const dowRows=[0,1,2,3,4,5,6].map(k=>{ const a=D30.byDow(k); if(!a) return '';
+        const f=D30.B.occ.fac[k];
+        return `<tr${D30.isWE(k)?' style="background:#f7f8fa"':''}>
+          <td><b>${D30.DOWN[k]}</b>${D30.isWE(k)?' <span class="small">weekend</span>':''}</td>
+          <td class="small">${a.n}</td>
+          <td class="${f>=1?'pos':'neg'}">${n1(f,2)}×</td>
+          <td>${cell(a.occ,D30.B.occ.mae.byDowAvg[k],pc)}</td>
+          <td>${cell(a.adr,D30.B.adr.mae.byDowAvg[k],M)}</td>
+          <td>${cell(a.revpar,D30.B.revpar.mae.byDowAvg[k],M)}</td></tr>`; }).join('');
+      /* SUMMARY — the two roll-ups, stated as single numbers under the detail */
+      const sumRow=(lbl,src,mk,n)=>`<tr class="tot"><td><b>${lbl}</b> <span class="small">(${n} days)</span></td><td></td><td></td>
+          <td>${cell(src.occ,D30.B.occ.mae[mk],pc)}</td><td>${cell(src.adr,D30.B.adr.mae[mk],M)}</td><td>${cell(src.revpar,D30.B.revpar.mae[mk],M)}</td></tr>`;
+      const rows30=D30.days.map(d=>`<tr${D30.isWE(d.dow)?' style="background:#f7f8fa"':''}>
+          <td>${d.label}</td><td>${pc(d.occ)}</td><td>${M(d.adr)}</td><td>${M(d.revpar)}</td></tr>`).join('');
+      return `<div class="panel"><h3 class="h3ctl"><span class="ttl">Next 30 days by day of week — ${escH(fcEntName)}</span>${fcCtl}</h3>
+        ${d30TableHtml(D30,M)}
+        <div class="chartbox" style="margin-top:8px"><canvas id="chD30"></canvas></div>
+        <div class="small" style="margin-top:6px">Each day = <b>that month's forecast level × the day-of-week factor</b>, measured over ${D30.B.occ.keys.length} months of STAR daily grids.
+          The <b>vs month avg</b> column is that factor: ${n1(D30.B.occ.fac[2],2)}× on Tuesday against ${n1(D30.B.occ.fac[6],2)}× on Saturday means a Tuesday runs about ${n1((D30.B.occ.fac[2]/D30.B.occ.fac[6]-1)*100,0)}% busier than a Saturday in the same month.
+          <b>The shape is the reliable half; the month level is not</b> — every ± above is measured end-to-end (forecast level × shape against what actually happened), and the weekday / weekend rows are tighter only because averaging ${D30.nWD} and ${D30.nWE} days cancels the daily noise.
+          A single dated night still lands within about ${n1(D30.B.occ.mae.day,1)} pts on occupancy, so read this as <b>which days run hot or cold</b>, not as a price for one date.</div>
+        <div class="small" style="margin-top:8px"><b>Day by day</b></div>
+        <div class="scrollbox" style="max-height:220px;margin-top:4px"><table><thead><tr><th>Day</th><th>Occ</th><th>ADR</th><th>RevPAR</th></tr></thead><tbody>${rows30}</tbody></table></div></div>`;
+    })():'';
     modelHtml=`
     <div class="cols c2">
       <div class="panel"><h3 class="h3ctl"><span class="ttl">Occupancy — ${escH(fcEntName)}</span>${fcCtl}</h3>
@@ -6505,7 +6672,8 @@ function renderForecast(d){
         ${projHtml}
         <table><thead><tr><th>Known through day</th><th>Month-end error (± pts MAE)</th><th>Months tested</th></tr></thead>
         <tbody>${coneRows.map(r2=>`<tr><td>${r2.d}</td><td data-v="${r2.mae}">±${n1(r2.mae,1)}</td><td>${r2.n}</td></tr>`).join('')}</tbody></table>
-        <div class="small" style="margin-top:6px">Backtest verdict on ${dKeys.length} stored months: <b>no day-of-week or LY-shape model beat the plain running MTD average</b> — so the honest projection is "the month lands where MTD is", with this cone as the calibrated uncertainty. It tightens sharply after mid-month; before day 10 treat any projection as indicative only.</div></div>`;
+        <div class="small" style="margin-top:6px">Backtest verdict on ${dKeys.length} stored months: <b>no day-of-week or LY-shape model beat the plain running MTD average</b> — so the honest projection is "the month lands where MTD is", with this cone as the calibrated uncertainty. It tightens sharply after mid-month; before day 10 treat any projection as indicative only.</div></div>
+    ${d30Html}`;
     const entBtns=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry'],['all','Side by side']]
       .map(([k3,l])=>`<button class="heatbtn ${adrEnt===k3?'on':''}" onclick="__setAdrEnt('${k3}')">${l}</button>`).join(' ');
     const dayBtns=[['all','All days'],['wd','Weekday'],['we','Weekend']]
@@ -6787,6 +6955,16 @@ function renderForecast(d){
         tooltip:joinTip.plugins.tooltip},
         scales:{y:{ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   }
+  /* Next-30-days occupancy path — the day-of-week rhythm made visible */
+  if(D30){
+    mkChart('chD30',{type:'line',data:{labels:D30.days.map(d=>d.label),datasets:[
+        {label:fcEntName+' occupancy — daily',data:D30.days.map(d=>d.occ),
+         borderColor:'#0B1F3A',tension:.25,pointRadius:2,
+         pointBackgroundColor:D30.days.map(d=>D30.isWE(d.dow)?'#C0392B':'#0B1F3A')}]},
+      options:{plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:it=>`${n1(it.parsed.y,1)}% occupancy`}}},
+        scales:{y:{ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
+  } else destroyChart('chD30');
   /* ADR forecast chart — same construction as the occupancy one beside it */
   if(adrFc&&adrMAE!=null){
     let histN2=Math.min(18,um.length);
