@@ -7504,10 +7504,24 @@ function renderDQ(d){
   const mkeysAll=Object.keys(state.store.months).sort().reverse();
   const DOCS=[['pnlVND','P&L VND'],['pnlUSD','P&L USD'],['star','Monthly STAR'],['hotstats','HotStats'],['fs','Consolidated FS'],['eng','Engineering PDF']];
   let missCount=0, provCount=0;
-  const cellOf=(slot,k)=>{ const v=slot[k];
-    if(!v){ missCount++; return '<td style="background:#fbe4e1;text-align:center;color:var(--red)" data-v="0">✗</td>'; }
-    if(k==='star'&&v.provisional){ provCount++; return '<td style="background:#faf0dc;text-align:center;color:var(--amber);font-weight:700" data-v="1" title="Provisional (weekly STR extract) — official Monthly STAR pending">P</td>'; }
-    return '<td style="background:#e3f3ea;text-align:center;color:var(--green)" data-v="2">✓</td>'; };
+  const XC='<td style="background:#fbe4e1;text-align:center;color:var(--red)" data-v="0">✗</td>';
+  const OKC=ti=>`<td style="background:#e3f3ea;text-align:center;color:var(--green)" data-v="2"${ti?` title="${escA(ti)}"`:''}>✓</td>`;
+  const cellOf=(slot,k)=>{
+    /* A Monthly STAR can live in ANY of three slots since the comp-set variants were split
+       (star = current/incl, starExcl = current/excl-subject, starNew = post-reno set). This
+       checked `slot.star` alone, so a month whose only upload was an EXCL or New-compset file
+       showed ✗ — reported as "why red while has been uploaded" — even though starOf() resolves
+       it and every chart reads it. Count any variant, and name the ones held in the tooltip. */
+    if(k==='star'){
+      const have=STAR_VARIANTS.filter(([sk])=>slot[sk]);
+      if(!have.length){ missCount++; return XC; }
+      const v=slot.star||slot.starExcl||slot.starNew;
+      if(v.provisional){ provCount++; return '<td style="background:#faf0dc;text-align:center;color:var(--amber);font-weight:700" data-v="1" title="Provisional (weekly STR extract) — official Monthly STAR pending">P</td>'; }
+      return OKC(have.map(h=>h[1]).join(' · '));
+    }
+    const v=slot[k];
+    if(!v){ missCount++; return XC; }
+    return OKC(''); };
   const matrixRows=mkeysAll.map(mk=>{ const slot=state.store.months[mk];
     return `<tr class="${mk===state.month?'tot':''}"><td>${fmtMonthKey(mk)}</td>${DOCS.map(([k])=>cellOf(slot,k)).join('')}</tr>`; }).join('');
   /* store-wide (non-monthly) documents */
