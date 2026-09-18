@@ -2669,7 +2669,50 @@ function industryMonthly(met){
     if(h?.months) h.months.forEach((k,i)=>{ if(k&&h.ind[i]!=null&&out[k]==null) out[k]=h.ind[i]; });
     if(im.monthKey&&im.cm?.ind!=null) out[im.monthKey]=im.cm.ind;   // own month is definitive
   }
+  /* PROVISIONAL FALLBACK — a Weekly STAR carries no "Industry" sheet, so a provisional month
+     had NO industry level at all even though the industry data is right there in the same
+     file: the weekly export does ship the "Daily by Month Ind" grid, and
+     provisionalStarFromDaily() already averages it into glance.cmInd for the STR Snapshot's
+     benchmark column. Without this the industry line simply stopped a month short of the
+     property and the comp set, and its forecast skipped that month too (the horizon starts
+     after the last STORED month), which read as missing data rather than as a sheet CoStar
+     does not publish weekly.
+     Runs LAST and fills only gaps, so an official Industry sheet always wins — and the hole
+     closes by itself the moment that month's Monthly STAR is dropped.
+     ONE basis caveat, stated in Data Quality rather than hidden: this is the plain DAY AVERAGE
+     of the daily grid, while STR's own monthly figure is weighted by each day's room supply.
+     The two sit about a point apart on occupancy — the same difference the daily table's
+     caption already notes — and it applies to the provisional month only. */
+  for(const mk of Object.keys(state.store.months).sort()){
+    const st=starOf(mk); if(!st?.provisional) continue;
+    const k=st.monthKey||mk;
+    if(out[k]!=null) continue;
+    const v=st.glance?.cmInd?.[met]?.comp;
+    if(v!=null) out[k]=v;
+  }
   return out;
+}
+/* Which months' industry level came from that fallback — for captions and Data Quality, so a
+   day-average figure is never read as STR's published supply-weighted one. */
+function industryProvMonths(){
+  const s=new Set();
+  const official=industryOfficialMonths();
+  for(const mk of Object.keys(state.store.months)){
+    const st=starOf(mk); if(!st?.provisional) continue;
+    const k=st.monthKey||mk;
+    if(!official.has(k)&&st.glance?.cmInd?.occ?.comp!=null) s.add(k);
+  }
+  return s;
+}
+function industryOfficialMonths(){
+  const s=new Set();
+  for(const mk of Object.keys(state.store.months)){
+    const im=starOf(mk)?.industry?.metrics?.occ; if(!im) continue;
+    const h=im.hist;
+    if(h?.months) h.months.forEach((k,i)=>{ if(k&&h.ind[i]!=null) s.add(k); });
+    if(im.monthKey&&im.cm?.ind!=null) s.add(im.monthKey);
+  }
+  return s;
 }
 /* Monthly MPI / ARI / RGI against a CHOSEN benchmark, for the Index-trend chart.
    Each benchmark has a different reach, which the caption states rather than hiding:
@@ -2721,6 +2764,17 @@ function idxTrendSeries(kind){
             fromChg(im[met].cm.idx, im[met].cmChg?.my, im[met].cmChg?.ind));
         }
       }
+    }
+    /* Same provisional fallback as industryMonthly(): a Weekly STAR has no Industry sheet, so
+       the published index is missing for that month — but the file's own Glance carries the
+       vs-INDUSTRY block, and its idx IS the industry index (property ÷ industry × 100 off the
+       daily grid). Fills gaps only, so a real Industry sheet always wins. No LY point: the
+       Glance publishes no % changes, and inventing one would be worse than a gap in a dash. */
+    for(const mk of Object.keys(state.store.months).sort()){
+      const st=starOf(mk); if(!st?.provisional) continue;
+      const k=st.monthKey||mk;
+      for(const met of METS){ if(m[k]?.[met]!=null) continue;
+        put(k,met,st.glance?.cmInd?.[met]?.idx ?? null); }
     }
   }else if(kind==='subcls'||kind==='submkt'){
     for(const mk of Object.keys(state.store.months).sort()){
@@ -5381,7 +5435,7 @@ function renderMarket(d){
         })()}
         <div class="small" style="margin-top:6px">100 = parity with the chosen benchmark. ${
           idxBench==='comp' ? 'Comp set — STR\'s published MPI / ARI / RGI, covering the full merged history.'
-          : idxBench==='ind' ? 'HCMC Luxury — the Industry sheet\'s own published index; each Monthly STAR carries 18 months, so the series is as long as your STAR uploads reach.'
+          : idxBench==='ind' ? `HCMC Luxury — the Industry sheet's own published index; each Monthly STAR carries 18 months, so the series is as long as your STAR uploads reach.${industryProvMonths().size?' A <b>provisional</b> month has no Industry sheet (CoStar does not publish one weekly), so '+[...industryProvMonths()].sort().map(fmtMonthKey).join(', ')+' is taken from the same file’s vs-INDUSTRY Glance block instead — see Data Quality.':''}`
           : `${IDX_BENCH.find(b=>b[0]===idxBench)?.[1]} — STR publishes no index against this group, so it is computed as property ÷ benchmark × 100 from the Summary sheet, which states it only for each file's own month: <b>one point per stored Monthly STAR</b> (${IB.months.length} so far).`}</div>
         ${granNote('MPI / ARI / RGI are averaged across the months of each quarter')}</div>
       <div class="panel"><h3>RevPAR positioning matrix — ARI vs MPI (trail = last 12 months · gold = ${fmtMonthKey(st.monthKey)} · red ring = ${fmtMonthKey(lyKey)})</h3><div class="chartbox tall"><canvas id="chQuad"></canvas></div></div>
@@ -5993,7 +6047,10 @@ window.__setHeat=k=>{ state.heatMetric=k; renderHeat(derive()); };
 const HEAT_ENTS=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry / submarket'],['idx','Index']];
 function renderHeat(d){
   const el=$('#tab-heat');
-  destroyChart('chTsExp');
+  destroyChart('chTsExp'); destroyChart('chD30');
+  /* built by d30SectionHtml() during the innerHTML pass, read by the chart pass at the bottom —
+     same reason renderForecast hoists its own: a const inside the builder is invisible there */
+  let D30A=null, D30B=null, D30ALL=[];
   const monthsAllH=Object.keys(state.store.months).filter(k=>state.store.months[k].star?.daily).sort();
   if(!monthsAllH.length){ el.innerHTML=noData(); return; }
   const months=(state.tsFrom||state.tsTo)?monthsAllH.filter(tsInRange):monthsAllH;   // grids honour the focus period
@@ -6047,28 +6104,56 @@ function renderHeat(d){
       h+=`<tr><td>${r.label}</td>${r.cells.slice(0,7).map(v=>`<td style="${heatColor(v,mn,mx,e==='idx')}" data-v="${v??''}">${fmtV(v,r.repMk)}</td>`).join('')}<td data-v="${r.cells[7]??''}"><b>${fmtV(r.cells[7],r.repMk)}</b></td></tr>`; }
     return h+'</tbody></table></div></div>';
   };
-
   /* ---- Next 30 days by day of week ----
      Sits directly above the heatmaps as their forward-looking twin: those show the month x
      day-of-week pattern that already happened, this carries the same shape forward.
-     Sofitel is pinned on the LEFT and the right-hand column switches between the comp set
-     and the industry, so the comparison is always against the property rather than making
-     the reader hold three stacked tables in their head. */
+     DEFAULT is all three entities at once — Sofitel, comp set and industry — because the
+     three-way read is the one that answers "are we soft, or is the market soft". The two
+     pair views are a focus, not the starting point: Sofitel stays pinned first in every
+     layout so the comparison is always against the property.
+     The daily path chart and the dated day-by-day lists live here too — they used to sit in
+     a second copy of this panel on the Forecast tab, where they showed one entity only and
+     duplicated these tables. One home, one switch, everything comparable. */
   window.__setD30Cmp=window.__setD30Cmp||(v=>{ state.d30Cmp=v; renderHeat(derive()); });
+  window.__setD30DayF=window.__setD30DayF||(v=>{ state.d30DayF=v; renderHeat(derive()); });
   const d30SectionHtml=()=>{
-    const cmp=state.d30Cmp==='ind'?'ind':'comp';
+    const mode=['comp','ind'].includes(state.d30Cmp)?state.d30Cmp:'all';   // 'all' | 'comp' | 'ind'
     const NAME={my:'Sofitel SSP',comp:'Comp set',ind:'Industry'};
-    const A=buildD30('my'), B=buildD30(cmp);
-    if(!A&&!B) return '';
-    const btns=`<span class="noprint" style="float:right;font-weight:400">${[['comp','Comp set'],['ind','Industry']]
-      .map(([k,l])=>`<button class="heatbtn ${cmp===k?'on':''}" onclick="__setD30Cmp('${k}')">${l}</button>`).join(' ')}</span>`;
-    const panel=(D,label)=>D?`<div class="panel"><h3>${label} — next 30 days</h3>${d30TableHtml(D,d30Money(D))}</div>`
-      :`<div class="panel"><h3>${label}</h3><div class="small">${na('Not enough daily STAR history for this entity')}</div></div>`;
+    /* which entities are drawn, Sofitel always first */
+    const ENTS=mode==='all'?['my','comp','ind']:['my',mode];
+    const D={my:buildD30('my'), comp:null, ind:null};
+    for(const e of ENTS) if(e!=='my') D[e]=buildD30(e);
+    D30A=D.my; D30B=mode==='all'?null:D[mode]; D30ALL=ENTS.map(e=>[e,D[e]]);
+    const A=D.my;
+    if(!ENTS.some(e=>D[e])) return '';
+    const btns=`<span class="noprint" style="float:right;font-weight:400">${[['all','All three'],['comp','Comp set'],['ind','Industry']]
+      .map(([k,l])=>`<button class="heatbtn ${mode===k?'on':''}" onclick="__setD30Cmp('${k}')"${k!=='all'&&!D[k]&&!buildD30(k)?' disabled title="Not in the loaded STAR files"':''}>${l}</button>`).join(' ')}</span>`;
+    const colCls=ENTS.length===3?'cols c3 alignrows':'cols c2 alignrows';
+    const panel=(e)=>D[e]?`<div class="panel"><h3>${NAME[e]} — next 30 days</h3>${d30TableHtml(D[e],d30Money(D[e]))}</div>`
+      :`<div class="panel"><h3>${NAME[e]}</h3><div class="small">${na(e==='ind'?'No Industry sheet in the stored Monthly STARs for these months':'Not enough daily STAR history for this entity')}</div></div>`;
     const note=A?`<div class="small" style="margin:-2px 0 8px">Each day = that month's forecast level × the day-of-week factor (<b>vs month avg</b>), measured over ${A.B.occ.keys.length} months of STAR daily grids.
         Bands are measured end-to-end — forecast level × shape against what actually happened — so they carry the month's uncertainty as well as the day's.
         A single dated night lands within about ${n1(A.B.occ.mae.day,1)} pts on occupancy, so read this as <b>which days run hot or cold</b>, not as a price for one date.</div>`:'';
+    /* the dated lists: same columns as the roll-ups above, under ONE shared day filter —
+       separate filters for halves of the same comparison would only ever be set alike */
+    const d30F=state.d30DayF||'all';
+    const nOf=X=>X?(d30F==='wd'?X.nWD:d30F==='we'?X.nWE:X.nAll):0;
+    const fBtns=A?[['all','All days',A.nAll],['wd','Weekday',A.nWD],['we','Weekend',A.nWE]]
+      .map(([k,l,n])=>`<button class="heatbtn ${d30F===k?'on':''}" onclick="__setD30DayF('${k}')">${l} (${n})</button>`).join(' '):'';
+    const listPanel=(e)=>D[e]?`<div class="panel"><h3>${NAME[e]} — day by day</h3>${d30DayListHtml(D[e],d30Money(D[e]),d30F)}</div>`
+      :`<div class="panel"><h3>${NAME[e]} — day by day</h3><div class="small">${na('No data for this entity')}</div></div>`;
+    const drawn=ENTS.filter(e=>D[e]).map(e=>NAME[e]);
+    const chartPanel=A?`<div class="panel"><h3>Daily occupancy path — ${drawn.join(' vs ')}</h3>
+        <div class="chartbox"><canvas id="chD30"></canvas></div>
+        <div class="small" style="margin-top:6px">The next 30 dated nights, every drawn entity on one axis — the switch above picks how many.
+          Red markers are the weekend nights (Sat–Sun). The <b>gap between the lines</b> is the readable part: the level of any one line carries that month's forecast error of about ${n1(A.B.occ.mae.day,1)} pts.</div></div>`:'';
     return `<div style="font-size:15px;font-weight:700;color:var(--navy);margin:22px 0 6px;padding-bottom:5px;border-bottom:2px solid var(--gold)">Next 30 days — forecast by day of week${btns}</div>
-      ${note}<div class="cols c2">${panel(A,NAME.my)}${panel(B,NAME[cmp])}</div>`;
+      ${note}<div class="${colCls}">${ENTS.map(panel).join('')}</div>
+      ${chartPanel}
+      <div class="small" style="margin:10px 0 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.6px">Day by day — the 30 dated nights</b>
+        <span class="noprint" style="margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap">${fBtns}</span></div>
+      ${d30F==='all'?'':`<div class="small" style="margin:-2px 0 8px;color:var(--muted)">Showing ${nOf(A)} of ${A?A.nAll:0} nights — ${d30F==='we'?'weekend (Sat–Sun)':'weekday (Mon–Fri)'} only. The tables and chart above are unaffected.</div>`}
+      <div class="${colCls}">${ENTS.map(listPanel).join('')}</div>`;
   };
   const heatmapSectionHtml=()=>{
     const rows=HEAT_ENTS.map(([e,eLabel])=>{
@@ -6140,6 +6225,26 @@ function renderHeat(d){
       options:{plugins:{tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${met==='occ'?n1(c.raw,1)+'%':moneyFmt(c.raw,1)}`}}},
         scales:{y:{ticks:{callback:v=>met==='occ'?v+'%':moneyFmt(v,1)}},x:{ticks:{maxTicksLimit:18,maxRotation:0}}},maintainAspectRatio:false}});
   }
+  /* Next-30-days daily path — every entity the section is showing, on one axis.
+     Drawn on Sofitel's dates with the others matched BY DATE, not by index: an entity whose
+     month level cannot be forecast drops that day, so the arrays are not always the same
+     length and zipping them positionally would slide one entity's Tuesday onto another's
+     Wednesday. Colours match the rest of the app: Sofitel gold, comp set navy, industry grey. */
+  if(D30A&&D30ALL.length){
+    const COL={my:'#C9A227',comp:'#0B1F3A',ind:'#6B7280'};
+    const NM={my:'Sofitel SSP',comp:'Comp set',ind:'Industry'};
+    const base=D30A.days;
+    const dsets=D30ALL.filter(([,X])=>X).map(([e,X])=>{
+      const by={}; for(const d of X.days) by[+d.dt]=d.occ;
+      return {label:NM[e],data:base.map(d=>by[+d.dt]??null),
+        borderColor:COL[e],borderWidth:e==='my'?2.5:1.5,borderDash:e==='my'?[]:[4,3],
+        tension:.25,pointRadius:e==='my'?2.5:2,
+        pointBackgroundColor:base.map(d=>D30A.isWE(d.dow)?'#C0392B':COL[e])};
+    });
+    mkChart('chD30',{type:'line',data:{labels:base.map(d=>d.label),datasets:dsets},
+      options:{plugins:{tooltip:{callbacks:{label:it=>`${it.dataset.label}: ${n1(it.parsed.y,1)}% occupancy`}}},
+        scales:{y:{ticks:{callback:v=>v+'%'}},x:{ticks:{maxRotation:0}}},maintainAspectRatio:false}});
+  } else destroyChart('chD30');
 }
 
 /* ---------------- FORECAST (seasonal-naive × run-rate growth + OTA validation) ---------------- */
@@ -6274,6 +6379,22 @@ function d30TableHtml(D30,moneyFn){
 /* STAR money for these tables: STR's own monthly rate, never fxOf. */
 function d30Money(D30){ const mk=D30.B.occ.keys[D30.B.occ.keys.length-1];
   return v=>v==null?na():moneyFmt(state.cur==='USD'?v/(strFxOf(mk)||fxOf(mk)):v,1); }
+
+/* The 30 dated nights for ONE entity. Day-of-week is its own sortable column (the name used
+   to be glued to the front of the date, which read fine but left nothing to sort or filter
+   on); data-v carries +date on the day cell so it sorts chronologically across a month
+   boundary, and the Mon-first rank on the name so ascending gives Mon→Sun rather than
+   alphabetical Fri, Mon, Sat. `filter` is 'all' | 'wd' | 'we'. */
+function d30DayListHtml(D30,moneyFn,filter){
+  const M=moneyFn, pc=v=>v==null?na():n1(v,1)+'%';
+  const shown=D30.days.filter(d=>filter==='all'||(filter==='we')===D30.isWE(d.dow));
+  const rows=shown.map(d=>`<tr${D30.isWE(d.dow)?' style="background:#f7f8fa"':''}>
+      <td data-v="${+d.dt}">${d.dt.getDate()} ${MONTHS[d.dt.getMonth()].slice(0,3)}</td>
+      <td data-v="${(d.dow+6)%7}">${D30.DOWN[d.dow]}${D30.isWE(d.dow)?' <span class="small">weekend</span>':''}</td>
+      <td>${pc(d.occ)}</td><td>${M(d.adr)}</td><td>${M(d.revpar)}</td></tr>`).join('');
+  return `<div class="scrollbox" style="max-height:340px"><table><thead><tr><th>Day</th><th>Day of week</th><th>Occ</th><th>ADR</th><th>RevPAR</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
 
 function renderForecast(d){
   const el=$('#tab-forecast');
@@ -6468,7 +6589,7 @@ function renderForecast(d){
      innerHTML replacement only detaches the canvas, the Chart object would otherwise stay
      in state.charts holding a dead reference (same reason renderHeat destroys chTsExp). */
   if(!otaVisible()) destroyChart('chOta');
-  if(!hasStarHist){ destroyChart('chFc'); destroyChart('chOccFc'); destroyChart('chAdrFc'); destroyChart('chD30'); destroyChart('chAdrOcc'); }
+  if(!hasStarHist){ destroyChart('chFc'); destroyChart('chOccFc'); destroyChart('chAdrFc'); destroyChart('chAdrOcc'); }
   const ota=otaVisible()?state.store.rev?.ota:null; let otaHtml='',otaChart=null;
   if(ota){
     const sspH=ota.hotels.find(h=>/sofitel/i.test(h));
@@ -6561,9 +6682,6 @@ function renderForecast(d){
   const occMAE=bErr.length>=6?avgA(bErr):null;
   const occP80=bErr.length>=6?[...bErr].sort((a,b)=>a-b)[Math.floor(bErr.length*.8)]:null;
   let modelHtml='', adrPanelHtml='', occFc=null, adrPts=null, adrDec=null, adrCloud=null, adrFc=null, adrFcRows='';
-  /* declared out here so the chart section below can see it — it is BUILT inside the model-lab
-     block, which is block-scoped, and a const there was invisible to the chart code */
-  let D30=null;
   window.__setAdrEnt=window.__setAdrEnt||(v=>{ state.adrEnt=v; renderForecast(derive()); });
   window.__setAdrDay=window.__setAdrDay||(v=>{ state.adrDay=v; renderForecast(derive()); });
   const dKeys=Object.keys(state.store.months).filter(k2=>starOf(k2)?.daily?.occ?.[fcBase]||starOf(k2)?.daily?.occ?.my).sort();
@@ -6636,40 +6754,8 @@ function renderForecast(d){
       const rYoY=chgPairs.length>=6?corr2(chgPairs.map(p2=>p2[0]),chgPairs.map(p2=>p2[1])):null;
       adrInsight=`Day-level correlation is <b>weak</b> (r = ${n1(rAll,2)}; log-log elasticity ${n1(elast,2)} — a 10% occupancy gain lifts same-day ADR only ~${n1(elast*10,1)}%). The real pattern is <b>compression pricing</b>: ADR sits flat around ${starMoney(baseAdr,1)} below ${thDec?n1(thDec.lo,0):'~80'}% occupancy, then climbs to ${starMoney(adrDec[8].y,1)} (+${n1(topLift,1)}%) in the 90–97% band${adrDec[9].y<adrDec[8].y?', and <b>dips again on the very fullest nights ('+starMoney(adrDec[9].y,1)+') — the sell-out days are being filled with lower-rated business</b>, worth a yield review':''}.${rYoY!=null?` Month-level YoY changes correlate <b>negatively</b> (r = ${n1(rYoY,2)}): months that pushed rate gave up occupancy and vice-versa — the gold curve shows where rate can be pushed without volume risk.`:''}`;
     }
-    D30=buildD30(fcBase);
-    const d30Html=D30?(()=>{
-      const M=v=>fcMoney(v,um[um.length-1]);
-      const pc=v=>v==null?na():n1(v,1)+'%';
-      const cell=(v,e,f)=>v==null?na():`${f(v)}<div class="small" style="color:var(--muted)">± ${f===pc?n1(e,1):M(e)}</div>`;
-      /* MAIN VIEW — one row per day of week. Each carries its OWN measured band, because
-         they are not equally predictable: the quiet days move less, so they are easier to
-         call than the peaks. Sunday-first to match the Day-of-Week tables elsewhere. */
-      const dowRows=[0,1,2,3,4,5,6].map(k=>{ const a=D30.byDow(k); if(!a) return '';
-        const f=D30.B.occ.fac[k];
-        return `<tr${D30.isWE(k)?' style="background:#f7f8fa"':''}>
-          <td><b>${D30.DOWN[k]}</b>${D30.isWE(k)?' <span class="small">weekend</span>':''}</td>
-          <td class="small">${a.n}</td>
-          <td class="${f>=1?'pos':'neg'}">${n1(f,2)}×</td>
-          <td>${cell(a.occ,D30.B.occ.mae.byDowAvg[k],pc)}</td>
-          <td>${cell(a.adr,D30.B.adr.mae.byDowAvg[k],M)}</td>
-          <td>${cell(a.revpar,D30.B.revpar.mae.byDowAvg[k],M)}</td></tr>`; }).join('');
-      /* SUMMARY — the two roll-ups, stated as single numbers under the detail */
-      const sumRow=(lbl,src,mk,n)=>`<tr class="tot"><td><b>${lbl}</b> <span class="small">(${n} days)</span></td><td></td><td></td>
-          <td>${cell(src.occ,D30.B.occ.mae[mk],pc)}</td><td>${cell(src.adr,D30.B.adr.mae[mk],M)}</td><td>${cell(src.revpar,D30.B.revpar.mae[mk],M)}</td></tr>`;
-      const rows30=D30.days.map(d=>`<tr${D30.isWE(d.dow)?' style="background:#f7f8fa"':''}>
-          <td>${d.label}</td><td>${pc(d.occ)}</td><td>${M(d.adr)}</td><td>${M(d.revpar)}</td></tr>`).join('');
-      return `<div class="panel"><h3 class="h3ctl"><span class="ttl">Next 30 days by day of week — ${escH(fcEntName)}</span>${fcCtl}</h3>
-        ${d30TableHtml(D30,M)}
-        <div class="chartbox" style="margin-top:8px"><canvas id="chD30"></canvas></div>
-        <div class="small" style="margin-top:6px">Each day = <b>that month's forecast level × the day-of-week factor</b>, measured over ${D30.B.occ.keys.length} months of STAR daily grids.
-          The <b>vs month avg</b> column is that factor: ${n1(D30.B.occ.fac[2],2)}× on Tuesday against ${n1(D30.B.occ.fac[6],2)}× on Saturday means a Tuesday runs about ${n1((D30.B.occ.fac[2]/D30.B.occ.fac[6]-1)*100,0)}% busier than a Saturday in the same month.
-          <b>The shape is the reliable half; the month level is not</b> — every ± above is measured end-to-end (forecast level × shape against what actually happened), and the weekday / weekend rows are tighter only because averaging ${D30.nWD} and ${D30.nWE} days cancels the daily noise.
-          A single dated night still lands within about ${n1(D30.B.occ.mae.day,1)} pts on occupancy, so read this as <b>which days run hot or cold</b>, not as a price for one date.</div>
-        <div class="small" style="margin-top:8px"><b>Day by day</b></div>
-        <div class="scrollbox" style="max-height:220px;margin-top:4px"><table><thead><tr><th>Day</th><th>Occ</th><th>ADR</th><th>RevPAR</th></tr></thead><tbody>${rows30}</tbody></table></div></div>`;
-    })():'';
     modelHtml=`
-    <div class="cols c2">
+    <div class="cols c2 alignrows">
       <div class="panel"><h3 class="h3ctl"><span class="ttl">Occupancy — ${escH(fcEntName)}</span>${fcCtl}</h3>
         <div class="chartbox"><canvas id="chOccFc"></canvas></div>${fcGapNote}
         ${allTblNote}<table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast Occ</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${fcRows}</tbody></table>
@@ -6685,7 +6771,7 @@ function renderForecast(d){
         <table><thead><tr><th>Known through day</th><th>Month-end error (± pts MAE)</th><th>Months tested</th></tr></thead>
         <tbody>${coneRows.map(r2=>`<tr><td>${r2.d}</td><td data-v="${r2.mae}">±${n1(r2.mae,1)}</td><td>${r2.n}</td></tr>`).join('')}</tbody></table>
         <div class="small" style="margin-top:6px">Backtest verdict on ${dKeys.length} stored months: <b>no day-of-week or LY-shape model beat the plain running MTD average</b> — so the honest projection is "the month lands where MTD is", with this cone as the calibrated uncertainty. It tightens sharply after mid-month; before day 10 treat any projection as indicative only.</div></div>
-    ${d30Html}`;
+    `;
     const entBtns=[['my','Sofitel SSP'],['comp','Comp set'],['ind','Industry'],['all','Side by side']]
       .map(([k3,l])=>`<button class="heatbtn ${adrEnt===k3?'on':''}" onclick="__setAdrEnt('${k3}')">${l}</button>`).join(' ');
     const dayBtns=[['all','All days'],['wd','Weekday'],['we','Weekend']]
@@ -6967,16 +7053,6 @@ function renderForecast(d){
         tooltip:joinTip.plugins.tooltip},
         scales:{y:{ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
   }
-  /* Next-30-days occupancy path — the day-of-week rhythm made visible */
-  if(D30){
-    mkChart('chD30',{type:'line',data:{labels:D30.days.map(d=>d.label),datasets:[
-        {label:fcEntName+' occupancy — daily',data:D30.days.map(d=>d.occ),
-         borderColor:'#0B1F3A',tension:.25,pointRadius:2,
-         pointBackgroundColor:D30.days.map(d=>D30.isWE(d.dow)?'#C0392B':'#0B1F3A')}]},
-      options:{plugins:{legend:{display:false},
-        tooltip:{callbacks:{label:it=>`${n1(it.parsed.y,1)}% occupancy`}}},
-        scales:{y:{ticks:{callback:v=>v+'%'}}},maintainAspectRatio:false}});
-  } else destroyChart('chD30');
   /* ADR forecast chart — same construction as the occupancy one beside it */
   if(adrFc&&adrMAE!=null){
     let histN2=Math.min(18,um.length);
@@ -7690,6 +7766,14 @@ function renderDQ(d){
       }
     }
   }
+  /* Outside the extract block on purpose: this one is about the WEEKLY STAR, not the extract,
+     and it must show whether or not a full-data export has been dropped. */
+  {
+    const indProv=[...industryProvMonths()].sort();
+    if(indProv.length) checks.push([null,
+      `Industry level for ${indProv.map(fmtMonthKey).join(', ')} is a day average, not STR's published figure`,
+      `A Weekly STAR carries no <b>Industry</b> sheet, so that month's industry benchmark is averaged from the <b>"Daily by Month Ind"</b> grid in the same file (the figure the STR Snapshot's benchmark column already shows). STR's own monthly figure weights each day by that day's room supply and sits about a point apart on occupancy. Without this the industry line stopped a month short of the property and the comp set; it is replaced automatically the moment that month's official Monthly STAR is dropped.`]);
+  }
   /* ---- document × month coverage matrix — see at a glance what is missing ---- */
   const mkeysAll=Object.keys(state.store.months).sort().reverse();
   const DOCS=[['pnlVND','P&L VND'],['pnlUSD','P&L USD'],['star','Monthly STAR'],['hotstats','HotStats'],['fs','Consolidated FS'],['eng','Engineering PDF']];
@@ -8136,6 +8220,7 @@ function renderAll(){
   applyTabVisibility();
   applyTextOverrides();     // must run after every innerHTML rebuild
   balanceKgrids();
+  alignPanelRows();
   applyStickyHeaders();     // after the DOM settles, so row counts are final
 }
 
@@ -8249,6 +8334,55 @@ function balanceKgrids(){
     const rows=Math.ceil(n/fit);                          // rows needed
     const cols=Math.ceil(n/rows);                         // spread evenly → balanced rows
     g.style.gridTemplateColumns=`repeat(${cols},1fr)`;
+  });
+}
+
+/* Side-by-side panels whose tables must read as one grid (Occupancy | ADR, Sofitel | Comp set).
+   CSS grid equalises the COLUMNS, not the blocks inside each panel, so the two tables started
+   at different heights: a long title wraps its control strip onto a second header line in one
+   panel and not the other, and only one panel carries a gap/"side by side" note above its
+   table. Either one shifts every row of that table against its neighbour.
+   Rather than freeze magic heights, measure and pad — two passes, top-down, so the second
+   builds on the first: (1) make the h3 headers equal, which also lines the charts up, then
+   (2) make the first table in each panel start at the same offset. Subgrid would express this
+   directly but is not safe to rely on for an offline file that has to render anywhere.
+   A hidden tab measures 0 — that is the `if(!max)` bail, redone by the tab-switch handler,
+   exactly as balanceKgrids() does for the same reason. Every adjustment is re-applied from a
+   stored base each pass, so repeated calls (render, tab switch, resize) never accumulate. */
+function alignPanelRows(){
+  const base=(el,prop)=>{ const k='ab'+prop; if(el.dataset[k]===undefined)
+      el.dataset[k]=parseFloat(getComputedStyle(el)[prop])||0; return +el.dataset[k]; };
+  $$('.cols.alignrows').forEach(row=>{
+    const panels=[...row.children].filter(p=>p.classList.contains('panel'));
+    if(panels.length<2) return;
+    /* the panels stack on a narrow window — aligning them then only adds dead space */
+    const stacked=panels.some(p=>Math.abs(p.getBoundingClientRect().top-panels[0].getBoundingClientRect().top)>2);
+    /* 1 — headers */
+    const heads=panels.map(p=>p.querySelector(':scope>h3')).filter(Boolean);
+    heads.forEach(h=>{ h.style.minHeight=base(h,'minHeight')+'px'; });
+    if(!stacked&&heads.length===panels.length){
+      const hh=heads.map(h=>h.getBoundingClientRect().height);
+      const maxH=Math.max(...hh);
+      /* box-sizing is border-box app-wide, so min-height IS the target box height. Adding a
+         DELTA instead silently did nothing: 27px of min-height on a header already 33px tall
+         is no constraint at all, and only the table pass below was left doing the work — which
+         aligned the tables but left the two charts and header rules half a line apart. */
+      if(maxH) heads.forEach(h=>{ h.style.minHeight=maxH+'px'; });
+    }
+    /* 2 — first table in each panel */
+    const items=[];
+    for(const p of panels){ const t=p.querySelector('table'); if(!t) return;
+      let el=t; while(el&&el.parentNode!==p) el=el.parentNode;   // its direct-child block
+      if(!el) return;
+      el.style.marginTop=base(el,'marginTop')+'px';
+      items.push({p,el,t});
+    }
+    if(stacked) return;
+    const tops=items.map(o=>o.t.getBoundingClientRect().top-o.p.getBoundingClientRect().top);
+    const max=Math.max(...tops);
+    if(!max||!isFinite(max)) return;                       // hidden tab — nothing to measure
+    items.forEach((o,i)=>{ const d=max-tops[i];
+      if(d>0.5) o.el.style.marginTop=(base(o.el,'marginTop')+d)+'px'; });
   });
 }
 
@@ -8670,17 +8804,17 @@ $$('#tabs button').forEach(b=>b.addEventListener('click',()=>{
   $$('#tabs button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
   $$('section.tab').forEach(s=>s.classList.remove('on')); $('#tab-'+b.dataset.tab).classList.add('on');
   $('#pageTitle').textContent=b.textContent.replace(/\d+$/,'').trim();
-  balanceKgrids();   // tab is now visible & measurable — balance synchronously to avoid a fallback-layout flash
+  balanceKgrids(); alignPanelRows();   // tab is now visible & measurable — balance synchronously to avoid a fallback-layout flash
   stickyHeadOffsets($('#tab-'+b.dataset.tab));   // multi-row sticky headers, same reason
   /* nudge charts + re-balance on the newly visible tab (couldn't be measured while hidden) */
-  requestAnimationFrame(()=>{ balanceKgrids(); $$('#tab-'+b.dataset.tab+' canvas').forEach(c=>{
+  requestAnimationFrame(()=>{ balanceKgrids(); alignPanelRows(); $$('#tab-'+b.dataset.tab+' canvas').forEach(c=>{
     const ch=state.charts[c.id]; try{ ch?.resize(); ch?.update('none'); }catch(e){} }); });
 }));
 let _rzT=null;
 /* the app header wraps to a second line on a narrow window, which moves where page-sticky
    table headers must park — so re-measure alongside the grid re-balance */
 window.addEventListener('resize',()=>{ clearTimeout(_rzT);
-  _rzT=setTimeout(()=>{ balanceKgrids(); stickyHeadOffsets(); },150); });
+  _rzT=setTimeout(()=>{ balanceKgrids(); alignPanelRows(); stickyHeadOffsets(); },150); });
 
 /* Sticky headers after PARTIAL re-renders. Several controls rebuild one table without going
    through renderAll — the Summary/Full detail toggles (__setExpFull, __setCpDetail), metric
