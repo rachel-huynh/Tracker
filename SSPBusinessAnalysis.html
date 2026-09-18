@@ -6520,7 +6520,10 @@ function renderForecast(d){
   const fcGapNote=fcTailGap.length
     ? `<div class="small" style="margin-top:6px"><span class="tag a">no ${escH(fcEntName)} data</span> STR publishes no ${escH(fcEntName)} figure for ${fcTailGap.map(fmtMonthKey).join(', ')} — a provisional month carries no Industry sheet. The actual line stops at the last real month and the dashed line bridges the gap to reach the forecast; it is <b>not</b> a forecast for ${fcTailGap.length>1?'those months':'that month'}.</div>`
     : '';
-  const btR=fcVs?backtest(fcSer.revpar):null;      // model track record on RevPAR
+  /* Measured ALWAYS, not only in Backtest view: the RevPAR table below quotes this MAE as its
+     ± band, and gating it on fcVs left that column blank in the default Forecast view. The
+     panels that DRAW the backtest still check fcVs themselves. */
+  const btR=backtest(fcSer.revpar);               // model track record on RevPAR
   const fcVsNote=(fcVs&&btR&&btR.n>=6)
     ? `<div class="small" style="margin-top:6px"><b>Actual vs forecast.</b> The grey dotted line is the forecast <b>for each month as it stood the month before</b> — the same model replayed one step at a time, using only data available at the time. That is the like-for-like comparison: grey vs navy at the same month. (The gold line is the forward forecast; its first point is borrowed from the last actual purely to join the two lines, so it is left out of the tooltip.) Over ${btR.n} testable months (${fmtMonthKey(M[btR.firstT])} – ${fmtMonthKey(M[btR.lastT])}${btR.n<BT_MONTHS?`, fewer than the ${BT_MONTHS}-month window because this series has gaps STR did not publish`:``}) it was out by <b>${moneyFmt(starCvM(btR.mae,M[n-1]),1)}</b> on average (<b>${pct(btR.mape)}</b>). Where grey sits below navy the model under-called the month; above, it over-called. The Focus period trims the chart, not this score.</div>`
     : (fcVs?`<div class="small" style="margin-top:6px">Not enough history yet to replay the model for ${escH(fcEntName)} — needs at least 6 testable months after the first 13.</div>`:'');
@@ -6922,6 +6925,21 @@ function renderForecast(d){
   const noStarHistHtml=`<div class="panel"><h3>Full-year ${fcYear} outlook &amp; independent RevPAR forecast</h3>
       <div class="small">${na('Needs the official Monthly STAR for '+fmtMonthKey(state.month)+' — a provisional (Weekly/Daily STAR) month has no Comp-sheet history to project from')}
       The panels above (rolling forecast cascade, pace check, cashflow) don't depend on this and are unaffected. This section reactivates automatically once the official Monthly STAR is dropped for this month (usually ~day 20).</div></div>`;
+  /* RevPAR's own 3-month table, same five columns as the occupancy and ADR tables beside it so
+     the three read alike. LY actual is the same month one year back in the entity's series
+     (matched by INDEX into M, exactly as the model's own base is).
+     The ± here is the MEASURED backtest error (btR.mae), the same quantity the other two
+     tables show — deliberately NOT the chart's shaded cone above, which is the run-rate
+     volatility band (±vol) the model itself carries. They answer different questions and the
+     caption says so; showing vol in a column headed "MAE band" would have been wrong. */
+  const rpFcRows=(hasStarHist?fcE:[]).map((f,h)=>{
+    const li=n-12+(h+1), ly=(li>=0&&li<n)?fcSer.revpar[li]:null;
+    const band=(f.revpar!=null&&btR?.mae!=null)
+      ? moneyFmt(starCvM(Math.max(0,f.revpar-btR.mae),f.ym),1)+' – '+moneyFmt(starCvM(f.revpar+btR.mae,f.ym),1) : '';
+    return `<tr><td>${fmtMonthKey(f.ym)}</td><td><b>${f.revpar==null?na():moneyFmt(starCvM(f.revpar,f.ym),1)}</b></td>
+      <td class="small">${band}</td><td>${ly==null?na():moneyFmt(starCvM(ly,f.ym),1)}</td>
+      ${chgTd(f.revpar!=null&&ly?(f.revpar/ly-1)*100:null)}</tr>`;
+  }).join('');
   el.innerHTML=`
     ${rfHtml}
     ${next3Html}
@@ -6937,7 +6955,9 @@ function renderForecast(d){
       <div class="small">The two charts below are this dashboard's <b>own</b> statistical projection, built from STAR trend data (same-month-last-year × trailing run-rate). They are deliberately independent of the management rolling forecast above, so the two can be compared as a cross-check rather than one confirming the other.</div></div>
     ${adrPanelHtml}
     <div class="panel"><h3 class="h3ctl"><span class="ttl">RevPAR forecast — ${escH(fcEntName)}${fcEnt==='all'?'':' · seasonal-naive × run-rate YoY (median of last 6 months: '+pct(fcRR.growth.revpar)+' ± '+pct(fcRR.vol.revpar)+')'}</span>${fcCtl}</h3>
-      <div class="chartbox tall"><canvas id="chFc"></canvas></div>${fcGapNote}${fcVsNote}</div>`:noStarHistHtml}
+      <div class="chartbox tall"><canvas id="chFc"></canvas></div>${fcGapNote}${fcVsNote}
+      ${rpFcRows?`${allTblNote}<table style="margin-top:6px"><thead><tr><th>Month</th><th>Forecast RevPAR</th><th>±MAE band</th><th>LY actual</th><th>vs LY</th></tr></thead><tbody>${rpFcRows}</tbody></table>
+      <div class="small" style="margin-top:6px">One row per forecast month, the same horizon this chart draws — it runs to year end, so it is longer than the 3-month occupancy and ADR tables below, which project from the last month with a full Comp-sheet history rather than from the provisional one. The <b>±MAE band</b> is the measured one-step-ahead backtest error${btR&&btR.n?' over '+btR.n+' testable months':''} — <b>not</b> the shaded cone on the chart above, which is the model’s own run-rate volatility (±${pct(fcRR.vol.revpar)}) and is the wider of the two. Read the band, not the point.</div>`:''}</div>`:noStarHistHtml}
     ${modelHtml}
     ${otaHtml}`;
   /* forecast chart — history window can be trimmed with the shared focus period (From).
@@ -8815,21 +8835,37 @@ let _rzT=null;
    table headers must park — so re-measure alongside the grid re-balance */
 window.addEventListener('resize',()=>{ clearTimeout(_rzT);
   _rzT=setTimeout(()=>{ balanceKgrids(); alignPanelRows(); stickyHeadOffsets(); },150); });
-
-/* Sticky headers after PARTIAL re-renders. Several controls rebuild one table without going
-   through renderAll — the Summary/Full detail toggles (__setExpFull, __setCpDetail), metric
-   switches, filters — so a table that just grew past the threshold would never be promoted
-   and its header would not freeze. Watching the DOM covers all of them at once, including
-   any added later, instead of relying on every handler remembering to call the pass.
+/* Sticky headers AND panel-row alignment after PARTIAL re-renders. Several controls rebuild one
+   tab without going through renderAll — the entity / Forecast-vs-Backtest switches on this
+   tab, the Summary/Full detail toggles, metric switches, filters — so a table that just grew
+   past the threshold would never be promoted, and the side-by-side panels would keep the
+   ragged layout the rebuild just handed them (renderAll is the only other caller, and it runs
+   while the tab is still hidden and unmeasurable). Watching the DOM covers all of them at
+   once, including any added later, instead of relying on every handler remembering the calls.
+   alignPanelRows writes inline styles only — attribute mutations, which this childList/subtree
+   observer does not watch — so it cannot retrigger itself. It runs AFTER the sticky pass
+   because wrapping a table changes the heights it measures.
    `busy` stops the pass re-triggering itself while it wraps tables; once the layout is
    stable a pass makes no mutations, so this settles rather than looping. */
 let _stkPending=false,_stkBusy=false;
+function stickyPass(){
+  _stkPending=false; _stkBusy=true;
+  try{
+    try{ applyStickyHeaders(); }catch(e){ console.error('sticky',e); }
+    try{ alignPanelRows(); }catch(e){ console.error('align',e); }
+  } finally{ _stkBusy=false; }
+}
 function scheduleSticky(){
   if(_stkBusy||_stkPending) return;
   _stkPending=true;
-  requestAnimationFrame(()=>{ _stkPending=false; _stkBusy=true;
-    try{ applyStickyHeaders(); }catch(e){ console.error('sticky',e); }
-    finally{ _stkBusy=false; } });
+  /* rAF ALONE LATCHED THIS OFF for the rest of the session: browsers run no animation frames
+     in a background tab, so a re-render that happened while this window was hidden never got
+     its callback — `_stkPending` stayed true and every later mutation returned early, which
+     silently killed both passes until reload. The timer is a backstop; whichever fires first
+     wins and the second call is a no-op because the flag is already clear by then. */
+  let ran=false; const once=()=>{ if(ran) return; ran=true; stickyPass(); };
+  requestAnimationFrame(once);
+  setTimeout(once,250);
 }
 new MutationObserver(scheduleSticky).observe(document.getElementById('content')||document.body,
   {childList:true,subtree:true});
