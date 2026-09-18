@@ -5196,7 +5196,7 @@ function renderMarket(d){
     const nDays=new Date(stY,stM,0).getDate();
     const days=[...Array(nDays)].map((_,i)=>i+1)
       .filter(d2=>['occ','adr','revpar'].some(m=>dl[m]?.my?.[d2-1]!=null||dl[m]?.[bKey]?.[d2-1]!=null));
-    const isWE=(ym,d2)=>{const w=dowOf(ym,d2);return w===4||w===5;};   // STR convention: weekend = Fri+Sat
+    const isWE=(ym,d2)=>{const w=dowOf(ym,d2);return w===5||w===6;};   // weekend = Sat+Sun (owner's definition; STR's own split is Fri+Sat)
     const lyDl=starOf(lyKey)?.daily||null;
     /* aggregates: occ & RevPAR are day averages; ADR is revenue-weighted = ΣRevPAR/Σ(Occ/100) */
     const agg=(src,who,ym,set)=>{ if(!src) return {occ:null,adr:null,revpar:null};
@@ -5254,7 +5254,7 @@ function renderMarket(d){
           <button class="heatbtn ${bKey==='ind'?'on':''}" onclick="__setDailyBench('ind')" ${hasInd?'':'disabled title="Industry daily rows not in this STAR file"'}>Industry</button>
         </span></h3>
       <div style="overflow-x:auto"><table><thead>${dHead}</thead><tbody>${dBody}</tbody></table></div>
-      <div class="small" style="margin-top:6px">Shaded day columns = STR weekend (Fri–Sat); MTD WD = Sun–Thu, MTD WE = Fri–Sat. MTD ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc).
+      <div class="small" style="margin-top:6px">Shaded day columns = weekend (Sat–Sun); MTD WD = Mon–Fri, MTD WE = Sat–Sun. MTD ADR is revenue-weighted (ΣRevPAR ÷ ΣOcc).
         ${lyDl?'% chg rows compare the same calendar day of '+fmtMonthKey(lyKey)+'.':'Drop the '+fmtMonthKey(lyKey)+' Monthly STAR to unlock the YoY % change rows.'}
         ${state.dailyBench==='ind'&&st.industry?`<br><b>Same population as the benchmark column in the snapshot above</b> — ${escH(st.industry.scope)} — just aggregated differently: these MTD cells are the <b>day average</b> of the daily grid, whereas STR's own monthly figure (used in the snapshot) weights each day by that day's room supply. The two therefore sit about a point apart on occupancy; both are correct for their purpose — use the daily grid to read day patterns and the snapshot for the month's headline.`:''}</div></div>`;
   }
@@ -5274,7 +5274,7 @@ function renderMarket(d){
   const wMonths=(state.tsFrom||state.tsTo)? bwAll.filter(tsInRange) : bwAll.filter(k=>k<=st.monthKey).slice(-3);
   const mkSeries=met2=>{ // means of the daily STAR values at the chosen granularity
     const out2={labels:[],my:[],comp:[],ind:[],we:[]};
-    const dayOk=(mk2,d2)=>{ const w=dowOf(mk2,d2), isW=(w===4||w===5);
+    const dayOk=(mk2,d2)=>{ const w=dowOf(mk2,d2), isW=(w===5||w===6);
       return !(dayF2==='wd'&&isW)&&!(dayF2==='we'&&!isW); };
     if(mg==='daily'){
       for(const mk2 of wMonths){ const s2=starOf(mk2)?.daily?.[met2]; if(!s2) continue;
@@ -5284,7 +5284,7 @@ function renderMarket(d){
           if(s2.my?.[d2-1]==null&&s2.comp?.[d2-1]==null) continue;
           out2.labels.push(d2+' '+MONTHS[m2-1].slice(0,3));
           out2.my.push(s2.my?.[d2-1]??null); out2.comp.push(s2.comp?.[d2-1]??null); out2.ind.push(s2.ind?.[d2-1]??null);
-          const w=dowOf(mk2,d2); out2.we.push(w===4||w===5);
+          const w=dowOf(mk2,d2); out2.we.push(w===5||w===6);
         } }
     } else {
       const groups={};
@@ -5393,7 +5393,7 @@ function renderMarket(d){
     ${hasBw?`<div class="panel"><h3>Occupancy bandwidth — ${mg}, ${winLabel}${dayF2!=='all'?' · '+(dayF2==='wd'?'weekdays only':'weekends only'):''}</h3>
       <div class="chartbox"><canvas id="chBand"></canvas></div>
       <div class="small" style="margin-top:6px">Green = Sofitel SSP occupancy; shaded band = comp-set ↔ industry envelope${hasBwInd?'':' (industry rows missing — comp set shown as dashed line only)'};
-        grey columns = STR weekends (Fri–Sat, daily view). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
+        grey columns = weekends (Sat–Sun, daily view). Member-level min/max is not in the STAR export, so the band is the comp-average vs industry-average range.</div></div>`:''}
     <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold);margin-top:4px">
       <h3 style="margin:0">Operator STR Benchmark</h3></div>
     ${dailyPanel}
@@ -5879,7 +5879,7 @@ function trendSeries(met,gran){
       const [y,m]=mk.split('-').map(Number); const nD=new Date(y,m,0).getDate();
       for(let d2=1;d2<=nD;d2++){
         if(dl.occ.my?.[d2-1]==null&&dl.adr?.my?.[d2-1]==null) continue;
-        const wd2=dowOf(mk,d2), isWE2=(wd2===4||wd2===5);   // day-type filter (daily/weekly only)
+        const wd2=dowOf(mk,d2), isWE2=(wd2===5||wd2===6);   // day-type filter (daily/weekly only)
         if(state.tsDay==='wd'&&isWE2) continue; if(state.tsDay==='we'&&!isWE2) continue;
         let kd=new Date(y,m-1,d2);
         if(gran==='weekly'){ const w=(kd.getDay()+6)%7; kd=new Date(y,m-1,d2-w); } // Monday of that week
@@ -6088,13 +6088,13 @@ function renderHeat(d){
     return s.map((x,i)=>n[i]?x/n[i]:null); };
   const rgiD=dowAgg('idx');
   const worst=rgiD.indexOf(Math.min(...rgiD.filter(v=>v!=null))), best=rgiD.indexOf(Math.max(...rgiD.filter(v=>v!=null)));
-  const wkd=(a)=>a.slice(0,4).filter(v=>v!=null), wke=(a)=>a.slice(4,7).filter(v=>v!=null);
+  const wkd=(a)=>a.slice(0,5).filter(v=>v!=null), wke=(a)=>a.slice(5,7).filter(v=>v!=null);
   const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
   const insights=[];
   if(rgiD[worst]!=null) insights.push(['crit',`Weakest day: ${DOWS[worst]}`,`Average ${idxName} ${n1(rgiD[worst])} across ${months.length} stored month(s) — target promotions/corporate feed on ${DOWS[worst]}.`]);
   if(rgiD[best]!=null) insights.push(['good',`Strongest day: ${DOWS[best]}`,`Average ${idxName} ${n1(rgiD[best])} — protect rate here, avoid discounting.`]);
   const wd=avg(wkd(rgiD)),we=avg(wke(rgiD));
-  if(wd!=null&&we!=null) insights.push([we<wd?'warn':'info','Weekday vs weekend',`${idxName} weekday (Mon–Thu) ${n1(wd)} vs weekend (Fri–Sun) ${n1(we)} — ${we<wd?'weekend leisure demand is being lost to the comp set':'weekend position is stronger than weekday'}.`]);
+  if(wd!=null&&we!=null) insights.push([we<wd?'warn':'info','Weekday vs weekend',`${idxName} weekday (Mon–Fri) ${n1(wd)} vs weekend (Sat–Sun) ${n1(we)} — ${we<wd?'weekend leisure demand is being lost to the comp set':'weekend position is stronger than weekday'}.`]);
   const myD=dowAgg('my'), indD=dowAgg('ind');
   if(met==='occ'&&indD.some(v=>v!=null)){
     const gap=myD.map((v,i)=>v!=null&&indD[i]!=null?v-indD[i]:null).filter(v=>v!=null);
@@ -6169,15 +6169,14 @@ function olsNext(vals,steps){ // simple linear projection of a series
                 where nearly all the error lives.
      So a single day 30 days out carries the month's uncertainty plus the day's. Bands below
      are measured end-to-end (forecast level x shape vs what actually happened), never
-     assumed, and the weekday/weekend rows are much tighter because averaging ~20 and ~10
+     assumed, and the weekday/weekend rows are much tighter because averaging ~21 and ~9
      days cancels most of the day-level noise. */
 function buildD30(fcBase){
     const METS3=['occ','adr','revpar'], DOWN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    /* Weekend = Fri + Sat + SUN, and the rows run Mon..Sun. This first used STR's Fri+Sat
-       convention with a Sunday-first order, which contradicted the tab it now sits in: the
-       Patterns insights already read "weekday (Mon-Thu) vs weekend (Fri-Sun)" and the heatmap
-       columns already run Mon..Sun. Owner confirmed Sunday counts as weekend. */
-    const isWE=d=>d===5||d===6||d===0;
+    /* Weekend = Sat + Sun only (owner's definition, confirmed 2026-09-18) — NOT STR's own
+       Fri+Sat split, which the Market tab's published MTD WD/WE columns used to follow. Rows
+       run Mon..Sun to match the heatmap columns on this tab, so the two weekend days sit last. */
+    const isWE=d=>d===6||d===0;
     const monthsOf=met=>{ const ms=[];
       for(const mk of Object.keys(state.store.months).sort()){
         const g=starOf(mk)?.daily?.[met]?.[fcBase]; if(!g) continue;
@@ -6268,8 +6267,8 @@ function d30TableHtml(D30,moneyFn){
       ${cell(src.occ,D30.B.occ.mae[mk],pc)}${cell(src.adr,D30.B.adr.mae[mk],M)}${cell(src.revpar,D30.B.revpar.mae[mk],M)}</tr>`;
   return `<div style="overflow-x:auto"><table><thead><tr><th>Day</th><th>In window</th><th>vs month avg</th><th>Occupancy</th><th>ADR</th><th>RevPAR</th></tr></thead>
     <tbody>${dowRows}
-      ${sumRow('Weekday Mon–Thu',D30.wd,'wd',D30.nWD)}
-      ${sumRow('Weekend Fri–Sun',D30.we,'we',D30.nWE)}
+      ${sumRow('Weekday Mon–Fri',D30.wd,'wd',D30.nWD)}
+      ${sumRow('Weekend Sat–Sun',D30.we,'we',D30.nWE)}
       ${sumRow('Whole period',D30.all,'all',D30.nAll,true)}</tbody></table></div>`;
 }
 /* STAR money for these tables: STR's own monthly rate, never fxOf. */
@@ -6611,7 +6610,7 @@ function renderForecast(d){
       const s3=state.store.months[k2].star.daily; if(!s3?.adr) continue;
       const [y3,m3]=k2.split('-').map(Number), nD=new Date(y3,m3,0).getDate();
       for(let d2=1;d2<=nD;d2++){
-        const we=(w=>w===4||w===5)(dowOf(k2,d2));
+        const we=(w=>w===5||w===6)(dowOf(k2,d2));
         if(adrDay==='wd'&&we) continue; if(adrDay==='we'&&!we) continue;
         for(const e of ['my','comp','ind']){
           const o=s3.occ?.[e]?.[d2-1], a=s3.adr?.[e]?.[d2-1];
@@ -7042,8 +7041,8 @@ function renderForecast(d){
     } else {
       const pts2=adrCloud[ent2]||[];
       dsets=[
-        {label:'Weekday (Sun–Thu)',data:pts2.filter(p2=>!p2.we),backgroundColor:'rgba(11,31,58,.35)',pointRadius:2.5},
-        {label:'Weekend (Fri–Sat)',data:pts2.filter(p2=>p2.we),backgroundColor:'rgba(74,125,189,.45)',pointRadius:2.5}];
+        {label:'Weekday (Mon–Fri)',data:pts2.filter(p2=>!p2.we),backgroundColor:'rgba(11,31,58,.35)',pointRadius:2.5},
+        {label:'Weekend (Sat–Sun)',data:pts2.filter(p2=>p2.we),backgroundColor:'rgba(74,125,189,.45)',pointRadius:2.5}];
       const dc=decOf(pts2);
       if(dc) dsets.push({label:'Decile average (compression curve)',data:dc,showLine:true,type:'line',
         borderColor:'#C9A227',borderWidth:2.5,backgroundColor:'#C9A227',pointRadius:4,tension:.3});
