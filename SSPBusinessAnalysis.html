@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Plaza Hotel Company Limited — Business Analysis</title>
+<link rel="icon" type="image/png" id="favicon">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <style>
@@ -11,6 +12,9 @@
   --navy:#0B1F3A; --side:#2b3f5e; --side2:#243755; --sideline:#3a4f70; --gold:#C9A227; --gold2:#e8a33d;
   --grey:#6B7280; --grey2:#9CA3AF; --line:#e2e6ee; --bg:#f1f3f7; --panel:#ffffff;
   --ink:#1f2937; --green:#1e7e4f; --red:#c0392b; --amber:#b7791f; --blue:#2e5f9e;
+  /* sampled from the logo artwork, kept for anything that needs to match it exactly */
+  --brandnavy:#01478F; --brandorange:#F39C11;
+  --brandmark:url("data:image/png;base64,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");
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--ink);font-family:"Segoe UI",Arial,sans-serif;font-size:13px}
@@ -18,8 +22,18 @@ h1,h2,h3{font-weight:600}
 #app{display:flex;min-height:100vh}
 /* ---------- sidebar ---------- */
 #side{width:232px;flex:0 0 232px;background:var(--side);color:#dbe2ee;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
-#side .logo{padding:18px 16px 12px;font-size:16px;font-weight:800;letter-spacing:.6px;color:#fff;line-height:1.25;border-bottom:1px solid var(--sideline)}
+#side .logo{padding:18px 16px 12px;font-size:16px;font-weight:800;letter-spacing:.6px;color:#fff;line-height:1.25;border-bottom:1px solid var(--sideline);display:flex;align-items:center;gap:10px}
 #side .logo small{display:block;color:#9fb0ca;font-weight:400;font-size:10.5px;margin-top:5px;letter-spacing:0}
+/* The house mark. Navy-on-white artwork, so on the navy sidebar and the navy sign-in header it
+   sits on its own white tile rather than being recoloured — the orange bars and the white
+   arrows cut out of them only read against white. Held ONCE as a custom property and reused:
+   as a background here, and copied to the favicon at boot, so the 11k data URI is not
+   duplicated three times through a file that reviewers download. Inlined rather than linked
+   because this is a single offline file — no second request, and it still works off a stick. */
+.brandmark{width:34px;height:34px;flex:0 0 auto;border-radius:7px;padding:3px;
+  background:#fff var(--brandmark) center/contain no-repeat;
+  background-origin:content-box;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+#side .logo .brandtxt{min-width:0}
 .navgroup{padding:14px 16px 5px;font-size:10.5px;letter-spacing:1.2px;color:#8ea0bd;text-transform:uppercase}
 #tabs{display:flex;flex-direction:column}
 #tabs button{display:block;width:100%;text-align:left;background:none;border:none;border-left:4px solid transparent;color:#c9d3e4;padding:9px 16px;font-size:13px;cursor:pointer;border-radius:0}
@@ -40,7 +54,7 @@ h1,h2,h3{font-weight:600}
 .logincard .primary{width:100%;background:var(--navy);color:#fff;border:none;padding:10px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px}
 .logincard .err{color:var(--red);font-size:11.5px;min-height:16px;margin-bottom:6px}
 /* ---------- content ---------- */
-#content{flex:1;min-width:0;display:flex;flex-direction:column}
+.logincard .head{background:var(--side);color:#fff;padding:18px 20px;font-size:15px;font-weight:800;letter-spacing:.5px;display:flex;align-items:center;gap:11px}
 #hdr{background:#fff;border-bottom:1px solid var(--line);padding:8px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;position:sticky;top:0;z-index:50}
 #hdr .pagetitle{font-size:16px;font-weight:700;color:var(--navy);margin-right:auto}
 .ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
@@ -112,7 +126,8 @@ section.tab.printshow{display:block}
   #app{flex-direction:column}
   /* sidebar becomes a sticky horizontal tab strip */
   #side{width:100%;flex:none;height:auto;position:sticky;top:0;z-index:60;overflow:visible}
-  #side .logo{padding:9px 12px;font-size:12.5px;border-bottom:none;letter-spacing:.3px}
+  #side .logo{padding:9px 12px;font-size:12.5px;border-bottom:none;letter-spacing:.3px;gap:8px}
+  .brandmark{width:26px;height:26px;border-radius:6px;padding:2px}
   #side .logo small{display:none}
   #tabs{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;border-top:1px solid var(--sideline)}
   #tabs::-webkit-scrollbar{height:3px}
@@ -268,7 +283,7 @@ tr.bad td{background:#fdeeec}
 <div id="app">
 <!-- ================= SIDEBAR ================= -->
 <aside id="side">
-  <div class="logo">PLAZA HOTEL COMPANY LIMITED<small data-i18n="subtitle">Sofitel Saigon Plaza · Central Plaza</small></div>
+  <div class="logo"><span class="brandmark" role="img" aria-label="Plaza Hotel Company Limited"></span><span class="brandtxt">PLAZA HOTEL COMPANY LIMITED<small data-i18n="subtitle">Sofitel Saigon Plaza · Central Plaza</small></span></div>
   <div id="tabs">
     <div class="navgroup" data-i18n="grpOverview">Overview</div>
     <button data-tab="conso" class="on" data-i18n="tabConso">Consolidated</button>
@@ -317,7 +332,7 @@ tr.bad td{background:#fdeeec}
 <!-- ================= ACCESS / SIGN-IN MODAL (portal style) ================= -->
 <div id="loginModal" class="noprint">
   <div class="logincard">
-    <div class="head">PLAZA HOTEL COMPANY LIMITED<small>Sofitel Saigon Plaza · Central Plaza</small></div>
+    <div class="head"><span class="brandmark" role="img" aria-label="Plaza Hotel Company Limited"></span><span>PLAZA HOTEL COMPANY LIMITED<small>Sofitel Saigon Plaza · Central Plaza</small></span></div>
     <div class="body">
       <div class="small" style="margin-bottom:8px;color:var(--grey)">Sign in with your account for full access, or continue as a viewer to see the published dashboard read-only.</div>
       <div class="err" id="loginErr"></div>
@@ -2637,6 +2652,14 @@ function starVariantSel(){
 function starOf(mk){ const m=state.store.months[mk]||{};
   const want=starVariantSel();
   return m[want] || m.star || m.starExcl || m.starNew || null; }
+/* NEVER read `state.store.months[mk].star` directly — always starOf(mk). A month whose STAR
+   was dropped under a non-default comp-set variant has NO `.star` key at all, so a direct read
+   is both variant-blind (it ignores the comp-set switch) and a crash waiting to happen. That
+   is exactly what broke the Forecast tab: dKeys is built with starOf(), so such a month passed
+   the filter, and the ADR-cloud loop then did `months[k2].star.daily` → "Cannot read properties
+   of undefined (reading 'daily')". It only showed when the focus window was widened past
+   Jan-2025, because the loop skips months outside the window — the crash was sitting in the
+   2024 months all along, waiting for someone to look at them. Eight sites were converted. */
 function starVariantHas(k){ return Object.values(state.store.months).some(m=>m&&m[k]); }
 
 /* ---------- merged STAR history across every stored month ----------
@@ -5869,7 +5892,7 @@ function monthOptGroups(keys,cur){
 }
 function tsRangeSel(){ // From/To month selects, options = every month in the merged history
   const set=new Set(Object.keys(state.store.months));
-  for(const k of Object.keys(state.store.months)){ const c2=state.store.months[k].star?.comp;
+  for(const k of Object.keys(state.store.months)){ const c2=starOf(k)?.comp;
     (c2?.occ?.months||[]).forEach(m2=>{ if(m2) set.add(m2); }); }
   const opts=[...set];
   const sel=(id,cur,ph)=>`<select onchange="__setTsRange(${id==='f'?'this.value,null':'null,this.value'})" style="padding:2px 4px">
@@ -5929,7 +5952,7 @@ function trendSeries(met,gran){
   if(gran==='daily'||gran==='weekly'){
     const buckets={}; // key -> {recs my arrays..., mk}
     for(const mk of Object.keys(state.store.months).sort()){
-      const dl=state.store.months[mk].star?.daily; if(!dl?.occ) continue;
+      const dl=starOf(mk)?.daily; if(!dl?.occ) continue;
       const [y,m]=mk.split('-').map(Number); const nD=new Date(y,m,0).getDate();
       for(let d2=1;d2<=nD;d2++){
         if(dl.occ.my?.[d2-1]==null&&dl.adr?.my?.[d2-1]==null) continue;
@@ -6051,7 +6074,7 @@ function renderHeat(d){
   /* built by d30SectionHtml() during the innerHTML pass, read by the chart pass at the bottom —
      same reason renderForecast hoists its own: a const inside the builder is invisible there */
   let D30A=null, D30B=null, D30ALL=[];
-  const monthsAllH=Object.keys(state.store.months).filter(k=>state.store.months[k].star?.daily).sort();
+  const monthsAllH=Object.keys(state.store.months).filter(k=>starOf(k)?.daily).sort();
   if(!monthsAllH.length){ el.innerHTML=noData(); return; }
   const months=(state.tsFrom||state.tsTo)?monthsAllH.filter(tsInRange):monthsAllH;   // grids honour the focus period
   const METRICS=[['revpar','RevPAR','RGI'],['occ','Occupancy','MPI'],['adr','ADR','ARI']];
@@ -6065,7 +6088,7 @@ function renderHeat(d){
   for(const [m] of METRICS){
     const grids={my:{},comp:{},ind:{},idx:{}};
     for(const mk of months){
-      const dl=state.store.months[mk].star.daily; const src=dl?.[m]; if(!src) continue;
+      const dl=starOf(mk)?.daily; const src=dl?.[m]; if(!src) continue;
       for(const e of ['my','comp','ind','idx']){
         const sums=new Array(7).fill(0),ns=new Array(7).fill(0); let ts=0,tn=0;
         for(let day=1;day<=31;day++){
@@ -6716,7 +6739,7 @@ function renderForecast(d){
     let projHtml='';
     const lk=dKeys[dKeys.length-1];
     if(lk){ const [y3,m3]=lk.split('-').map(Number), nD=new Date(y3,m3,0).getDate();
-      const vals=state.store.months[lk].star.daily.occ.my.slice(0,nD), have=vals.filter(v=>v!=null).length;
+      const vals=(starOf(lk)?.daily?.occ?.my||[]).slice(0,nD), have=vals.filter(v=>v!=null).length;
       if(have<nD-1&&have>=5){ const mtd=avgA(vals.filter(v=>v!=null));
         const nearest=coneRows.length?(coneRows.find(r2=>r2.d>=have)||coneRows[coneRows.length-1]):null;
         projHtml=`<div class="alert info"><div class="h">Live projection — ${fmtMonthKey(lk)} (day ${have} of ${nD})</div>
@@ -6728,7 +6751,7 @@ function renderForecast(d){
     const adrEnt=state.adrEnt||'my', adrDay=state.adrDay||'all';
     adrCloud={my:[],comp:[],ind:[]};
     for(const k2 of dKeys){ if(!tsInRange(k2)) continue;
-      const s3=state.store.months[k2].star.daily; if(!s3?.adr) continue;
+      const s3=starOf(k2)?.daily; if(!s3?.adr) continue;
       const [y3,m3]=k2.split('-').map(Number), nD=new Date(y3,m3,0).getDate();
       for(let d2=1;d2<=nD;d2++){
         const we=(w=>w===5||w===6)(dowOf(k2,d2));
@@ -6752,7 +6775,7 @@ function renderForecast(d){
       const baseAdr=avgA(adrDec.slice(0,3).map(d3=>d3.y));
       const thDec=adrDec.find(d3=>d3.y>=baseAdr*1.05);
       const topLift=(adrDec[8].y/baseAdr-1)*100;
-      const chgPairs=Object.keys(state.store.months).map(k2=>state.store.months[k2].star?.glance?.cmChg)
+      const chgPairs=Object.keys(state.store.months).map(k2=>starOf(k2)?.glance?.cmChg)
         .filter(g2=>g2?.occ?.my!=null&&g2?.adr?.my!=null).map(g2=>[g2.occ.my,g2.adr.my]);
       const rYoY=chgPairs.length>=6?corr2(chgPairs.map(p2=>p2[0]),chgPairs.map(p2=>p2[1])):null;
       adrInsight=`Day-level correlation is <b>weak</b> (r = ${n1(rAll,2)}; log-log elasticity ${n1(elast,2)} — a 10% occupancy gain lifts same-day ADR only ~${n1(elast*10,1)}%). The real pattern is <b>compression pricing</b>: ADR sits flat around ${starMoney(baseAdr,1)} below ${thDec?n1(thDec.lo,0):'~80'}% occupancy, then climbs to ${starMoney(adrDec[8].y,1)} (+${n1(topLift,1)}%) in the 90–97% band${adrDec[9].y<adrDec[8].y?', and <b>dips again on the very fullest nights ('+starMoney(adrDec[9].y,1)+') — the sell-out days are being filled with lower-rated business</b>, worth a yield review':''}.${rYoY!=null?` Month-level YoY changes correlate <b>negatively</b> (r = ${n1(rYoY,2)}): months that pushed rate gave up occupancy and vice-versa — the gold curve shows where rate can be pushed without volume risk.`:''}`;
@@ -8044,7 +8067,7 @@ function applyDefaultFocus(){
                             // keep the default so it still applies once the data arrives
   const keys=new Set(mks);
   for(const k of mks){
-    (state.store.months[k].star?.comp?.occ?.months||[]).forEach(m2=>{ if(m2) keys.add(m2); }); }
+    (starOf(k)?.comp?.occ?.months||[]).forEach(m2=>{ if(m2) keys.add(m2); }); }
   if(![...keys].some(k=>k>=TS_FROM_DEFAULT)) state.tsFrom='';
 }
 function refreshMonths(){
@@ -8555,27 +8578,110 @@ async function cloudSignInGo(){
    reason itself. Earlier this returned a bare boolean and swallowed the message in quiet
    mode, so a failed public-view toggle reported only "publish FAILED" with no cause —
    useless for telling an RLS rejection apart from an oversized payload. */
+/* ---------------------------------------------------------------------
+   PAYLOAD COMPRESSION.  The store outgrew what a single JSON upsert could
+   carry: at 13.1 MB the browser gave up before the server ever answered
+   ("TypeError: Failed to fetch" — a transport failure, so there is no
+   SQLSTATE and nothing in the Supabase logs to read).
+   Three things were wrong at once and all three are fixed here:
+     1. the body was raw JSON — this store gzips about 12:1, so the same
+        history travels as roughly a megabyte;
+     2. it was sent to a `jsonb` column, making Postgres parse and TOAST
+        every byte inside the statement timeout. Text skips all of that;
+     3. there was no fallback, so one oversized write broke publishing
+        outright instead of degrading.
+   Base64 is built in 32k chunks: String.fromCharCode(...u8) on a
+   multi-megabyte array blows the argument stack. --------------------- */
+const b64FromBytes=u8=>{ let s='', CH=0x8000;
+  for(let i=0;i<u8.length;i+=CH) s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
+  return btoa(s); };
+const bytesFromB64=b64=>{ const bin=atob(b64), u8=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return u8; };
+const GZ_OK=typeof CompressionStream==='function'&&typeof DecompressionStream==='function';
+async function gzipB64(str){
+  if(!GZ_OK) return null;
+  const ab=await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+  return b64FromBytes(new Uint8Array(ab));
+}
+async function gunzipB64(b64){
+  const ab=await new Response(new Blob([bytesFromB64(b64)]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  return new TextDecoder().decode(ab);
+}
+/* The compressed columns are added by section 4 of supabase-setup.sql. Until that has been
+   run PostgREST answers PGRST204 ("could not find the column ... in the schema cache") or
+   42703, and we fall back to the old plain-JSON write rather than failing. */
+const isMissingCol=e=>/data_gz|data_enc|data_bytes|PGRST204|42703|schema cache/i.test(
+  (e?.message||'')+' '+(e?.code||'')+' '+(e?.details||''));
+/* One request can only carry so much, and the store keeps growing, so above a threshold the
+   compressed payload is split across sibling rows — ssp#0, ssp#1, … — and the main row keeps
+   only a pointer. The table's RLS policies are table-wide (`using (true)`), so the extra rows
+   need no new grants. Chunks are written FIRST and the pointer LAST: a reader can therefore
+   never follow a pointer to a chunk that has not landed yet. Realtime only rings on the main
+   row (its filter is id=eq.ssp), so the doorbell fires exactly once, after everything is in. */
+const CHUNK_CHARS=2*1024*1024;                       // ~2 MB of base64 per request, so the
+                                                     // JSON body around it stays well under
+                                                     // any gateway limit (the whole record is
+                                                     // serialised, not just the payload)
+/* Zero-padded on purpose: the leftover sweep below compares ids as STRINGS, and unpadded
+   'ssp#2' sorts after 'ssp#10' — with ten or more parts that sweep would have deleted a live
+   chunk and left the published store unreadable. Three digits is 2 MB x 1000. */
+const chunkId=i=>CLOUD.rowId+'#'+String(i).padStart(3,'0');
 async function cloudPublish(quiet=false){
   if(!sb) return 'cloud not initialised (no internet, or Supabase failed to load)';
   if(!sbUser) return 'not signed in — sign in first, then publish';
   if(myRole()==='view'){ if(!quiet) toast('View-only account — publishing is disabled',true); return 'view-only account'; }
-  let sizeMB=null;
+  let sizeMB=null, gzMB=null, nChunks=0, viaPlain=false;
   try{
     const payload=JSON.stringify(state.store);
     sizeMB=+(payload.length/1048576).toFixed(1);
-    const {error}=await sb.from(CLOUD.table).upsert({id:CLOUD.rowId,data:state.store,
-      updated_by:sbUser.email,client_id:CLIENT_ID,updated_at:new Date().toISOString()});
+    const stamp={updated_by:sbUser.email,client_id:CLIENT_ID,updated_at:new Date().toISOString()};
+    const gz=await gzipB64(payload);
+    const put=r=>sb.from(CLOUD.table).upsert(r);
+    let error=null;
+    if(gz){
+      gzMB=+(gz.length/1048576).toFixed(2);
+      if(gz.length>CHUNK_CHARS){
+        nChunks=Math.ceil(gz.length/CHUNK_CHARS);
+        for(let i=0;i<nChunks;i++){
+          const part=gz.slice(i*CHUNK_CHARS,(i+1)*CHUNK_CHARS);
+          ({error}=await put({id:chunkId(i),data:null,data_gz:part,data_enc:'chunk',...stamp}));
+          if(error) break;
+        }
+        if(!error) ({error}=await put({id:CLOUD.rowId,data:null,data_gz:null,
+          data_enc:'gzip+base64+chunked',data_chunks:nChunks,data_bytes:payload.length,...stamp}));
+      }else{
+        nChunks=0;
+        ({error}=await put({id:CLOUD.rowId,data:null,data_gz:gz,data_enc:'gzip+base64',
+          data_chunks:null,data_bytes:payload.length,...stamp}));
+      }
+      /* Sweep leftover parts from a previously LARGER publish — including the case where the
+         payload has shrunk back under the threshold and nChunks is 0, which would otherwise
+         orphan every part. Harmless if it fails (the reader takes exactly data_chunks of them
+         and ignores the rest), so it is best-effort: the policy set may not grant delete. */
+      if(!error){ try{ await sb.from(CLOUD.table).delete()
+        .like('id',CLOUD.rowId+'#%').gte('id',chunkId(nChunks)); }catch(_){} }
+      if(error&&isMissingCol(error)){        // section 4 of supabase-setup.sql not run yet
+        viaPlain=true;
+        ({error}=await put({id:CLOUD.rowId,data:state.store,...stamp}));
+        if(!error&&!quiet) toast('⤴ Published uncompressed ('+sizeMB+' MB) — run section 4 of supabase-setup.sql to enable compression',true);
+      }
+    }else{
+      viaPlain=true;                          // browser without CompressionStream
+      ({error}=await put({id:CLOUD.rowId,data:state.store,...stamp}));
+    }
     if(error) throw error;
-    if(!quiet) toast('⤴ Published — reviewers updated');
+    if(!quiet&&!viaPlain) toast('⤴ Published — '+sizeMB+' MB → '+gzMB+' MB gzipped ('
+      +Math.round(payload.length/gz.length)+'× smaller'+(nChunks?', '+nChunks+' parts':'')+')');
+    else if(!quiet&&viaPlain&&!GZ_OK) toast('⤴ Published ('+sizeMB+' MB, this browser cannot gzip)');
     return null;
   }catch(e){
-    /* Supabase surfaces RLS rejections and body-size limits very differently; include the
-       payload size either way, since a multi-MB store is the usual cause once a full STAR
-       daily history is loaded and it is not otherwise visible from the message. */
+    /* Supabase surfaces RLS rejections, statement timeouts and body-size limits very
+       differently, and a transport failure ("Failed to fetch") carries no code at all —
+       so always name the size, compressed and raw, since that is the usual cause. */
     let msg=e?.message||e?.error_description||String(e);
     if(e?.code) msg+=` [code ${e.code}]`;
     if(e?.hint) msg+=` — ${e.hint}`;
-    if(sizeMB!=null) msg+=` (payload ${sizeMB} MB)`;
+    if(sizeMB!=null) msg+=` (payload ${sizeMB} MB${gzMB!=null?' → '+gzMB+' MB gzipped':''}${nChunks?', '+nChunks+' parts':''})`;
     if(!quiet) toast('Publish failed: '+msg,true);
     console.error('cloudPublish failed',e);
     return msg;
@@ -8584,15 +8690,38 @@ async function cloudPublish(quiet=false){
 async function cloudPull(notify=true){
   if(!sb) return false;                    // works for signed-in AND anonymous readers (RLS permitting)
   try{
-    const {data,error}=await sb.from(CLOUD.table).select('data,updated_by,updated_at').eq('id',CLOUD.rowId).maybeSingle();
+    /* Ask for the compressed columns, and fall back to the plain one on a database that has
+       not had section 4 of supabase-setup.sql run yet — a reviewer's browser must be able to
+       read BOTH shapes, because which one is in the row depends on when it was last published
+       and by which build. */
+    let sel=await sb.from(CLOUD.table).select('data,data_gz,data_enc,data_chunks,updated_by,updated_at').eq('id',CLOUD.rowId).maybeSingle();
+    if(sel.error&&isMissingCol(sel.error))
+      sel=await sb.from(CLOUD.table).select('data,updated_by,updated_at').eq('id',CLOUD.rowId).maybeSingle();
+    const {data,error}=sel;
     if(error) throw error;
+    let store=data?.data||null;
+    if(!store&&data?.data_chunks>0){
+      /* chunked: pull the siblings in ONE request and re-join before decoding — the base64
+         was sliced AFTER encoding, so concatenating the slices restores it byte for byte */
+      if(!GZ_OK) throw new Error('this browser cannot un-gzip the published data — use Edge or Chrome');
+      const ids=[...Array(data.data_chunks)].map((_,i)=>chunkId(i));
+      const {data:parts,error:pe}=await sb.from(CLOUD.table).select('id,data_gz').in('id',ids);
+      if(pe) throw pe;
+      if(!parts||parts.length<ids.length) throw new Error('published data is incomplete — '
+        +(parts?parts.length:0)+' of '+ids.length+' parts found; ask for a re-publish');
+      const byId=Object.fromEntries(parts.map(p=>[p.id,p.data_gz||'']));
+      store=JSON.parse(await gunzipB64(ids.map(i=>byId[i]).join('')));
+    }else if(!store&&data?.data_gz){
+      if(!GZ_OK) throw new Error('this browser cannot un-gzip the published data — use Edge or Chrome');
+      store=JSON.parse(await gunzipB64(data.data_gz));
+    }
     /* Reflect the server's publicView flag even when the fuller store-merge
        below is skipped (months empty/missing) -- this flag alone decides
        whether an anonymous visitor can get past the login screen, so it must
        never go stale just because that unrelated guard didn't fire. */
-    if(data?.data&&typeof data.data.publicView!=='undefined') state.store.publicView=data.data.publicView;
-    if(data?.data?.months&&Object.keys(data.data.months).length){
-      state.store=data.data; state.store.fx=state.store.fx||{};
+    if(store&&typeof store.publicView!=='undefined') state.store.publicView=store.publicView;
+    if(store?.months&&Object.keys(store.months).length){
+      state.store=store; state.store.fx=state.store.fx||{};
       if(!state.viewOnly) saveStore();       // viewers don't persist the published copy locally
       /* re-check the default focus window against the store that just arrived — for a
          reviewer this is the FIRST store with any months in it, so boot's call was a no-op */
@@ -8871,6 +9000,17 @@ new MutationObserver(scheduleSticky).observe(document.getElementById('content')|
   {childList:true,subtree:true});
 
 /* expose for automated verification */
+/* Favicon from the same custom property the sidebar mark uses, so the artwork is stored once.
+   getPropertyValue hands back the whole `url("data:...")` wrapper — unwrap it, and leave the
+   tab icon alone if anything about that fails rather than blanking a working one. */
+(()=>{ try{
+  let raw=getComputedStyle(document.documentElement).getPropertyValue('--brandmark').trim();
+  if(raw.slice(0,4)==='url(') raw=raw.slice(4,-1).trim();
+  const q=raw.charAt(0);
+  if(q==='"'||q==="'") raw=raw.slice(1,-1);
+  const el=document.getElementById('favicon');
+  if(el&&raw.slice(0,5)==='data:') el.href=raw;
+}catch(e){} })();
 window.__ingestBuffer=ingestBuffer; window.__renderAll=()=>{saveStore();refreshMonths();renderAll();}; window.__state=state;
 </script>
 </body>

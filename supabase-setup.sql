@@ -2,11 +2,13 @@
 --  SSP BOD Dashboard — Supabase setup / repair
 --  Project: dplefzmvkqukmtnebnhd   Table: public.dashboard_store   Row: 'ssp'
 --
---  Fixes: Publish failed — canceling statement due to statement timeout
---         [SQLSTATE 57014] (payload 8.1 MB)
+--  Fixes: Publish failed — TypeError: Failed to fetch (payload 13.1 MB)
+--         and the earlier statement timeout [SQLSTATE 57014] at 8.1 MB.
 --
---  57014 = query_canceled: the write ran past statement_timeout. This is NOT
---  a permissions problem — an RLS rejection is 42501, never 57014.
+--  "Failed to fetch" is a TRANSPORT failure — the request never reached
+--  Postgres, so there is no SQLSTATE and nothing in the Supabase logs. The
+--  body was simply too big. 57014 = query_canceled, the write running past
+--  statement_timeout. Neither is a permissions problem — RLS says 42501.
 --
 --  Run the whole file in the Supabase SQL editor. Every statement is
 --  idempotent, so it is safe to re-run.
@@ -94,20 +96,36 @@ end $$;
 
 
 -- ---------------------------------------------------------------------
--- 4.  SCHEMA FOR THE COMPRESSED PAYLOAD  ***OPTIONAL — see note***
+-- 4.  SCHEMA FOR THE COMPRESSED PAYLOAD  ***NOW REQUIRED — run this***
 --
---     Adds a text column for a gzip+base64 payload. Storing text skips the
---     server-side JSON parse entirely, and compression cuts the transfer;
---     8.1 MB lands around 2-3 MB.
+--     Adds a text column for a gzip+base64 payload, plus a part counter for
+--     payloads too big for one request. Storing text skips the server-side
+--     JSON parse entirely and compression cuts the transfer; 13.1 MB of raw
+--     JSON lands around 4 MB, and anything over ~3 MB is split across rows.
 --
---     *** These columns do NOTHING until the app is changed to write them. ***
---     Running this section is harmless either way — it only adds nullable
---     columns. `data` is made nullable so a future gz-only row can be
---     written without a dummy JSON value.
+--     The app writes these columns as of 21 Sep 2026. Until this section has
+--     been run it detects the missing columns and falls back to the old
+--     uncompressed write — which is exactly what was failing at 13.1 MB.
+--
+--     Everything here is idempotent and nullable; `data` is made nullable so
+--     a gz-only row can be written without a dummy JSON value.
 -- ---------------------------------------------------------------------
 alter table public.dashboard_store add column if not exists data_gz    text;   -- gzip, base64
 alter table public.dashboard_store add column if not exists data_enc   text;   -- e.g. 'gzip+base64'
 alter table public.dashboard_store add column if not exists data_bytes bigint; -- uncompressed size, for diagnostics
+alter table public.dashboard_store add column if not exists data_chunks int;    -- parts, when split
+
+-- The app splits a payload larger than ~3 MB of base64 across sibling rows
+-- ssp#0, ssp#1, ... and leaves only a pointer (data_chunks) in row 'ssp'.
+-- The read/insert/update policies above are table-wide, so those rows need no
+-- extra grants. This DELETE policy is only so a publish that needs FEWER parts
+-- than the last one can tidy up the leftovers; without it they linger harmlessly
+-- (the reader takes exactly data_chunks of them and ignores the rest).
+drop policy if exists "dashboard_store delete" on public.dashboard_store;
+create policy "dashboard_store delete"
+  on public.dashboard_store for delete
+  to authenticated
+  using (id <> 'ssp');          -- the main row can never be deleted from the app
 
 do $$
 begin
