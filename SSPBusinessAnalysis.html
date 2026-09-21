@@ -887,6 +887,14 @@ function varTd(cur,base,extra){
   return `<td data-v=""${extra||''}>${na()}</td>`;
 }
 function toast(msg,err){ const d=document.createElement('div'); d.className='toast'+(err?' err':''); d.textContent=msg; $('#toasts').appendChild(d); setTimeout(()=>d.remove(),6000); }
+/* A publish now takes several requests. One toast per part would bury the screen, so progress
+   reuses a single element: same look, replaced in place, cleared when the publish ends. */
+let _pToast=null;
+function toastProgress(msg){
+  if(!_pToast||!_pToast.isConnected){ _pToast=document.createElement('div'); _pToast.className='toast'; $('#toasts').appendChild(_pToast); }
+  _pToast.textContent=msg;
+}
+function toastProgressEnd(){ if(_pToast){ _pToast.remove(); _pToast=null; } }
 
 /* =====================================================================
  *  GRID / ADAPTER HELPERS  (the layer to extend when formats change)
@@ -8641,21 +8649,39 @@ const isMissingCol=e=>/data_gz|data_enc|data_bytes|PGRST204|42703|schema cache/i
    need no new grants. Chunks are written FIRST and the pointer LAST: a reader can therefore
    never follow a pointer to a chunk that has not landed yet. Realtime only rings on the main
    row (its filter is id=eq.ssp), so the doorbell fires exactly once, after everything is in. */
-const CHUNK_CHARS=2*1024*1024;                       // ~2 MB of base64 per request, so the
-                                                     // JSON body around it stays well under
-                                                     // any gateway limit (the whole record is
-                                                     // serialised, not just the payload)
+/* 512 KB, not 2 MB. Size alone was never the whole problem: the gateway answered
+   "upstream request timeout" on a 2 MB part, which is a DURATION limit, not a byte limit —
+   on a slow office uplink 2 MB simply takes longer to push than the proxy will wait. Smaller
+   parts keep every single request short, and a part that still fails is cheap to retry. */
+const CHUNK_CHARS=512*1024;
 /* Zero-padded on purpose: the leftover sweep below compares ids as STRINGS, and unpadded
    'ssp#2' sorts after 'ssp#10' — with ten or more parts that sweep would have deleted a live
-   chunk and left the published store unreadable. Three digits is 2 MB x 1000. */
+   chunk and left the published store unreadable. Three digits is 512 KB x 1000. */
 const chunkId=i=>CLOUD.rowId+'#'+String(i).padStart(3,'0');
+/* Transient vs permanent. A timeout, a 5xx or a dropped connection is worth retrying; an RLS
+   rejection (42501) or a missing column never is — retrying those just delays the real
+   message. 57014 is the statement timeout: also transient, the write may simply be queued
+   behind something. */
+const isTransient=e=>{ const m=((e&&e.message)||'')+' '+((e&&e.code)||'');
+  return /timeout|timed out|fetch|network|502|503|504|57014|ECONN|aborted/i.test(m); };
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+/* Numbers in this store carry full IEEE precision — 92% of them are longer than nine
+   characters, e.g. an occupancy of 65.015758667267. Nothing reads more than a few decimals,
+   and that dust is what stops the payload compressing: rounding to SIX DECIMAL PLACES takes
+   the gzipped size down by about a quarter. Decimal places, not significant figures: six
+   significant figures would round ₫14,523,456,789 to ₫14,523,500,000 and break reconciliation,
+   while six decimals leaves every money figure and every ratio exact to far beyond anything
+   the app displays or checks. The LOCAL store keeps full precision — only the copy that
+   travels is rounded. */
+const publishJson=store=>JSON.stringify(store,(k,v)=>
+  typeof v==='number'&&isFinite(v)&&v!==Math.round(v) ? Math.round(v*1e6)/1e6 : v);
 async function cloudPublish(quiet=false){
   if(!sb) return 'cloud not initialised (no internet, or Supabase failed to load)';
   if(!sbUser) return 'not signed in — sign in first, then publish';
   if(myRole()==='view'){ if(!quiet) toast('View-only account — publishing is disabled',true); return 'view-only account'; }
   let sizeMB=null, gzMB=null, nChunks=0, viaPlain=false, missingCol=null;
   try{
-    const payload=JSON.stringify(state.store);
+    const payload=publishJson(state.store);
     sizeMB=+(payload.length/1048576).toFixed(1);
     const stamp={updated_by:sbUser.email,client_id:CLIENT_ID,updated_at:new Date().toISOString()};
     const gz=await gzipB64(payload);
@@ -8665,7 +8691,7 @@ async function cloudPublish(quiet=false){
        that only carries diagnostics. So drop the column PostgREST names and retry — unless it
        is one the read path actually needs, in which case fall back properly and say which
        section of supabase-setup.sql adds it. */
-    const put=async(rec,essential=[])=>{
+    const putOnce=async(rec,essential=[])=>{
       let r=await sb.from(CLOUD.table).upsert(rec), guard=0;
       while(r.error&&isMissingCol(r.error)&&guard++<4){
         const msg=r.error.message||'';
@@ -8677,6 +8703,17 @@ async function cloudPublish(quiet=false){
       }
       return r;
     };
+    /* Retry the transient ones. A part that times out on a slow uplink usually goes through
+       on the next attempt, and re-sending 512 KB is cheap; permanent errors (RLS, schema) are
+       returned immediately so the operator sees the real reason instead of a long stall. */
+    const put=async(rec,essential=[],label='')=>{
+      for(let a=1;;a++){
+        const r=await putOnce({...rec},essential);
+        if(!r.error||!isTransient(r.error)||a>=3) return r;
+        if(!quiet) toastProgress(`Publishing… ${label} retry ${a} of 2 (${r.error.message})`);
+        await sleep(a*1500);
+      }
+    };
     let error=null;
     if(gz){
       gzMB=+(gz.length/1048576).toFixed(2);
@@ -8684,12 +8721,14 @@ async function cloudPublish(quiet=false){
         nChunks=Math.ceil(gz.length/CHUNK_CHARS);
         for(let i=0;i<nChunks;i++){
           const part=gz.slice(i*CHUNK_CHARS,(i+1)*CHUNK_CHARS);
-          ({error}=await put({id:chunkId(i),data:null,data_gz:part,data_enc:'chunk',...stamp},['data_gz']));
+          if(!quiet) toastProgress(`Publishing… part ${i+1} of ${nChunks} (${gzMB} MB total)`);
+          ({error}=await put({id:chunkId(i),data:null,data_gz:part,data_enc:'chunk',...stamp},['data_gz'],`part ${i+1}/${nChunks}`));
           if(error) break;
         }
+        if(!quiet&&!error) toastProgress('Publishing… finishing');
         if(!error) ({error}=await put({id:CLOUD.rowId,data:null,data_gz:null,
           data_enc:'gzip+base64+chunked',data_chunks:nChunks,data_bytes:payload.length,...stamp},
-          ['data_chunks']));
+          ['data_chunks'],'index'));
       }else{
         nChunks=0;
         ({error}=await put({id:CLOUD.rowId,data:null,data_gz:gz,data_enc:'gzip+base64',
@@ -8729,7 +8768,7 @@ async function cloudPublish(quiet=false){
     if(!quiet) toast('Publish failed: '+msg,true);
     console.error('cloudPublish failed',e);
     return msg;
-  }
+  }finally{ toastProgressEnd(); }   // the progress line must never outlive the attempt
 }
 async function cloudPull(notify=true){
   if(!sb) return false;                    // works for signed-in AND anonymous readers (RLS permitting)
