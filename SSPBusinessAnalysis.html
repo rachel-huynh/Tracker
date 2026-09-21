@@ -3104,7 +3104,8 @@ async function ingestFiles(files){
     }catch(e){ toast(f.name+': '+e.message,true); }
   }
   saveStore(); refreshMonths(); renderAll();
-  if(sbUser) cloudPublish();          // reviewers see new data immediately
+  /* one publish per DROP, not per file, and skipped outright if the drop changed nothing */
+  if(sbUser) cloudPublish(false,{skipIfSame:true});
 }
 async function ingestPdf(name,buf){
   const eng=await parseEngPdf(buf);
@@ -7014,8 +7015,8 @@ function renderForecast(d){
     ${paceHtml}
     ${hasStarHist?`
     <div class="panel"><h3>Full-year ${fcYear} outlook — ${actKeys.length} actual month(s) + ${H.length}-month projection</h3>
-      <table><thead><tr><th>Month</th><th>Occ</th><th>ADR</th><th>RevPAR</th><th>RevPAR range</th><th>RGI proj</th><th>Rooms revenue</th><th>Total revenue</th><th>GOP est.</th></tr></thead>
-      <tbody>${actRows}${rows}${subRow}</tbody></table>
+      <div style="overflow-x:auto"><table><thead><tr><th>Month</th><th>Occ</th><th>ADR</th><th>RevPAR</th><th>RevPAR range</th><th>RGI proj</th><th>Rooms revenue</th><th>Total revenue</th><th>GOP est.</th></tr></thead>
+      <tbody>${actRows}${rows}${subRow}</tbody></table></div>
       <div class="small" style="margin-top:6px">Grey rows are <b>actual</b> months from each month's own P&amp;L; the rest are projected to year-end. Rooms revenue = RevPAR × ${ROOMS} × days; total revenue via rooms share ${pct(share)}; GOP at trailing ${gopPcts.length}-month margin ${pct(gopPct)}.</div>
       <div class="small">Subtotal note: Occupancy, ADR and RevPAR on the total line are <b>re-derived from the year's totals</b> (rooms sold ÷ rooms available, rooms revenue ÷ rooms sold, rooms revenue ÷ rooms available) — averaging monthly ratios would misweight short and low-occupancy months.</div></div>
     <div class="panel" style="padding:8px 12px;border-left:4px solid var(--gold)">
@@ -8595,7 +8596,19 @@ window.__setPublicView=async on=>{
 };
 /* debounced auto-publish: any local change while signed in syncs itself */
 let _pubT=null;
-function schedulePublish(){ if(!sbUser||myRole()==='view') return; clearTimeout(_pubT); _pubT=setTimeout(cloudPublish,1500); }
+/* AUTO-PUBLISH IS THE LOAD. Every note, caption, FX rate and user edit called this, each one
+   shipping the WHOLE store — on a t4g.nano (the smallest burstable instance) a burst of those
+   drains the CPU credits and then everything the project does times out, which is exactly what
+   happened. Two brakes: a much longer debounce so a run of edits produces ONE publish, and a
+   content hash so an unchanged store never travels at all. The manual Publish button does not
+   pass skipIfSame, so a deliberate publish always goes. */
+function schedulePublish(){ if(!sbUser||myRole()==='view') return;
+  clearTimeout(_pubT); _pubT=setTimeout(()=>cloudPublish(true,{skipIfSame:true}),8000); }
+/* djb2 over the payload plus its length — a few milliseconds on 9 MB, and it only has to tell
+   "same as last time" from "different", not resist collisions. */
+let _lastPubHash=null;
+const quickHash=s=>{ let h=5381; for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0;
+  return h.toString(36)+':'+s.length; };
 async function cloudInit(){
   if(!CLOUD.url||!CLOUD.anonKey){ cloudUi(); return; }
   try{
@@ -8689,13 +8702,16 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
    travels is rounded. */
 const publishJson=store=>JSON.stringify(store,(k,v)=>
   typeof v==='number'&&isFinite(v)&&v!==Math.round(v) ? Math.round(v*1e6)/1e6 : v);
-async function cloudPublish(quiet=false){
+async function cloudPublish(quiet=false,opts={}){
   if(!sb) return 'cloud not initialised (no internet, or Supabase failed to load)';
   if(!sbUser) return 'not signed in — sign in first, then publish';
   if(myRole()==='view'){ if(!quiet) toast('View-only account — publishing is disabled',true); return 'view-only account'; }
   let sizeMB=null, gzMB=null, nChunks=0, viaPlain=false, missingCol=null;
   try{
     const payload=publishJson(state.store);
+    /* Nothing changed since the last successful publish → do not touch the database at all.
+       This is the single biggest saving: the auto path fired on every small edit. */
+    if(opts.skipIfSame&&_lastPubHash&&quickHash(payload)===_lastPubHash) return null;
     sizeMB=+(payload.length/1048576).toFixed(1);
     const stamp={updated_by:sbUser.email,client_id:CLIENT_ID,updated_at:new Date().toISOString()};
     const gz=await gzipB64(payload);
@@ -8767,6 +8783,7 @@ async function cloudPublish(quiet=false){
       ({error}=await put({id:CLOUD.rowId,data:state.store,...stamp}));
     }
     if(error) throw error;
+    _lastPubHash=quickHash(payload);   // only after the server confirmed it
     if(!quiet&&!viaPlain) toast('⤴ Published — '+sizeMB+' MB → '+gzMB+' MB gzipped ('
       +Math.round(payload.length/gz.length)+'× smaller'+(nChunks?', '+nChunks+' parts':'')+')');
     else if(!quiet&&viaPlain&&!GZ_OK) toast('⤴ Published ('+sizeMB+' MB, this browser cannot gzip)');
