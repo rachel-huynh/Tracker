@@ -7204,10 +7204,16 @@ function renderForecast(d){
           borderColor:line,borderWidth:e==='my'?2.5:1.5,borderDash:e==='my'?[]:[5,4],backgroundColor:line,pointRadius:3,tension:.3});
       }
     } else {
+      /* ONE point per night, one series. This used to be split into a Weekday and a Weekend
+         dataset, which made the legend read as though the chart plotted two AVERAGES rather
+         than 608 individual nights — and under the Weekday or Weekend filter it also left an
+         empty second series sitting in the legend. The day filter above already says which
+         nights are in the cloud, so the series is simply named after it. */
       const pts2=adrCloud[ent2]||[];
-      dsets=[
-        {label:'Weekday (Mon–Fri)',data:pts2.filter(p2=>!p2.we),backgroundColor:'rgba(11,31,58,.35)',pointRadius:2.5},
-        {label:'Weekend (Sat–Sun)',data:pts2.filter(p2=>p2.we),backgroundColor:'rgba(74,125,189,.45)',pointRadius:2.5}];
+      const day2=state.adrDay||'all';   // read from state here: adrDay is scoped to the model-lab block above
+      const dayLbl=day2==='wd'?'Weekdays (Mon–Fri)':day2==='we'?'Weekends (Sat–Sun)':'All days';
+      dsets=[{label:`${dayLbl} — ${pts2.length} nights`,data:pts2,
+        backgroundColor:'rgba(11,31,58,.38)',pointRadius:2.5}];
       const dc=decOf(pts2);
       if(dc) dsets.push({label:'Decile average (compression curve)',data:dc,showLine:true,type:'line',
         borderColor:'#C9A227',borderWidth:2.5,backgroundColor:'#C9A227',pointRadius:4,tension:.3});
