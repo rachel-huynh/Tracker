@@ -22,18 +22,18 @@ h1,h2,h3{font-weight:600}
 #app{display:flex;min-height:100vh}
 /* ---------- sidebar ---------- */
 #side{width:232px;flex:0 0 232px;background:var(--side);color:#dbe2ee;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
-#side .logo{padding:18px 16px 12px;font-size:16px;font-weight:800;letter-spacing:.6px;color:#fff;line-height:1.25;border-bottom:1px solid var(--sideline);display:flex;align-items:center;gap:10px}
+#side .logo{padding:18px 16px 12px;font-size:16px;font-weight:800;letter-spacing:.6px;color:#fff;line-height:1.25;border-bottom:1px solid var(--sideline)}
 #side .logo small{display:block;color:#9fb0ca;font-weight:400;font-size:10.5px;margin-top:5px;letter-spacing:0}
-/* The house mark. Navy-on-white artwork, so on the navy sidebar and the navy sign-in header it
-   sits on its own white tile rather than being recoloured — the orange bars and the white
-   arrows cut out of them only read against white. Held ONCE as a custom property and reused:
-   as a background here, and copied to the favicon at boot, so the 11k data URI is not
-   duplicated three times through a file that reviewers download. Inlined rather than linked
-   because this is a single offline file — no second request, and it still works off a stick. */
+/* The house mark, on the sign-in card and as the favicon. Navy-on-white artwork, so against
+   the navy header it sits on its own white tile rather than being recoloured — the orange bars
+   and the white arrows cut out of them only read against white. NOT used in the sidebar: the
+   owner wanted the wordmark there on its own. Held ONCE as a custom property and reused as a
+   background here and copied to the favicon at boot, so the 11k data URI is not duplicated
+   through a file that reviewers download. Inlined rather than linked because this is a single
+   offline file — no second request, and it still works off a stick. */
 .brandmark{width:34px;height:34px;flex:0 0 auto;border-radius:7px;padding:3px;
   background:#fff var(--brandmark) center/contain no-repeat;
   background-origin:content-box;box-shadow:0 1px 2px rgba(0,0,0,.2)}
-#side .logo .brandtxt{min-width:0}
 .navgroup{padding:14px 16px 5px;font-size:10.5px;letter-spacing:1.2px;color:#8ea0bd;text-transform:uppercase}
 #tabs{display:flex;flex-direction:column}
 #tabs button{display:block;width:100%;text-align:left;background:none;border:none;border-left:4px solid transparent;color:#c9d3e4;padding:9px 16px;font-size:13px;cursor:pointer;border-radius:0}
@@ -126,7 +126,7 @@ section.tab.printshow{display:block}
   #app{flex-direction:column}
   /* sidebar becomes a sticky horizontal tab strip */
   #side{width:100%;flex:none;height:auto;position:sticky;top:0;z-index:60;overflow:visible}
-  #side .logo{padding:9px 12px;font-size:12.5px;border-bottom:none;letter-spacing:.3px;gap:8px}
+  #side .logo{padding:9px 12px;font-size:12.5px;border-bottom:none;letter-spacing:.3px}
   .brandmark{width:26px;height:26px;border-radius:6px;padding:2px}
   #side .logo small{display:none}
   #tabs{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;border-top:1px solid var(--sideline)}
@@ -283,7 +283,7 @@ tr.bad td{background:#fdeeec}
 <div id="app">
 <!-- ================= SIDEBAR ================= -->
 <aside id="side">
-  <div class="logo"><span class="brandmark" role="img" aria-label="Plaza Hotel Company Limited"></span><span class="brandtxt">PLAZA HOTEL COMPANY LIMITED<small data-i18n="subtitle">Sofitel Saigon Plaza · Central Plaza</small></span></div>
+  <div class="logo">PLAZA HOTEL COMPANY LIMITED<small data-i18n="subtitle">Sofitel Saigon Plaza · Central Plaza</small></div>
   <div id="tabs">
     <div class="navgroup" data-i18n="grpOverview">Overview</div>
     <button data-tab="conso" class="on" data-i18n="tabConso">Consolidated</button>
@@ -8630,13 +8630,30 @@ async function cloudPublish(quiet=false){
   if(!sb) return 'cloud not initialised (no internet, or Supabase failed to load)';
   if(!sbUser) return 'not signed in — sign in first, then publish';
   if(myRole()==='view'){ if(!quiet) toast('View-only account — publishing is disabled',true); return 'view-only account'; }
-  let sizeMB=null, gzMB=null, nChunks=0, viaPlain=false;
+  let sizeMB=null, gzMB=null, nChunks=0, viaPlain=false, missingCol=null;
   try{
     const payload=JSON.stringify(state.store);
     sizeMB=+(payload.length/1048576).toFixed(1);
     const stamp={updated_by:sbUser.email,client_id:CLIENT_ID,updated_at:new Date().toISOString()};
     const gz=await gzipB64(payload);
-    const put=r=>sb.from(CLOUD.table).upsert(r);
+    /* A half-migrated schema is the normal case, not an edge case: this project already had
+       data_gz / data_enc / data_bytes from an earlier run but not data_chunks. Treating any
+       missing column as "give up, send raw JSON" would throw away compression over a column
+       that only carries diagnostics. So drop the column PostgREST names and retry — unless it
+       is one the read path actually needs, in which case fall back properly and say which
+       section of supabase-setup.sql adds it. */
+    const put=async(rec,essential=[])=>{
+      let r=await sb.from(CLOUD.table).upsert(rec), guard=0;
+      while(r.error&&isMissingCol(r.error)&&guard++<4){
+        const msg=r.error.message||'';
+        const m=/(data_[a-z_]+)/i.exec(msg);
+        const col=m&&m[1];
+        if(!col||!(col in rec)||essential.includes(col)){ missingCol=col||missingCol; break; }
+        missingCol=col; delete rec[col];
+        r=await sb.from(CLOUD.table).upsert(rec);
+      }
+      return r;
+    };
     let error=null;
     if(gz){
       gzMB=+(gz.length/1048576).toFixed(2);
@@ -8644,15 +8661,16 @@ async function cloudPublish(quiet=false){
         nChunks=Math.ceil(gz.length/CHUNK_CHARS);
         for(let i=0;i<nChunks;i++){
           const part=gz.slice(i*CHUNK_CHARS,(i+1)*CHUNK_CHARS);
-          ({error}=await put({id:chunkId(i),data:null,data_gz:part,data_enc:'chunk',...stamp}));
+          ({error}=await put({id:chunkId(i),data:null,data_gz:part,data_enc:'chunk',...stamp},['data_gz']));
           if(error) break;
         }
         if(!error) ({error}=await put({id:CLOUD.rowId,data:null,data_gz:null,
-          data_enc:'gzip+base64+chunked',data_chunks:nChunks,data_bytes:payload.length,...stamp}));
+          data_enc:'gzip+base64+chunked',data_chunks:nChunks,data_bytes:payload.length,...stamp},
+          ['data_chunks']));
       }else{
         nChunks=0;
         ({error}=await put({id:CLOUD.rowId,data:null,data_gz:gz,data_enc:'gzip+base64',
-          data_chunks:null,data_bytes:payload.length,...stamp}));
+          data_chunks:null,data_bytes:payload.length,...stamp},['data_gz']));
       }
       /* Sweep leftover parts from a previously LARGER publish — including the case where the
          payload has shrunk back under the threshold and nChunks is 0, which would otherwise
@@ -8660,10 +8678,13 @@ async function cloudPublish(quiet=false){
          and ignores the rest), so it is best-effort: the policy set may not grant delete. */
       if(!error){ try{ await sb.from(CLOUD.table).delete()
         .like('id',CLOUD.rowId+'#%').gte('id',chunkId(nChunks)); }catch(_){} }
-      if(error&&isMissingCol(error)){        // section 4 of supabase-setup.sql not run yet
+      if(error&&isMissingCol(error)){
+        /* an ESSENTIAL column is missing — name it, because "run the SQL" is useless advice
+           to someone who has already run an older copy of it */
         viaPlain=true;
         ({error}=await put({id:CLOUD.rowId,data:state.store,...stamp}));
-        if(!error&&!quiet) toast('⤴ Published uncompressed ('+sizeMB+' MB) — run section 4 of supabase-setup.sql to enable compression',true);
+        if(!error&&!quiet) toast('⤴ Published UNCOMPRESSED ('+sizeMB+' MB) — column '
+          +(missingCol||'data_gz')+' is missing. Run section 4 of supabase-setup.sql, then publish again.',true);
       }
     }else{
       viaPlain=true;                          // browser without CompressionStream

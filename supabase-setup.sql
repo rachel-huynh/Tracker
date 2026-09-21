@@ -2,8 +2,10 @@
 --  SSP BOD Dashboard — Supabase setup / repair
 --  Project: dplefzmvkqukmtnebnhd   Table: public.dashboard_store   Row: 'ssp'
 --
---  Fixes: Publish failed — TypeError: Failed to fetch (payload 13.1 MB)
---         and the earlier statement timeout [SQLSTATE 57014] at 8.1 MB.
+--  Fixes, in order of what you hit:
+--    42P01 relation "public.dashboard_store" does not exist  → section 0
+--    TypeError: Failed to fetch (payload 13.1 MB)            → section 4
+--    canceling statement ... statement timeout [57014]       → section 1
 --
 --  "Failed to fetch" is a TRANSPORT failure — the request never reached
 --  Postgres, so there is no SQLSTATE and nothing in the Supabase logs. The
@@ -16,8 +18,43 @@
 
 
 -- ---------------------------------------------------------------------
--- 0.  BEFORE — what you have right now (read-only, changes nothing)
+-- 0.  THE TABLE ITSELF — create it if it is not there
+--
+--     42P01 "relation public.dashboard_store does not exist" means this
+--     project has no table yet. Two ways to land here: a brand-new project,
+--     or the SQL editor is open on the WRONG project. Check the project ref
+--     in the browser URL against the one at the top of this file before
+--     going further — creating the table in the wrong project will look
+--     like it worked and the app still will not publish.
+--
+--     Idempotent: safe whether the table is missing, partial, or complete.
 -- ---------------------------------------------------------------------
+create table if not exists public.dashboard_store (
+  id          text primary key,
+  data        jsonb,
+  updated_by  text,
+  updated_at  timestamptz default now(),
+  client_id   text
+);
+
+-- columns an older copy of the table may predate (the app writes all of these)
+alter table public.dashboard_store add column if not exists data       jsonb;
+alter table public.dashboard_store add column if not exists updated_by text;
+alter table public.dashboard_store add column if not exists updated_at timestamptz default now();
+alter table public.dashboard_store add column if not exists client_id  text;
+
+-- Supabase's default privileges usually cover this, but a table created from
+-- the SQL editor does not always inherit them. RLS below still decides who
+-- may actually see or change a row; these grants only open the door.
+grant select                         on public.dashboard_store to anon, authenticated;
+grant insert, update, delete         on public.dashboard_store to authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 0b. BEFORE — what you have right now (read-only, changes nothing)
+-- ---------------------------------------------------------------------
+select current_database() as database, current_user as run_as;
+
 select rolname, rolconfig
   from pg_roles
  where rolname in ('anon','authenticated','service_role');
@@ -139,27 +176,63 @@ end $$;
 
 
 -- ---------------------------------------------------------------------
--- 5.  KEEP REALTIME MESSAGES SMALL  ***OPTIONAL — needs an app change***
+-- 5.  KEEP REALTIME MESSAGES SMALL
 --
---     Supabase Realtime caps a record at ~1 MB. On an 8 MB row the whole
+--     Supabase Realtime caps a record at ~1 MB. On a multi-MB row the whole
 --     change message is dropped, which is why reviewers stopped auto-
 --     refreshing — silently, with no error anywhere.
 --
---     SAFE TO RUN NOW. The app handler no longer reads the store out of the
+--     SAFE TO RUN. The app handler no longer reads the store out of the
 --     payload: it treats the event as a doorbell and re-fetches. Publishing
 --     only the small columns keeps the message well under the cap, so the
 --     row can grow without ever breaking live updates again.
 --
 --     The column list must keep `client_id` — the handler uses it to ignore
---     the echo of its own write instead of pulling 8 MB back for nothing.
+--     the echo of its own write instead of pulling the whole store back for
+--     nothing.
+--
+--     DROP + ADD, never `set table`: `alter publication ... set table X`
+--     replaces the publication's ENTIRE table list with X, silently taking
+--     every other table in the project off realtime. Column lists need
+--     PostgreSQL 15, so on an older project this step is skipped and
+--     realtime simply carries the whole row as before.
 -- ---------------------------------------------------------------------
-alter publication supabase_realtime
-  set table public.dashboard_store (id, updated_by, updated_at, client_id);
+do $$
+begin
+  if current_setting('server_version_num')::int >= 150000 then
+    if exists (select 1 from pg_publication_tables
+                where pubname='supabase_realtime'
+                  and schemaname='public' and tablename='dashboard_store')
+    then execute 'alter publication supabase_realtime drop table public.dashboard_store';
+    end if;
+    execute 'alter publication supabase_realtime add table public.dashboard_store '
+         || '(id, updated_by, updated_at, client_id)';
+  else
+    raise notice 'PostgreSQL % — column lists need 15+, realtime left carrying the full row',
+                 current_setting('server_version');
+  end if;
+end $$;
 
 
 -- ---------------------------------------------------------------------
--- 6.  AFTER — confirm the timeout took
+-- 6.  AFTER — confirm everything took
 -- ---------------------------------------------------------------------
 select rolname, rolconfig
   from pg_roles
  where rolname in ('anon','authenticated');
+
+-- the table now has every column the app writes
+select column_name, data_type
+  from information_schema.columns
+ where table_schema='public' and table_name='dashboard_store'
+ order by ordinal_position;
+
+-- and what is actually stored (empty until the first Publish)
+select id,
+       data is not null                                as has_plain_json,
+       pg_size_pretty(coalesce(length(data_gz),0)::bigint) as gz_size,
+       data_enc, data_chunks,
+       pg_size_pretty(coalesce(data_bytes,0)::bigint)  as uncompressed,
+       updated_by, updated_at
+  from public.dashboard_store
+ order by id;
