@@ -3973,7 +3973,10 @@ window.__setExecVs=v=>{ state.execVs=v; renderExec(derive()); };
 function execVs(){ return state.execVs==='ly'?'ly':'bud'; }
 function buildExecDraft(d){
   const L=[]; const m=curMonth(); const P='MTD';
-  const VS=execVs(), vsName=VS==='ly'?'last year':'budget';
+  /* "versus budget of 76.8%" reads correctly; "versus last year of 76.8%" does not — hence the
+     separate possessive form. `vsName` stays for the "X% of budget / of last year" phrasings,
+     which work either way. */
+  const VS=execVs(), vsName=VS==='ly'?'last year':'budget', vsOf=VS==='ly'?"last year's":'budget of';
   const mn=fmtMonthKey(state.month);
   const usd=v=>v==null?'n/a':'US$'+Math.round(v/fx()).toLocaleString('en');
   const usdM=v=>v==null?'n/a':'US$'+(v/fx()/1000).toLocaleString('en',{maximumFractionDigits:0})+'K';
@@ -3985,7 +3988,7 @@ function buildExecDraft(d){
   if(d.ok){
     const G=(path,f='act')=>g(d.p,path,P,f);
     L.push('* Room performance:');
-    let occLine=`   * Occupancy was ${p1(d.occ.act)} with ADR at ${usd(d.adr.act)}, versus ${vsName} of ${p1(d.occ[VS])} and ${usd(d.adr[VS])}`;
+    let occLine=`   * Occupancy was ${p1(d.occ.act)} with ADR at ${usd(d.adr.act)}, versus ${vsOf} ${p1(d.occ[VS])} and ${usd(d.adr[VS])}`;
     if(d.compOcc!=null) occLine+=` (comp set occupancy ${d.compOcc.toFixed(1)}%)`;
     L.push(occLine+'.');
     if(d.ari!=null) L.push(`   * We continue to run occupancy ${d.mpi>100?'above':'below'} the comp set (MPI ${idx(d.mpi)}) while ADR remains at ${idx(d.ari)}% of the comp set (ARI); RGI is ${idx(d.rgi)}${d.rgi<100?' — share of revenue is still below fair share':''}.`);
@@ -4007,7 +4010,12 @@ function buildExecDraft(d){
     const outs=d.p.fnbOutlets.filter(o=>V(o,'totalRev')>0&&V(o,'totalRev',VS)>0)
       .map(o=>({n:o.name,r:V(o,'totalRev')/V(o,'totalRev',VS),dp:div(V(o,'deptProfit'),V(o,'totalRev'))}));
     if(outs.length){ const best=outs.reduce((a,b)=>b.r>a.r?b:a), worst=outs.reduce((a,b)=>b.r<a.r?b:a);
-      L.push(`   * ${best.n} outperformed at ${Math.round(best.r*100)}% of ${vsName}; ${worst.n} is lagging at ${Math.round(worst.r*100)}% of ${vsName} and needs a commercial response.`);
+      /* the house words only hold when the ratios do. Against BUDGET the weakest outlet is
+         almost always under 100 and "lagging" fits; against LAST YEAR it can be well above,
+         and "lagging at 122%" is nonsense — so the verb follows the number, and the call to
+         act only appears when the outlet is actually behind. */
+      const verb=(r,hi)=>r>=1?(hi?'outperformed at':'came in at'):(hi?'came in at':'is lagging at');
+      L.push(`   * ${best.n} ${verb(best.r,true)} ${Math.round(best.r*100)}% of ${vsName}; ${worst.n} ${verb(worst.r,false)} ${Math.round(worst.r*100)}% of ${vsName}${worst.r<1?' and needs a commercial response':''}.`);
     }
     const fbProfit=div(g(d.p,'dp.fnb',P,'act'),fbA);
     if(fbProfit!=null) L.push(`   * F&B departmental profit ratio is ${p1(fbProfit)} before overheads${d._foodCost!=null?` (food cost ${p1(d._foodCost)})`:''}.`);
@@ -4016,7 +4024,7 @@ function buildExecDraft(d){
     /* The caveat only makes sense while BUDGET is the benchmark: if the board is already
        reading the email against last year, telling them the budget was unrealistic is noise. */
     const budUnreal=VS==='bud'&&d.occ.act!=null&&d.occ.bud!=null&&Math.abs(d.occ.act-d.occ.bud)*100>TH.budgetOccGapPts;
-    L.push(`   * GOP (before base & incentive fees) is ${p1(d.gopPct.act)} versus ${vsName} of ${p1(d.gopPct[VS])} (${usdM(d.gop.act)}).${budUnreal?` Please note the budget assumed only ${p1(d.occ.bud)} occupancy, so budget variances are not a meaningful control this month — last year and the comp set are the better benchmarks; the switch above the draft re-states this email against last year.`:''}`);
+    L.push(`   * GOP (before base & incentive fees) is ${p1(d.gopPct.act)} versus ${vsOf} ${p1(d.gopPct[VS])} (${usdM(d.gop.act)}).${budUnreal?` Please note the budget assumed only ${p1(d.occ.bud)} occupancy, so budget variances are not a meaningful control this month — last year and the comp set are the better benchmarks; the switch above the draft re-states this email against last year.`:''}`);
     const staff=G('stats.staff');
     L.push(`   * Payroll incl. service charge is ${p1(d.payrollPct.act)} of revenue; headcount at month-end is ${staff!=null?n1(staff,0):'n/a'} employees.`);
     /* top alerts as watch items */
@@ -4031,17 +4039,17 @@ function buildExecDraft(d){
   /* ---- 2/ CP ---- */
   L.push('2/ Central Plaza:','');
   if(d.fs){ const c=d.fs.centralGop;
-    L.push(`* Central Plaza contributed ${usdM(c?.act)} GOP this month (budget ${usdM(c?.bud)}, last year ${usdM(c?.ly)}), i.e. ${p1(div(c?.act,(c?.act??0)+(d.fs.hotelGop?.act??0)))} of consolidated GOP.`);
     /* both benchmarks stay on this line — the primary one first, so the sentence reads the
        same way round as the rest of the email */
     const cpOther=VS==='bud'?`last year ${usdM(c?.ly)}`:`budget ${usdM(c?.bud)}`;
     L.push(`* Central Plaza contributed ${usdM(c?.act)} GOP this month (${vsName} ${usdM(c?.[VS])}, ${cpOther}), i.e. ${p1(div(c?.act,(c?.act??0)+(d.fs.hotelGop?.act??0)))} of consolidated GOP.`);
+  } else L.push('* (Load the consolidated FS to auto-fill Central Plaza figures.)');
   if(notes.cp) L.push('* '+notes.cp.split('\n').join('\n* '));
   L.push('');
   /* ---- 3/ PHCL ---- */
   L.push('3/ PHCL (consolidated):','');
-  if(d.fs){ L.push(`* Consolidated net profit after tax is ${usdM(d.fs.npat?.act)} versus budget of ${usdM(d.fs.npat?.bud)} (${p1(varPct(d.fs.npat?.act,d.fs.npat?.bud))} variance).`); }
-  if(d.fs){ L.push(`* Consolidated net profit after tax is ${usdM(d.fs.npat?.act)} versus ${vsName} of ${usdM(d.fs.npat?.[VS])} (${p1(varPct(d.fs.npat?.act,d.fs.npat?.[VS]))} variance).`); }
+  if(d.fs){ L.push(`* Consolidated net profit after tax is ${usdM(d.fs.npat?.act)} versus ${vsOf} ${usdM(d.fs.npat?.[VS])} (${p1(varPct(d.fs.npat?.act,d.fs.npat?.[VS]))} variance).`); }
+  const cf=state.store.cf;
   if(cf){ const lastAct=cf.flags.lastIndexOf('Actual');
     const minI=cf.closing.reduce((a,v,i)=>v!=null&&(a==null||v<cf.closing[a])?i:a,null);
     L.push(`* Cash: closing balance ${usdM(cf.closing[lastAct])} at ${fmtMonthKey(cf.months[lastAct])}; the cashflow forecast bottoms at ${usdM(cf.closing[minI])} in ${fmtMonthKey(cf.months[minI])}.`);
@@ -4200,10 +4208,12 @@ function renderExec(d){
   };
   el.innerHTML=`
     <div class="cols c2">
-      <div class="panel"><h3>Draft BOD email — ${fmtMonthKey(state.month)} <button class="noprint" onclick="__execCopy()" style="margin-left:8px">📋 Copy email</button></h3>
+      <div class="panel"><h3 class="h3ctl"><span class="ttl">Draft BOD email — ${fmtMonthKey(state.month)}</span>
+        <span class="noprint fcctl">${[['bud','vs Budget'],['ly','vs Last year']].map(([k,l])=>`<button class="heatbtn ${execVs()===k?'on':''}" onclick="__setExecVs('${k}')">${l}</button>`).join(' ')}
+        <span class="sep"></span><button class="heatbtn" onclick="__execCopy()">📋 Copy email</button></span></h3>
         <div id="execDraft" contenteditable="${canEdit?'true':'false'}" spellcheck="false"
           style="white-space:pre-wrap;font-size:12.5px;line-height:1.55;border:1px solid var(--line);border-radius:6px;padding:12px;background:#fdfdfc;max-height:640px;overflow-y:auto">${buildExecDraft(d).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
-        <div class="small" style="margin-top:6px">Auto-written from the loaded reports in the house style (numbers switch with the VND/USD toggle; ADR quoted in US$ at the FS rate ${n1(fx(),0)}). ${canEdit?'Edit inline, then Copy.':`Switch on <b>${t('edEditing')}</b> in the header to tweak the wording inline.`} Regenerates when data or notes change — inline edits are not saved, notes are.</div></div>
+        <div class="small" style="margin-top:6px">Auto-written from the loaded reports in the house style (numbers switch with the VND/USD toggle; ADR quoted in US$ at the FS rate ${n1(fx(),0)}). <b>${execVs()==='ly'?'Last year':'Budget'}</b> is the benchmark every comparison in the draft is stated against — rooms, F&amp;B and its outlets, GOP, Central Plaza and consolidated NPAT all move together with that switch. The STAR indexes (MPI / ARI / RGI) and flow-through never move: they are comp-set and last-year measures by definition. ${canEdit?'Edit inline, then Copy.':`Switch on <b>${t('edEditing')}</b> in the header to tweak the wording inline.`} Regenerates when data or notes change — inline edits are not saved, notes are.</div></div>
       <div class="panel"><h3>Manual notes — the parts only you know <span class="small">(text saved per month; titles apply to all months)</span></h3>
         ${NOTE_SECS.map(([sec,,ph])=>ta(sec,ph)).join('')}
         <div class="small">${canEdit
