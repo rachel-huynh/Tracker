@@ -84,6 +84,15 @@ h3 .ovtxt{display:inline}
 #drop,.dropzone{margin:10px 16px 0;border:2px dashed #c3cbda;border-radius:8px;padding:12px;text-align:center;color:var(--grey);background:#fff;transition:.2s;cursor:pointer}
 #drop.hot,.dropzone.hot{border-color:var(--gold);background:#fdf8ea;color:var(--gold)}
 #drop b,.dropzone b{color:var(--navy)}
+/* #content is the flex item beside the sidebar, and a flex item defaults to min-width:auto —
+   it can never be narrower than its widest content. So one wide table anywhere on a tab
+   pushed this column out to its max-content width, every panel stretched to match, and the
+   page grew a horizontal scrollbar with the right-hand panels cut off. It read as "the layout
+   does not follow the zoom": zooming in narrows the CSS viewport, the content does not care,
+   and the overflow appears. min-width:0 lets the column shrink to the space available so the
+   scroll wrappers inside it do their job. It belongs HERE, not on <main> — main's parent is
+   this div, not the flex container, so the same rule on main does nothing. */
+#content{flex:1 1 auto;min-width:0}
 main{padding:12px 16px 60px}
 section.tab{display:none}section.tab.on{display:block}
 section.tab.printshow{display:block}
@@ -231,6 +240,11 @@ table.heat th{text-align:center}
 table.heat td:first-child{text-align:left;font-weight:600;background:#f3f5f9}
 .heatbtn.on{background:var(--navy);color:#fff;font-weight:700}
 td{padding:4px 7px;text-align:right;border-bottom:1px solid #eef1f6;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Cells hold figures, so nowrap is right — a wrapped "1,234" reads as two numbers. Prose
+   cells are the exception: the Data Quality Detail column carries whole sentences, and
+   nowrap forced that table to 2,871px inside a 492px panel, which is what dragged the whole
+   page into horizontal scroll. Anything narrative gets .wrap. */
+td.wrap{white-space:normal;text-align:left;overflow-wrap:anywhere}
 tr:hover td{background:#f8f9fc}
 td.pos{color:var(--green)}td.neg{color:var(--red)}td.warn{color:var(--amber)}
 tr.tot td{border-top:2px solid var(--navy);font-weight:700;color:var(--navy)}
@@ -7894,7 +7908,7 @@ function renderDQ(d){
         <table><thead><tr><th>Document</th><th>Status</th><th></th></tr></thead><tbody>${globalDocs}</tbody></table></div>
       <div class="panel"><h3>Automated checks — ${fmtMonthKey(state.month)}</h3>
         <table><thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody>
-        ${checks.map(c=>`<tr><td>${c[1]}</td><td>${c[0]===null?'<span class="tag a">n/a</span>':c[0]?'<span class="tag g">PASS</span>':'<span class="tag r">FAIL</span>'}</td><td class="small">${c[2]}</td></tr>`).join('')||'<tr><td colspan=3>'+t('noData')+'</td></tr>'}
+        ${checks.map(c=>`<tr><td class="wrap">${c[1]}</td><td>${c[0]===null?'<span class="tag a">n/a</span>':c[0]?'<span class="tag g">PASS</span>':'<span class="tag r">FAIL</span>'}</td><td class="wrap small">${c[2]}</td></tr>`).join('')||'<tr><td colspan=3>'+t('noData')+'</td></tr>'}
         </tbody></table></div>
     </div>
     <div class="panel"><h3>Parse warnings (${warns.length})</h3>
@@ -8638,7 +8652,7 @@ async function gunzipB64(b64){
   const ab=await new Response(new Blob([bytesFromB64(b64)]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
   return new TextDecoder().decode(ab);
 }
-/* The compressed columns are added by section 4 of supabase-setup.sql. Until that has been
+/* The compressed columns are added by STEP 1 of supabase-setup.sql. Until that has been
    run PostgREST answers PGRST204 ("could not find the column ... in the schema cache") or
    42703, and we fall back to the old plain-JSON write rather than failing. */
 const isMissingCol=e=>/data_gz|data_enc|data_bytes|PGRST204|42703|schema cache/i.test(
@@ -8746,7 +8760,7 @@ async function cloudPublish(quiet=false){
         viaPlain=true;
         ({error}=await put({id:CLOUD.rowId,data:state.store,...stamp}));
         if(!error&&!quiet) toast('⤴ Published UNCOMPRESSED ('+sizeMB+' MB) — column '
-          +(missingCol||'data_gz')+' is missing. Run section 4 of supabase-setup.sql, then publish again.',true);
+          +(missingCol||'data_gz')+' is missing. Run STEP 1 of supabase-setup.sql, then publish again.',true);
       }
     }else{
       viaPlain=true;                          // browser without CompressionStream
@@ -8774,7 +8788,7 @@ async function cloudPull(notify=true){
   if(!sb) return false;                    // works for signed-in AND anonymous readers (RLS permitting)
   try{
     /* Ask for the compressed columns, and fall back to the plain one on a database that has
-       not had section 4 of supabase-setup.sql run yet — a reviewer's browser must be able to
+       not had STEP 1 of supabase-setup.sql run yet — a reviewer's browser must be able to
        read BOTH shapes, because which one is in the row depends on when it was last published
        and by which build. */
     let sel=await sb.from(CLOUD.table).select('data,data_gz,data_enc,data_chunks,updated_by,updated_at').eq('id',CLOUD.rowId).maybeSingle();
