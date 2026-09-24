@@ -186,6 +186,7 @@ td.nw{white-space:nowrap}
       <button data-tab="nap">Tải dữ liệu</button>
       <button data-tab="goc">Dữ liệu đã hợp nhất</button>
       <div class="navgroup">Hệ thống</div>
+      <button data-tab="huongdan">Hướng dẫn sử dụng</button>
       <button data-tab="nhatky">Nhật ký</button>
       <button data-tab="caidat">Cài đặt &amp; Sao lưu</button>
     </nav>
@@ -379,6 +380,12 @@ td.nw{white-space:nowrap}
         </div>
       </section>
 
+      <!-- ============ HƯỚNG DẪN ============ -->
+      <section class="tab" id="tab-huongdan">
+        <!-- nội dung ở <template id="guideTpl"> cuối trang; hiển thị trong iframe để CSS hướng dẫn không lẫn với CSS app -->
+        <iframe id="guideFrame" title="Hướng dẫn sử dụng" style="width:100%;border:0;display:block;min-height:70vh;border-radius:8px"></iframe>
+      </section>
+
       <!-- ============ NHẬT KÝ ============ -->
       <section class="tab" id="tab-nhatky">
         <div class="panel">
@@ -452,6 +459,386 @@ td.nw{white-space:nowrap}
   <div class="body" id="rcBody"></div>
   <div class="foot"><button data-close>Hủy</button><button class="primary" id="btnRecvOk">Nạp vào app</button></div></div></div>
 
+<template id="guideTpl">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#f1f3f7; --paper:#ffffff; --ink:#1c2536; --muted:#5d6a80; --line:#dde2eb;
+  --navy:#0B1F3A; --side:#2b3f5e; --gold:#e8a33d; --gold-soft:#fdf3e1; --green:#1e7e4f; --red:#c0392b; --blue:#2e5f9e;
+  --kbd:#eef1f6; --note:#fff7e6; --note-line:#f0d49b;
+  --shadow:0 1px 2px rgba(15,30,58,.06),0 8px 24px rgba(15,30,58,.06);
+  --sans:"Be Vietnam Pro","Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.65 var(--sans);margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:20px;padding-block:28px 64px}
+h1,h2,h3{text-wrap:balance;margin:0;line-height:1.25}
+a{color:var(--blue)}
+kbd,code{font-family:var(--mono);font-size:.84em;background:var(--kbd);border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap}
+b{font-weight:700}
+
+/* header */
+.top{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:end;padding-bottom:22px;border-bottom:2px solid var(--navy)}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
+h1{font-size:clamp(26px,4vw,36px);font-weight:800;margin-top:6px}
+.lede{color:var(--muted);max-width:62ch;margin:8px 0 0}
+.url{font-family:var(--mono);font-size:13px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;box-shadow:var(--shadow);max-width:320px}
+.url span{display:block;font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.url b{word-break:break-all;font-weight:600}
+@media(max-width:760px){.top{grid-template-columns:1fr}.url{max-width:none}}
+
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
+.toc a{text-decoration:none;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:600}
+.toc a:hover,.toc a:focus-visible{border-color:var(--gold);outline:none}
+.toc a i{font-style:normal;color:var(--gold);margin-right:6px}
+
+/* sections */
+section{margin-top:40px}
+.sec-h{display:flex;gap:14px;align-items:baseline;margin-bottom:14px}
+.sec-n{flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px}
+.sec-h h2{font-size:22px;font-weight:800}
+.sec-h p{margin:2px 0 0;color:var(--muted);font-size:14px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:22px;align-items:start;margin-top:14px}
+@media(max-width:860px){.row{grid-template-columns:1fr}}
+ol.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:grid;gap:10px}
+ol.steps li{counter-increment:s;position:relative;padding-left:34px}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:1px;width:23px;height:23px;border-radius:6px;background:var(--gold-soft);color:var(--gold);font-weight:800;font-size:13px;display:grid;place-items:center;border:1px solid var(--note-line)}
+.sub{font-size:13.5px;color:var(--muted);margin-top:2px}
+.callout{background:var(--note);border:1px solid var(--note-line);border-radius:10px;padding:10px 14px;font-size:14px;margin-top:14px}
+.callout b{color:var(--ink)}
+h3{font-size:16px;font-weight:700;margin:18px 0 8px}
+.tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:5px;padding:1px 7px;vertical-align:2px;margin-left:6px}
+.tag.rec{background:#e3f3ea;color:var(--green)}
+.tag.alt{background:var(--kbd);color:var(--muted)}
+
+/* ---------- mock screens (always "light screen" look, like a screenshot) ---------- */
+figure{margin:0}
+figcaption{font-size:12.5px;color:var(--muted);margin-top:8px;text-align:center}
+.screen{background:#f1f3f7;border:1px solid #cfd6e2;border-radius:12px;overflow:hidden;box-shadow:var(--shadow);color:#1f2937;font:12px/1.45 "Segoe UI",Arial,sans-serif}
+.chrome{background:#dfe4ec;padding:7px 10px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #cfd6e2}
+.dots{display:flex;gap:5px}.dots i{width:9px;height:9px;border-radius:50%;background:#b8c0cd;display:block}
+.addr{flex:1;background:#fff;border-radius:999px;padding:4px 12px;font-family:var(--mono);font-size:10.5px;color:#44506a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.favbar{background:#eef1f6;border-bottom:1px solid #cfd6e2;padding:5px 10px;display:flex;gap:10px;align-items:center;font-size:11px;color:#44506a;flex-wrap:wrap}
+.fav{padding:2px 8px;border-radius:5px}
+.fav.hl{background:#fff;border:1.5px solid #e8a33d;color:#0B1F3A;font-weight:700;box-shadow:0 0 0 3px rgba(232,163,61,.25)}
+.app{display:flex;min-height:150px}
+.app .side{width:92px;flex:0 0 92px;background:#2b3f5e;color:#c9d3e4;padding:8px 0;font-size:9.5px}
+.app .side .lg{color:#fff;font-weight:800;font-size:9px;padding:0 8px 6px;line-height:1.2;border-bottom:1px solid #3a4f70;margin-bottom:4px}
+.app .side div.it{padding:4px 8px;border-left:3px solid transparent}
+.app .side div.it.on{background:#243755;border-left-color:#e8a33d;color:#fff;font-weight:700}
+.app .main{flex:1;padding:10px;min-width:0}
+.mpanel{background:#fff;border:1px solid #e2e6ee;border-radius:7px;padding:9px 10px;margin-bottom:8px}
+.mh{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#0B1F3A;border-bottom:1px solid #e2e6ee;padding-bottom:5px;margin-bottom:7px}
+.bml{display:inline-block;background:#e8a33d;color:#fff;font-weight:700;padding:5px 11px;border-radius:5px;font-size:11px}
+.drop{border:2px dashed #c3cbda;border-radius:7px;padding:10px;text-align:center;color:#6B7280;font-size:10.5px;background:#fff}
+.drop b{color:#0B1F3A}
+.drop.hot{border-color:#C9A227;background:#fdf8ea}
+.slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:7px}
+.slots.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.slot{border:1px solid #e2e6ee;border-radius:5px;padding:5px 6px;font-size:9.5px;line-height:1.35}
+.slot.ok{border-color:#9fd3b6;background:#f3fbf6}
+.slot b{display:block;color:#0B1F3A;font-size:9.5px}
+.slot span{color:#6B7280}
+.modal-bg{background:rgba(11,31,58,.55);padding:22px 16px;display:grid;place-items:center}
+.mcard{background:#fff;border-radius:9px;width:100%;max-width:300px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.35)}
+.mcard .hd{background:#2b3f5e;color:#fff;font-weight:800;font-size:11.5px;letter-spacing:.03em;padding:10px 13px}
+.mcard .hd small{display:block;font-weight:400;color:#9fb0ca;font-size:9.5px;letter-spacing:0;margin-top:2px}
+.mcard .bd{padding:11px 13px;font-size:11px}
+.fld{margin-bottom:8px}
+.fld label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#6B7280;margin-bottom:2px}
+.fld div{border:1px solid #cfd6e2;border-radius:5px;padding:5px 8px;color:#1f2937;font-size:11px;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fld div.mono{font-family:var(--mono);font-size:10px}
+.btn{display:block;text-align:center;background:#0B1F3A;color:#fff;border-radius:5px;padding:6px;font-weight:700;font-size:11px}
+.btnrow{display:flex;gap:6px;justify-content:flex-end;margin-top:8px}
+.btnrow span{border:1px solid #cfd6e2;border-radius:5px;padding:4px 10px;font-size:10.5px}
+.btnrow span.pri{background:#0B1F3A;color:#fff;border-color:#0B1F3A;font-weight:700}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:11px}
+.kv span:nth-child(odd){color:#6B7280}
+.logl{font-size:10px;color:#44506a;margin-top:6px;line-height:1.5;font-family:var(--mono)}
+.prompt{background:#fff;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:12px 14px;width:100%;max-width:270px;font-size:11px}
+.prompt .fld div{border-color:#2e5f9e}
+.menu{background:#fff;border:1px solid #cfd6e2;border-radius:7px;box-shadow:0 8px 22px rgba(0,0,0,.18);width:170px;padding:4px 0;font-size:11px}
+.menu div{padding:5px 12px}.menu div.hl{background:#e9edf5;font-weight:700;color:#0B1F3A}
+.pill{display:inline-block;padding:1px 7px;border-radius:9px;font-size:9.5px;font-weight:700}
+.p-g{background:#e3f3ea;color:#1e7e4f}.p-r{background:#fbe5e2;color:#c0392b}.p-a{background:#fdf0dc;color:#94600f}.p-b{background:#e3ecf8;color:#2e5f9e}
+.go{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1px solid #cfd6e2;font-size:9px;margin-right:6px;color:#0B1F3A;background:#fff;vertical-align:middle}
+.go.hl{background:#0B1F3A;color:#fff;border-color:#0B1F3A;box-shadow:0 0 0 3px rgba(232,163,61,.45)}
+table.mt{width:100%;border-collapse:collapse;font-size:10.5px}
+table.mt td{padding:4px 5px;border-bottom:1px solid #e2e6ee}
+table.mt td.n{text-align:right;font-variant-numeric:tabular-nums}
+.todo{border:1px solid #e2e6ee;border-left:3px solid #e8a33d;border-radius:5px;padding:4px 7px;margin-bottom:4px;font-size:10px;display:flex;align-items:center}
+.todo.done{border-left-color:#1e7e4f}
+.todo b{color:#0B1F3A}
+.mark{position:relative}
+.arrow-up{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#b36b00;font-weight:700;margin:4px 0 6px}
+.arrow-up svg{flex:0 0 auto}
+.seg{display:inline-flex;border:1px solid #cfd6e2;border-radius:5px;overflow:hidden;font-size:10px}
+.seg span{padding:2px 8px}.seg span.on{background:#0B1F3A;color:#fff;font-weight:700}
+
+.cols2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media(max-width:620px){.cols2{grid-template-columns:1fr}}
+.schedule{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:10px}
+@media(max-width:560px){.schedule{grid-template-columns:1fr}}
+.when{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.when .d{font-size:26px;font-weight:800;color:var(--navy);line-height:1}
+.when .d small{font-size:13px;font-weight:600;color:var(--muted);margin-left:6px}
+.when p{margin:6px 0 0;font-size:13.5px;color:var(--muted)}
+.faq{display:grid;gap:8px;margin-top:10px}
+.faq div{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:14px}
+.faq div b{display:block;margin-bottom:2px}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.toc a{transition:border-color .15s}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Kế toán · Plaza Hotel Company Limited</div>
+      <h1>Hướng dẫn dùng app Đối chiếu hóa đơn đầu vào</h1>
+      <p class="lede">App gom 6 file hóa đơn mua vào từ cổng thuế, đối chiếu với 2 tờ khai nội bộ (Sofitel Saigon Plaza và Central Plaza &amp; JVC) theo <b>MST người bán + ký hiệu + số HĐ + tiền chưa thuế + tiền thuế</b>, rồi cho cả nhóm duyệt và ghi chú trên cùng một dữ liệu.</p>
+    </div>
+    <div class="url"><span>Địa chỉ app</span><b>rachel-huynh.github.io/Tracker/DoiChieuHoaDon.html</b></div>
+  </header>
+
+  <nav class="toc" aria-label="Mục lục">
+    <a href="#mo-app"><i>1</i>Mở app lần đầu</a>
+    <a href="#bookmark"><i>2</i>Thêm nút ⚡ vào Favorites</a>
+    <a href="#tai-du-lieu"><i>3</i>Tải dữ liệu hằng tháng</a>
+    <a href="#xem-ket-qua"><i>4</i>Xem kết quả &amp; duyệt</a>
+    <a href="#hoi-dap">Khi gặp lỗi</a>
+  </nav>
+
+  <!-- 1 -->
+  <section id="mo-app">
+    <div class="sec-h"><div class="sec-n">1</div><div><h2>Mở app lần đầu bằng link cài sẵn</h2><p>Chỉ làm một lần trên mỗi máy.</p></div></div>
+    <div class="row">
+      <div>
+        <ol class="steps">
+          <li>Bấm vào <b>link cài sẵn</b> được gửi riêng cho bạn qua Zalo/email. Link có dạng <code>…DoiChieuHoaDon.html#sbcfg=…</code>.
+            <div class="sub">Máy sẽ tự nhớ kết nối dữ liệu. Phần <code>#sbcfg=…</code> tự biến mất khỏi thanh địa chỉ sau khi mở.</div></li>
+          <li>Đăng nhập bằng <b>email và mật khẩu của chính bạn</b> (mỗi người một tài khoản).</li>
+          <li>Từ lần sau chỉ cần mở địa chỉ app bình thường (lưu vào Favorites cho tiện). Không cần mở lại link cài sẵn.</li>
+        </ol>
+        <div class="callout">🔒 <b>Không chuyển tiếp link cài sẵn</b> cho người ngoài nhóm kế toán, và không đăng lên nhóm chat chung. Đổi máy hoặc đổi trình duyệt thì xin lại link.</div>
+      </div>
+      <figure>
+        <div class="screen">
+          <div class="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="addr">rachel-huynh.github.io/Tracker/DoiChieuHoaDon.html</div></div>
+          <div class="modal-bg">
+            <div class="mcard">
+              <div class="hd">ĐỐI CHIẾU HÓA ĐƠN<small>Plaza Hotel Company Limited · Kế toán</small></div>
+              <div class="bd">
+                <div class="fld"><label>Email</label><div>ten.ban@jvcplaza.vn</div></div>
+                <div class="fld"><label>Mật khẩu</label><div>••••••••••</div></div>
+                <div class="btn">Đăng nhập</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Màn hình đăng nhập sau khi mở link cài sẵn</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="bookmark">
+    <div class="sec-h"><div class="sec-n">2</div><div><h2>Thêm nút ⚡ “Tải HĐ mua vào” vào thanh Favorites</h2><p>Nút này lấy đủ 6 tổ hợp hóa đơn từ cổng thuế chỉ bằng một cú bấm. Hướng dẫn cho Microsoft Edge.</p></div></div>
+    <div class="row">
+      <div>
+        <h3>Bật thanh Favorites</h3>
+        <ol class="steps">
+          <li>Nhấn <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd>.
+            <div class="sub">Hoặc vào <b>Settings → Appearance → Toolbar → Favorites bar → Always</b>. Thanh này nằm ngay dưới ô địa chỉ.</div></li>
+        </ol>
+        <h3>Thêm nút</h3>
+        <ol class="steps">
+          <li>Mở app → menu <b>Tải dữ liệu</b> → kéo xuống khung <b>⚡ Tải 1 nút từ cổng thuế</b>.</li>
+          <li><b>Giữ chuột</b> vào nút vàng <b>⚡ Tải HĐ mua vào</b>, <b>kéo</b> lên thanh Favorites rồi thả ra. Chỉ kéo, đừng bấm vào nút ở trong app.</li>
+        </ol>
+        <div class="callout"><b>Nếu kéo không được:</b> chuột phải nút vàng → <b>Copy link</b>. Trên thanh Favorites chọn <b>⭐ → Add this page to favorites</b>, đặt tên <i>Tải HĐ mua vào</i>, thư mục <b>Favorites bar</b>. Sau đó chuột phải mục vừa tạo → <b>Edit</b> → xóa URL cũ, dán link vừa copy (bắt đầu bằng <code>javascript:(</code>) → <b>Save</b>.</div>
+        <div class="callout">🔁 Khi được báo <b>“nút ⚡ đã cập nhật”</b>, làm lại bước Copy link rồi Edit ở trên để thay link mới.</div>
+      </div>
+      <div style="display:grid;gap:14px">
+        <figure>
+          <div class="screen">
+            <div class="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="addr">rachel-huynh.github.io/Tracker/DoiChieuHoaDon.html</div></div>
+            <div class="favbar"><span class="fav">📁 Công việc</span><span class="fav hl">⚡ Tải HĐ mua vào</span><span class="fav">Hóa đơn điện tử</span></div>
+            <div class="app">
+              <div class="side"><div class="lg">PLAZA HOTEL<br>COMPANY LIMITED</div><div class="it">Tổng quan kỳ</div><div class="it">Kết quả đối chiếu</div><div class="it on">Tải dữ liệu</div><div class="it">Cài đặt</div></div>
+              <div class="main">
+                <div class="mpanel">
+                  <div class="mh">⚡ Tải 1 nút từ cổng thuế</div>
+                  <div class="arrow-up"><svg width="22" height="30" viewBox="0 0 22 30" aria-hidden="true"><path d="M11 29 V5" stroke="#e8a33d" stroke-width="2.5" stroke-dasharray="4 3" fill="none"/><path d="M4 11 L11 3 L18 11" stroke="#e8a33d" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>kéo lên thanh Favorites</div>
+                  <span class="bml">⚡ Tải HĐ mua vào</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption>Kéo nút vàng lên thanh Favorites. Nút sẽ nằm cố định ở đó.</figcaption>
+        </figure>
+        <figure>
+          <div class="screen" style="padding:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;justify-content:center">
+            <div class="menu"><div>Open in new tab</div><div class="hl">Edit</div><div>Rename</div><div>Delete</div></div>
+            <div class="mcard" style="max-width:250px;box-shadow:0 8px 22px rgba(0,0,0,.18)">
+              <div class="hd" style="background:#dfe4ec;color:#1f2937;font-weight:700">Edit favorite</div>
+              <div class="bd"><div class="fld"><label>Name</label><div>Tải HĐ mua vào</div></div><div class="fld"><label>URL</label><div class="mono">javascript:(function (APP) { if (!/hoadon…</div></div><div class="btnrow"><span>Cancel</span><span class="pri">Save</span></div></div>
+            </div>
+          </div>
+          <figcaption>Cách thay link: chuột phải → Edit → dán vào ô URL</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="tai-du-lieu">
+    <div class="sec-h"><div class="sec-n">3</div><div><h2>Tải dữ liệu hằng tháng</h2><p>Mỗi tháng kiểm tra tờ khai của tháng trước hai lần.</p></div></div>
+    <div class="schedule">
+      <div class="when"><div class="d">Ngày 10<small>Lần 1</small></div><p>Tải hóa đơn cổng thuế của tháng trước và nạp 2 tờ khai. Xong thì bấm <b>💾 Lưu kết quả lần 1</b>.</p></div>
+      <div class="when"><div class="d">Cuối tháng<small>Lần 2</small></div><p>Tải lại cổng thuế và chọn <b>Lần 2</b>. App tự so với lần 1 và giữ nguyên các duyệt, ghi chú đã có.</p></div>
+    </div>
+
+    <h3>Cách A — Tải bằng nút ⚡ <span class="tag rec">nhanh</span></h3>
+    <div class="row">
+      <div>
+        <ol class="steps">
+          <li>Mở <b>hoadondientu.gdt.gov.vn</b> và tự đăng nhập (tài khoản, mật khẩu, mã captcha như bình thường).</li>
+          <li>Vào <b>Tra cứu → Tra cứu hóa đơn</b> và bấm <b>Tìm kiếm</b> một lần để chắc phiên đăng nhập còn hiệu lực.</li>
+          <li>Bấm <b>⚡ Tải HĐ mua vào</b> trên thanh Favorites, nhập kỳ dạng <code>MM/YYYY</code> (ví dụ <code>08/2026</code>) → OK.</li>
+          <li>Một cửa sổ app mở ra với bảng <b>Nhận dữ liệu từ cổng thuế</b>. Kiểm tra dòng <b>Kỳ</b>, chọn <b>Lần 1</b> hoặc <b>Lần 2</b>, rồi bấm <b>Nạp vào app</b>.</li>
+        </ol>
+        <div class="callout">App <b>không lưu mật khẩu cổng thuế</b> và không vượt captcha. Bạn luôn tự đăng nhập trước khi bấm nút.</div>
+      </div>
+      <figure>
+        <div class="screen">
+          <div class="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="addr">rachel-huynh.github.io/Tracker/DoiChieuHoaDon.html</div></div>
+          <div class="modal-bg" style="gap:12px">
+            <div class="mcard">
+              <div class="hd">NHẬN DỮ LIỆU TỪ CỔNG THUẾ</div>
+              <div class="bd">
+                <div class="kv"><span>Kỳ</span><b>08/2026</b><span>Số hóa đơn</span><b>2.262</b></div>
+                <div class="logl">HDDT ttxly=5: 1.772 HĐ<br>HDDT ttxly=6: 165 HĐ<br>MTT ttxly=8: 325 HĐ …</div>
+                <div class="fld" style="margin-top:8px"><label>Nạp vào</label><div>Lần 1 (ngày 10) ▾</div></div>
+                <div class="btnrow"><span>Hủy</span><span class="pri">Nạp vào app</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Sau khi bấm ⚡: kiểm tra kỳ và số hóa đơn, rồi bấm “Nạp vào app”</figcaption>
+      </figure>
+    </div>
+
+    <h3>Cách B — Tải 6 file Excel rồi kéo thả <span class="tag alt">dự phòng</span></h3>
+    <div class="row">
+      <div>
+        <ol class="steps">
+          <li>Trên cổng thuế: <b>Tra cứu → Tra cứu hóa đơn</b> → ngày lập <b>từ 01 đến cuối tháng</b>.</li>
+          <li>Tab <b>Hóa đơn điện tử</b>: lần lượt chọn 3 mục <b>Kết quả kiểm tra</b> (<i>Đã cấp mã</i>, <i>Cục Thuế đã nhận không mã</i>, <i>… có mã khởi tạo từ máy tính tiền</i>). Mỗi mục bấm <b>Tìm kiếm</b> rồi bấm biểu tượng <b>Xuất Excel</b>.</li>
+          <li>Làm lại như vậy ở tab <b>Hóa đơn có mã khởi tạo từ máy tính tiền</b>. Tổng cộng được 6 file.</li>
+          <li>Trong app vào <b>Tải dữ liệu</b>, chọn <b>Lần 1</b> hoặc <b>Lần 2</b>, rồi kéo cả 6 file vào ô <b>①</b>. App tự nhận loại file và bỏ qua file trùng.</li>
+          <li>Tổ hợp nào không có hóa đơn: bấm <b>Không có HĐ</b> ở ô tương ứng.</li>
+        </ol>
+        <h3>Nạp 2 tờ khai nội bộ</h3>
+        <ol class="steps">
+          <li>Kéo cùng lúc 2 file vào ô <b>②</b>: tờ khai <b>Sofitel Saigon Plaza</b> (vd <code>Hoa don dau vao - to khai 2026.08.xlsx</code>) và <b>Central Plaza &amp; JVC</b> (vd <code>Mau mua vao - 2608.xlsx</code>).</li>
+          <li>Kiểm tra dòng tổng mà app báo có khớp dòng tổng trong file không. Nạp lại một file chỉ thay tờ khai của đơn vị đó.</li>
+        </ol>
+      </div>
+      <figure>
+        <div class="screen">
+          <div class="app" style="min-height:0">
+            <div class="side"><div class="lg">PLAZA HOTEL<br>COMPANY LIMITED</div><div class="it">Tổng quan kỳ</div><div class="it">Kết quả đối chiếu</div><div class="it on">Tải dữ liệu</div></div>
+            <div class="main">
+              <div class="mpanel">
+                <div class="mh">① Hóa đơn từ cổng thuế <span class="seg" style="float:right"><span class="on">Lần 1</span><span>Lần 2</span></span></div>
+                <div class="drop hot"><b>Kéo thả 6 file “DANH SÁCH HÓA ĐƠN…xlsx”</b><br>hoặc bấm để chọn file</div>
+                <div class="slots">
+                  <div class="slot ok"><b>✔ HĐ điện tử</b><span>Đã cấp mã · 1.772</span></div>
+                  <div class="slot ok"><b>✔ HĐ điện tử</b><span>Nhận không mã · 165</span></div>
+                  <div class="slot"><b>○ HĐ điện tử</b><span>Có mã từ MTT</span></div>
+                  <div class="slot"><b>○ Máy tính tiền</b><span>Đã cấp mã</span></div>
+                  <div class="slot"><b>○ Máy tính tiền</b><span>Nhận không mã</span></div>
+                  <div class="slot ok"><b>✔ Máy tính tiền</b><span>Có mã từ MTT · 325</span></div>
+                </div>
+              </div>
+              <div class="mpanel" style="margin-bottom:0">
+                <div class="mh">② Tờ khai nội bộ</div>
+                <div class="drop"><b>Kéo thả 2 file tờ khai của tháng</b></div>
+                <div class="slots two">
+                  <div class="slot ok"><b>✔ Sofitel Saigon Plaza</b><span>2.233 HĐ</span></div>
+                  <div class="slot ok"><b>✔ Central Plaza &amp; JVC</b><span>64 HĐ</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Trang Tải dữ liệu: ô ✔ xanh là tổ hợp đã có, ô ○ là còn thiếu</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="xem-ket-qua">
+    <div class="sec-h"><div class="sec-n">4</div><div><h2>Xem kết quả &amp; duyệt</h2><p>Dữ liệu cập nhật trực tiếp: người này duyệt thì người kia thấy ngay.</p></div></div>
+    <div class="row">
+      <div>
+        <ol class="steps">
+          <li>Chọn kỳ ở góc trên phải. Xem theo <b>Tháng / Quý / Năm</b> được.</li>
+          <li>Ở <b>Tổng quan</b>, bấm nút <b>➜</b> ở đầu mỗi dòng. App mở <b>Kết quả đối chiếu</b> và lọc sẵn đúng trạng thái đó, hoặc mở đúng bước cần làm trong mục <b>Việc cần làm</b>.</li>
+          <li>Ở bảng kết quả: bấm tên cột để sắp xếp. Gõ vào ô ngay dưới tên cột để lọc (ví dụ <code>mega</code>, <code>&gt;0</code>, <code>&lt;&gt;0</code>).</li>
+          <li>Mỗi dòng không khớp: chọn <b>Đã duyệt / Loại trừ / Chờ xử lý</b> và ghi chú lý do (chưa thanh toán, không phải chi phí công ty…). Chọn nhiều dòng một lúc để duyệt hàng loạt.</li>
+          <li>Xử lý xong thì bấm <b>🔒 Chốt kỳ</b>. Hóa đơn chưa kê khai tự chuyển sang tab <b>Gối đầu</b> để đối chiếu tiếp với tờ khai các tháng sau.</li>
+        </ol>
+        <div class="cols2" style="margin-top:14px">
+          <div class="callout" style="margin:0"><span class="pill p-g">Khớp</span> cả 5 thông tin trùng khớp.<br><span class="pill p-r">Lệch tiền</span> đúng hóa đơn nhưng khác số tiền.</div>
+          <div class="callout" style="margin:0"><span class="pill p-a">Chưa có trên tờ khai</span> có trên cổng thuế nhưng chưa kê khai.<br><span class="pill p-b">Chỉ có trên tờ khai</span> NCC nước ngoài, không có HĐ điện tử.</div>
+        </div>
+      </div>
+      <figure>
+        <div class="screen">
+          <div class="app" style="min-height:0">
+            <div class="side"><div class="lg">PLAZA HOTEL<br>COMPANY LIMITED</div><div class="it on">Tổng quan kỳ</div><div class="it">Kết quả đối chiếu</div><div class="it">Gối đầu</div><div class="it">Tải dữ liệu</div></div>
+            <div class="main">
+              <div style="display:flex;justify-content:flex-end;gap:6px;margin-bottom:7px;align-items:center;font-size:10px;color:#6B7280">Xem theo <span class="seg"><span class="on">Tháng</span><span>Quý</span><span>Năm</span></span> <span style="border:1px solid #cfd6e2;border-radius:5px;padding:1px 7px;background:#fff;color:#1f2937">08/2026 ▾</span></div>
+              <div class="mpanel">
+                <div class="mh">Tổng hợp giá trị — kỳ 08/2026</div>
+                <table class="mt">
+                  <tr><td><span class="go">➜</span><span class="pill p-g">Khớp</span></td><td class="n">1.754</td></tr>
+                  <tr><td><span class="go hl">➜</span><span class="pill p-r">Lệch tiền</span></td><td class="n">16</td></tr>
+                  <tr><td><span class="go">➜</span><span class="pill p-a">Chưa có trên tờ khai</span></td><td class="n">492</td></tr>
+                  <tr><td><span class="go">➜</span><span class="pill p-b">Chỉ có trên tờ khai</span></td><td class="n">50</td></tr>
+                </table>
+              </div>
+              <div class="mpanel" style="margin-bottom:0">
+                <div class="mh">Việc cần làm — kỳ 08/2026</div>
+                <div class="todo done"><span class="go">➜</span><b>✔ 1. Tải cổng thuế lần 1</b></div>
+                <div class="todo done"><span class="go">➜</span><b>✔ 2. Nạp 2 tờ khai nội bộ (2/2)</b></div>
+                <div class="todo"><span class="go">➜</span><b>5. Xử lý dòng không khớp</b>&nbsp;<span style="color:#6B7280">5/1035</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Bấm ➜ để mở thẳng danh sách cần xử lý (số liệu minh họa của kỳ 08/2026)</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="hoi-dap">
+    <div class="sec-h"><div class="sec-n" style="background:var(--gold)">?</div><div><h2>Khi gặp lỗi</h2></div></div>
+    <div class="faq">
+      <div><b>Bấm ⚡ thì báo “HTTP 403” hoặc “phiên đăng nhập hết hạn”</b>Đăng xuất rồi đăng nhập lại cổng thuế. Vào <i>Tra cứu hóa đơn</i> bấm Tìm kiếm một lần rồi bấm lại ⚡. Nếu vẫn lỗi thì dùng Cách B (tải 6 file Excel).</div>
+      <div><b>Số hóa đơn nhận được là 0</b>Đừng bấm “Nạp vào app”. Kiểm tra kỳ đã nhập đúng dạng <code>MM/YYYY</code>, rồi làm lại từ bước đăng nhập cổng thuế.</div>
+      <div><b>App trắng trang hoặc không bấm được menu</b>Bấm <kbd>Ctrl</kbd> + <kbd>F5</kbd> để tải bản mới nhất. Nếu vẫn lỗi, báo người quản trị app kèm ảnh màn hình.</div>
+      <div><b>Mở app lại thấy ô “Kết nối Supabase”</b>Máy đã mất cấu hình (xóa dữ liệu trình duyệt, đổi trình duyệt). Mở lại link cài sẵn.</div>
+      <div><b>Kỳ đã chốt nhưng cần sửa</b>Chọn đúng tháng → <b>Kết quả đối chiếu</b> → bấm <b>🔓 Mở lại kỳ</b>. Sửa xong thì chốt lại.</div>
+    </div>
+  </section>
+
+  <footer>Sao lưu: menu <b>Cài đặt &amp; Sao lưu</b> có nút tải bản sao toàn bộ dữ liệu (JSON / Excel). Nên tải sau mỗi lần chốt kỳ.</footer>
+</div>
+</template>
 <div id="toast"></div>
 
 <script>
@@ -1343,7 +1730,7 @@ $('btnChot').onclick = async () => {
 /* =====================================================================
    GIAO DIỆN
    ===================================================================== */
-const TITLES = { tongquan: 'Tổng quan kỳ', doichieu: 'Kết quả đối chiếu', goidau: 'Gối đầu — hóa đơn tồn', lan12: 'So sánh lần 1 – lần 2', nap: 'Tải dữ liệu', goc: 'Dữ liệu đã hợp nhất', nhatky: 'Nhật ký', caidat: 'Cài đặt & Sao lưu' };
+const TITLES = { tongquan: 'Tổng quan kỳ', doichieu: 'Kết quả đối chiếu', goidau: 'Gối đầu — hóa đơn tồn', lan12: 'So sánh lần 1 – lần 2', nap: 'Tải dữ liệu', goc: 'Dữ liệu đã hợp nhất', huongdan: 'Hướng dẫn sử dụng', nhatky: 'Nhật ký', caidat: 'Cài đặt & Sao lưu' };
 function showTab(t) {
   // tải dữ liệu & so sánh lần 1–2 luôn làm theo từng tháng
   if ((t === 'nap' || t === 'lan12') && !isMonth()) { setMonth(S.ky); initKySelect(); toast('Trang này làm việc theo tháng — đang chuyển sang tháng ' + kyLabel(S.ky)); }
@@ -1394,7 +1781,7 @@ function renderAll() {
   }
   const carry = carryView(false).filter(r => actOf(r.id) !== 'loai_tru').length;
   const bd = $('bdGoiDau'); bd.style.display = carry ? '' : 'none'; bd.textContent = carry;
-  const fn = { tongquan: renderTongQuan, doichieu: renderDoiChieu, goidau: renderGoiDau, lan12: renderLan12, nap: renderNap, goc: renderGoc, nhatky: renderLog, caidat: renderCaiDat }[S.tab];
+  const fn = { tongquan: renderTongQuan, doichieu: renderDoiChieu, goidau: renderGoiDau, lan12: renderLan12, nap: renderNap, goc: renderGoc, huongdan: renderGuide, nhatky: renderLog, caidat: renderCaiDat }[S.tab];
   fn && fn();
 }
 
@@ -1953,6 +2340,30 @@ function renderGoc() {
 document.querySelectorAll('#segGoc button').forEach(b => b.onclick = () => { S.goc = b.dataset.g; S.page.goc = 0; renderGoc(); });
 $('gocQ').oninput = () => { clearTimeout(qT); qT = setTimeout(() => { S.page.goc = 0; renderGoc(); }, 250); };
 $('gocClear').onclick = () => { $('gocQ').value = ''; clearCols(gocKey()); S.page.goc = 0; renderGoc(); };
+
+/* ---------- HƯỚNG DẪN SỬ DỤNG ----------
+   Nội dung trong <template id="guideTpl">, đổ vào iframe (srcdoc) để CSS riêng của trang hướng dẫn
+   không đụng CSS app. Khung cao đúng bằng nội dung → cuộn bằng thanh cuộn của app; link mục lục (#…) cuộn trang app. */
+function renderGuide() {
+  const fr = $('guideFrame');
+  const fit = () => { try { const d = fr.contentDocument; if (d && d.documentElement) fr.style.height = d.documentElement.scrollHeight + 'px'; } catch (e) { } };
+  if (fr.dataset.ready) { fit(); return; }
+  fr.dataset.ready = '1';
+  fr.onload = () => {
+    const d = fr.contentDocument; fit();
+    try { new ResizeObserver(fit).observe(d.body); } catch (e) { }
+    d.addEventListener('click', e => {
+      const a = e.target.closest('a[href^="#"]'); if (!a) return;
+      const el = d.getElementById(a.getAttribute('href').slice(1)); if (!el) return;
+      e.preventDefault();
+      window.scrollTo({ top: fr.getBoundingClientRect().top + window.scrollY + el.offsetTop - 70, behavior: 'smooth' });
+    });
+    // link ngoài (nếu có) mở tab mới
+    d.querySelectorAll('a[href^="http"]').forEach(a => a.target = '_blank');
+  };
+  fr.srcdoc = '<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hướng dẫn</title></head><body>' + $('guideTpl').innerHTML + '</body></html>';
+}
+window.addEventListener('resize', () => { if (S.tab === 'huongdan') renderGuide(); });
 
 /* ---------- NHẬT KÝ ---------- */
 const LOG_LBL = { nap_cong_thue: 'Nạp dữ liệu cổng thuế', nap_to_khai: 'Nạp tờ khai', luu_lan1: 'Lưu kết quả lần 1', chot_ky: 'Chốt kỳ', mo_lai_ky: 'Mở lại kỳ', duyet_hang_loat: 'Duyệt hàng loạt', phuc_hoi: 'Phục hồi dữ liệu', cai_dat: 'Đổi cài đặt' };
