@@ -417,6 +417,7 @@ td.nw{white-space:nowrap}
           <div id="cfgInfo" class="small" style="margin-bottom:8px"></div>
           <button id="btnCfg">⚙ Sửa kết nối…</button>
           <button id="btnMakeLink">🔗 Tạo link cài sẵn cho đồng nghiệp</button>
+          <button id="btnForget" class="danger">🧹 Xóa kết nối trên máy này</button>
           <div id="linkBox" style="display:none;margin-top:8px"><textarea style="width:100%;height:60px;font-size:11px;border:1px solid #cfd6e2;border-radius:6px;padding:6px" readonly></textarea>
             <div class="note">Gửi RIÊNG link này cho từng người trong nhóm kế toán (Zalo/email cá nhân). Mở 1 lần là máy nhớ cấu hình; sau đó đăng nhập bằng tài khoản của mỗi người.</div></div>
         </div>
@@ -832,6 +833,7 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);font-si
       <div><b>Số hóa đơn nhận được là 0</b>Đừng bấm “Nạp vào app”. Kiểm tra kỳ đã nhập đúng dạng <code>MM/YYYY</code>, rồi làm lại từ bước đăng nhập cổng thuế.</div>
       <div><b>App trắng trang hoặc không bấm được menu</b>Bấm <kbd>Ctrl</kbd> + <kbd>F5</kbd> để tải bản mới nhất. Nếu vẫn lỗi, báo người quản trị app kèm ảnh màn hình.</div>
       <div><b>Mở app lại thấy ô “Kết nối Supabase”</b>Máy đã mất cấu hình (xóa dữ liệu trình duyệt, đổi trình duyệt). Mở lại link cài sẵn.</div>
+      <div><b>Lỡ mở app trên máy dùng chung</b>Vào <b>Cài đặt &amp; Sao lưu → 🧹 Xóa kết nối trên máy này</b>. App đăng xuất và xóa kết nối khỏi trình duyệt đó. Dữ liệu đối chiếu vẫn còn nguyên.</div>
       <div><b>Kỳ đã chốt nhưng cần sửa</b>Chọn đúng tháng → <b>Kết quả đối chiếu</b> → bấm <b>🔓 Mở lại kỳ</b>. Sửa xong thì chốt lại.</div>
     </div>
   </section>
@@ -1007,6 +1009,19 @@ $('btnCfgSave').onclick = () => {
   if (!/^https:\/\/[^…]+$/.test(url) || key.length < 20) { $('cfgErr').textContent = 'URL hoặc key chưa hợp lệ.'; return; }
   setCfg({ url, key }); closeModal('mCfg'); boot();
 };
+/* dùng khi lỡ mở app trên máy dùng chung: đăng xuất + xóa URL/key + phiên đăng nhập khỏi trình duyệt này.
+   Dữ liệu trên Supabase không bị ảnh hưởng; muốn dùng lại phải mở link cài sẵn. */
+function forgetThisDevice() {
+  if (!confirm('Xóa kết nối trên máy này?\n\n• Đăng xuất tài khoản\n• Xóa Project URL, API key và phiên đăng nhập khỏi trình duyệt này\n\nDữ liệu đối chiếu trên hệ thống KHÔNG bị xóa. Muốn dùng lại phải mở link cài sẵn.')) return;
+  const wipe = () => {
+    try { localStorage.removeItem(LS_CFG); } catch (e) { }
+    try { Object.keys(localStorage).filter(k => k === 'hd-auth' || k.startsWith('hd-auth') || /^sb-.*-auth-token/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) { }
+    try { sessionStorage.clear(); } catch (e) { }
+    location.replace(location.pathname + location.search);
+  };
+  (S.sb ? S.sb.auth.signOut().catch(() => { }) : Promise.resolve()).finally(wipe);
+}
+$('btnForget').onclick = forgetThisDevice;
 $('lnkCfg').onclick = e => { e.preventDefault(); fillCfgForm(); closeModal('mLogin'); openModal('mCfg'); };
 $('btnCfg').onclick = () => { fillCfgForm(); openModal('mCfg'); };
 $('btnLogin').onclick = async () => {
