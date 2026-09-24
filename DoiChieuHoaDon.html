@@ -1080,14 +1080,25 @@ function bookmarkletSrc(appUrl) {
     var base = 'https://hoadondientu.gdt.gov.vn/api';
     var sets = [['HDDT', '/query/invoices/purchase', 5], ['HDDT', '/query/invoices/purchase', 6], ['HDDT', '/query/invoices/purchase', 8],
                 ['MTT', '/sco-query/invoices/purchase', 5], ['MTT', '/sco-query/invoices/purchase', 6], ['MTT', '/sco-query/invoices/purchase', 8]];
-    var out = [], log = [];
+    var out = [], log = [], stop = false;
+    var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+    var uuid = function () { return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)); };
     (async function () {
-      for (var i = 0; i < sets.length; i++) {
+      for (var i = 0; i < sets.length && !stop; i++) {
         var s = sets[i], state = '', n = 0, guard = 0, ok = true;
         do {
           var u = base + s[1] + '?sort=tdlap:desc&size=50' + (state ? '&state=' + encodeURIComponent(state) : '') + '&search=tdlap=ge=' + from + ';tdlap=le=' + to + ';ttxly==' + s[2];
-          var r; try { r = await fetch(u, { headers: { Authorization: 'Bearer ' + tok, 'Accept-Language': 'vi', 'End-Point': '/tra-cuu/tra-cuu-hoa-don' } }); } catch (e) { log.push(s[0] + ' ttxly=' + s[2] + ': lỗi mạng (' + e.message + ')'); ok = false; break; }
-          if (!r.ok) { log.push(s[0] + ' ttxly=' + s[2] + ': HTTP ' + r.status + (r.status === 401 || r.status === 403 ? ' (phiên đăng nhập hết hạn — đăng nhập lại)' : '')); ok = false; break; }
+          /* gửi kèm đúng các header mà trang Tra cứu hóa đơn tự gắn vào mỗi lần tìm kiếm */
+          var hd = { Authorization: 'Bearer ' + tok, 'Accept-Language': 'vi', 'request-id': uuid(),
+                     'End-Point': '/tra-cuu/tra-cuu-hoa-don',
+                     Action: encodeURIComponent(s[0] === 'MTT' ? 'Tìm kiếm (hóa đơn máy tính tiền mua vào)' : 'Tìm kiếm (hóa đơn mua vào)') };
+          var r; try { r = await fetch(u, { headers: hd, credentials: 'include' }); } catch (e) { log.push(s[0] + ' ttxly=' + s[2] + ': lỗi mạng (' + e.message + ')'); ok = false; break; }
+          if (!r.ok) {
+            var body = ''; try { body = (await r.text()).replace(/\s+/g, ' ').slice(0, 160); } catch (e) { }
+            log.push(s[0] + ' ttxly=' + s[2] + ': HTTP ' + r.status + (body ? ' — ' + body : '') + (r.status === 401 ? ' (phiên đăng nhập hết hạn — đăng nhập lại)' : ''));
+            ok = false; if (r.status === 401 || r.status === 403) stop = true; break;
+          }
+          await sleep(350);
           var j = await r.json(); var ds = j.datas || [];
           ds.forEach(function (v) { v.__src = s[0]; v.__ttxly = s[2]; out.push(v); });
           n += ds.length; state = j.state || '';
@@ -1095,6 +1106,7 @@ function bookmarkletSrc(appUrl) {
         } while (state && ++guard < 400);
         if (ok) log.push(s[0] + ' ttxly=' + s[2] + ': ' + n + ' HĐ');
       }
+      for (; i < sets.length; i++) log.push(sets[i][0] + ' ttxly=' + sets[i][2] + ': bỏ qua do lỗi ở trên');
       var payload = { type: 'hd-portal-json', ky: yy + '-' + p2(mm), rows: out, log: log };
       var sent = false;
       window.addEventListener('message', function onM(e) {
@@ -1143,7 +1155,9 @@ window.addEventListener('message', e => {
   $('rcBody').innerHTML = '<div class="kv"><div>Kỳ</div><div><b>' + kyLabel(d.ky) + '</b></div><div>Số hóa đơn</div><div><b>' + d.rows.length.toLocaleString('vi-VN') + '</b></div></div>' +
     '<div class="note">' + (d.log || []).map(esc).join('<br>') + '</div>' +
     '<div class="field" style="margin-top:10px"><label>Nạp vào</label><select id="rcLan"><option value="1"' + (day <= 20 ? ' selected' : '') + '>Lần 1 (ngày 10)</option><option value="2"' + (day > 20 ? ' selected' : '') + '>Lần 2 (cuối tháng)</option></select></div>' +
-    ((d.log || []).some(x => /HTTP|lỗi/.test(x)) ? '<div class="errbox">Có tổ hợp tải lỗi — kiểm tra lại, hoặc bổ sung bằng file Excel.</div>' : '');
+    ((d.log || []).some(x => /HTTP|lỗi/.test(x)) ? '<div class="errbox">Có tổ hợp tải lỗi — kiểm tra lại, hoặc bổ sung bằng file Excel.' +
+      ((d.log || []).some(x => /HTTP 40[13]/.test(x)) ? '<br>Cổng thuế từ chối (401/403): <b>đăng xuất, đăng nhập lại</b> cổng thuế, mở trang <b>Tra cứu → Tra cứu hóa đơn</b>, bấm Tìm kiếm 1 lần rồi mới bấm nút ⚡.' : '') + '</div>' : '');
+  $('btnRecvOk').style.display = d.rows.length ? '' : 'none';
   openModal('mRecv');
 });
 $('btnRecvOk').onclick = async () => {
