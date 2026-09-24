@@ -64,6 +64,8 @@ create table if not exists public.hd_tk (
   updated_at      timestamptz default now(),
   updated_by      text
 );
+-- 2026-09-24: mỗi tháng 2 tờ khai (SSP = Sofitel Saigon Plaza, CP = Central Plaza Office Building)
+alter table public.hd_tk add column if not exists nguon_tk text;
 create index if not exists hd_tk_ky_idx   on public.hd_tk (ky);
 create index if not exists hd_tk_khoa_idx on public.hd_tk (khoa);
 

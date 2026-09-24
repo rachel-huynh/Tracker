@@ -82,6 +82,17 @@ section.tab{display:none}section.tab.on{display:block}
 table.grid{border-collapse:collapse;width:100%;font-size:12px}
 table.grid th{position:sticky;top:0;background:#f5f7fb;color:var(--navy);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;text-align:left;padding:7px 8px;border-bottom:2px solid var(--navy);white-space:nowrap;z-index:2}
 table.grid th.n,table.grid td.n{text-align:right}
+table.grid thead tr:first-child th{border-bottom:1px solid var(--line)}
+table.grid thead tr.frow th{padding:3px 4px;background:#f5f7fb;border-bottom:2px solid var(--navy)}
+table.grid thead th.lead{border-bottom:2px solid var(--navy);vertical-align:middle}
+table.grid th.srt{cursor:pointer;user-select:none}
+table.grid th.srt:hover{background:#e9edf5}
+table.grid th .arr{color:var(--grey2);font-size:10px;margin-left:4px}
+table.grid th.srt.on{color:var(--gold2)}
+table.grid th.srt.on .arr{color:var(--gold2)}
+.cfin{width:100%;min-width:64px;border:1px solid #d5dbe6;border-radius:4px;padding:3px 5px;font:400 11px "Segoe UI",Arial,sans-serif;text-transform:none;letter-spacing:0;background:#fff;color:var(--ink)}
+.cfin::placeholder{color:#b5bdcb}
+.cfin.on{border-color:var(--gold2);background:#fffaf0;font-weight:600}
 table.grid td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 table.grid tr:hover td{background:#fafbfe}
 table.grid tr.sel td{background:#fdf8ea}
@@ -292,6 +303,7 @@ td.nw{white-space:nowrap}
               <option value="loai_tru">Chỉ loại trừ</option>
             </select>
             <input type="search" id="gQ" placeholder="Tìm…">
+            <button id="gClear">✕ Xóa lọc</button>
             <button id="btnExportGoiDau">⬇ Xuất Excel</button>
           </div>
           <div class="tscroll"><table class="grid" id="gdTable"></table></div>
@@ -325,8 +337,9 @@ td.nw{white-space:nowrap}
           </div>
           <div class="panel">
             <h3><span class="ttl">② Tờ khai nội bộ <small>(Bảng kê HĐ mua vào)</small></span></h3>
-            <div class="dropzone" id="dzTk"><b>Kéo thả file tờ khai</b> (vd “Hoa don dau vao - to khai 2026.08.xlsx”)<br><span class="small">sheet “VAT Input MM.YY” · nạp lại sẽ THAY THẾ tờ khai cũ của kỳ đó</span></div>
-            <input type="file" id="fiTk" accept=".xlsx,.xls" hidden>
+            <div class="dropzone" id="dzTk"><b>Kéo thả 2 file tờ khai của tháng</b><br><span class="small"><b>Sofitel Saigon Plaza</b> (vd “Hoa don dau vao - to khai 2026.08.xlsx”) và <b>Central Plaza</b> (vd “Mau mua vao - 2608.xlsx”) · app tự nhận đơn vị · nạp lại 1 file chỉ THAY THẾ tờ khai của đúng đơn vị đó</span></div>
+            <input type="file" id="fiTk" accept=".xlsx,.xls" multiple hidden>
+            <div id="tkSlots" class="slots" style="grid-template-columns:repeat(2,minmax(0,1fr))"></div>
             <div id="tkMsg" style="margin-top:10px"></div>
           </div>
         </div>
@@ -355,6 +368,7 @@ td.nw{white-space:nowrap}
           <div class="tbar">
             <div class="seg" id="segGoc"><button data-g="p" class="on">Cổng thuế (đã hợp nhất)</button><button data-g="t">Tờ khai</button></div>
             <input type="search" id="gocQ" placeholder="Tìm…">
+            <button id="gocClear">✕ Xóa lọc</button>
             <button id="btnExportGoc">⬇ Xuất Excel bảng này</button>
           </div>
           <div class="tscroll"><table class="grid" id="gocTable"></table></div>
@@ -768,7 +782,8 @@ function recompute() {
       // không ký hiệu HĐ → NCC nước ngoài / chứng từ không phải HĐĐT;
       // có ký hiệu → xem kỳ lập HĐ đã nạp dữ liệu cổng thuế chưa
       let status = 'chi_tk', hdKy = null;
-      if (t.khoa && t.khhd) {
+      // tờ khai Central Plaza không có cột ký hiệu → cứ có MST + số HĐ là HĐ trong nước
+      if (t.khoa && (t.khhd || tkSrcOf(t) === 'CP')) {
         hdKy = t.ngay ? t.ngay.slice(0, 7) : t.ky;
         const k = S.kys.get(hdKy);
         status = k && (k.lan1_at || k.lan2_at) ? 'khong_cong' : 'thieu_cong';
@@ -888,17 +903,33 @@ function parsePortal(wb, fname) {
   return { nguon, rows: out, cats, periodKy: period ? period[3] + '-' + pad(period[2]) : null };
 }
 
-/* Tờ khai nội bộ: Bảng kê HĐ chứng từ HHDV mua vào */
+/* Tờ khai nội bộ: Bảng kê HĐ chứng từ HHDV mua vào — mỗi tháng 2 file cùng MST 0300674923:
+   SSP = Sofitel Saigon Plaza (sheet "VAT Input MM.YY", có ký hiệu HĐ)
+   CP  = Central Plaza Office Building (mẫu 01-2/GTGT "Sheet1", KHÔNG có cột ký hiệu → ghép theo MST + số HĐ) */
+const TK_SRC = { SSP: 'Sofitel Saigon Plaza', CP: 'Central Plaza' };
+const tkSrcOf = t => t.nguon_tk || 'SSP';   // dữ liệu nạp trước khi có cột này = Sofitel
+/* tiêu đề nhiều tầng: ghép chữ của dòng i..i+3 theo từng cột */
+function hdrWindow(rows, i) {
+  const w = rows.slice(i, i + 4); const width = Math.max(0, ...w.map(r => (r || []).length));
+  const hd = []; for (let c = 0; c < width; c++) hd.push(w.map(r => norm((r || [])[c])).filter(Boolean).join(' '));
+  return hd;
+}
 function parseTk(wb, fname) {
-  let sn = wb.SheetNames.find(n => /vat\s*input/i.test(n));
-  let rows = null, h = -1;
-  const findHdr = rs => rs.findIndex(r => (r || []).some(c => norm(c).includes('ma so thue nguoi ban')));
-  if (sn) { rows = sheetRows(wb.Sheets[sn]); h = findHdr(rows); }
-  if (h < 0) for (const n of wb.SheetNames) { const rs = sheetRows(wb.Sheets[n]); const i = findHdr(rs); if (i >= 0) { sn = n; rows = rs; h = i; break; } }
+  let sn = null, rows = null, h = -1;
+  // dòng tiêu đề đầu tiên = dòng có ô "STT" mà cụm 4 dòng từ đó chứa "mã số thuế người bán"
+  // (không lấy dòng đầu tiên chứa cụm từ, vì dòng "Mã số thuế: 0300674923" phía trên cũng lọt vào cửa sổ 4 dòng)
+  const has = (rs, i) => hdrWindow(rs, i).some(x => x.includes('ma so thue nguoi ban'));
+  const findHdr = rs => {
+    const lim = Math.min(rs.length, 80);
+    for (let i = 0; i < lim; i++) if ((rs[i] || []).some(c => norm(c) === 'stt') && has(rs, i)) return i;
+    for (let i = 0; i < lim; i++) if ((rs[i] || []).some(c => norm(c).includes('ma so thue nguoi ban'))) return i;
+    for (let i = 0; i < lim; i++) if (has(rs, i)) return i;
+    return -1;
+  };
+  const order = wb.SheetNames.slice().sort((a, b) => (/vat\s*input/i.test(b) ? 1 : 0) - (/vat\s*input/i.test(a) ? 1 : 0));
+  for (const n of order) { const rs = sheetRows(wb.Sheets[n]); const i = findHdr(rs); if (i >= 0) { sn = n; rows = rs; h = i; break; } }
   if (h < 0) throw new Error('Không tìm thấy bảng kê (cột “Mã số thuế người bán”)');
-  // ghép tiêu đề nhiều tầng (dòng h..h+3) theo cột
-  const width = Math.max(...rows.slice(h, h + 4).map(r => (r || []).length));
-  const hd = []; for (let c = 0; c < width; c++) hd.push(rows.slice(h, h + 4).map(r => norm((r || [])[c])).filter(Boolean).join(' '));
+  const hd = hdrWindow(rows, h);
   const used = new Set();
   const col = (test) => { const i = hd.findIndex((x, j) => !used.has(j) && test(x)); if (i >= 0) used.add(i); return i; };
   const C = {};
@@ -906,13 +937,25 @@ function parseTk(wb, fname) {
   C.mau = col(x => x.includes('ky hieu mau'));
   C.kh = col(x => x.includes('ky hieu hoa don') || x === 'ky hieu');
   C.so = col(x => /(^| )so hoa don/.test(x));
-  C.ngay = col(x => x.includes('ngay'));
+  C.ngay = col(x => x.includes('ngay') && /lap|phat hanh|hoa don|thang, nam/.test(x));
+  if (C.ngay < 0) C.ngay = col(x => x.includes('ngay') && !x.includes('hach toan'));
   C.ten = col(x => x.includes('ten nguoi ban'));
   C.mh = col(x => x.includes('mat hang'));
   C.net = col(x => x.includes('doanh so') || x.includes('gia tri') && x.includes('chua'));
   C.ts = col(x => x.includes('thue suat'));
   C.tax = col(x => x.includes('thue gtgt') || x.includes('tien thue'));
+  C.ct = col(x => x.includes('chung tu hach toan'));
   ['mst', 'so', 'net', 'tax'].forEach(k => { if (C[k] < 0) throw new Error('Thiếu cột: ' + k); });
+  // không có cột "Mặt hàng" → lấy cột chữ dài nhất chưa dùng (diễn giải) làm nội dung
+  if (C.mh < 0) {
+    const len = {};
+    rows.slice(h + 4, h + 60).forEach(r => (r || []).forEach((v, j) => { if (!used.has(j) && typeof v === 'string' && v.length > 15) len[j] = (len[j] || 0) + v.length; }));
+    const best = Object.entries(len).sort((a, b) => b[1] - a[1])[0];
+    if (best) C.mh = Number(best[0]);
+  }
+  // tờ khai của đơn vị nào
+  const head = norm(rows.slice(0, h).map(r => (r || []).join(' ')).join(' ') + ' ' + sn + ' ' + fname);
+  const nguon_tk = /central plaza|office building/.test(head) ? 'CP' : 'SSP';
   // kỳ
   let ky = null;
   for (let i = 0; i < h; i++) { const m = /thang\s*(\d{1,2})\s*nam\s*(\d{4})/.exec(norm((rows[i] || []).join(' '))); if (m) { ky = m[2] + '-' + pad(m[1]); break; } }
@@ -926,6 +969,7 @@ function parseTk(wb, fname) {
     if (net === null && tax === null) continue;
     const mst = r[C.mst];
     if ((mst === null || mst === '') && !r[C.so] && !r[C.ten]) { skipped++; continue; }   // dòng tổng phụ
+    if (/^\d{1,2}$/.test(String(mst).trim()) && /^\d{1,2}$/.test(String(r[C.ten] ?? '').trim())) continue;   // dòng đánh số cột 1 2 3 …
     nLines++; sumNet += net || 0; sumTax += tax || 0;
     const { mau, kh } = splitKh(C.mau >= 0 ? r[C.mau] : '', C.kh >= 0 ? r[C.kh] : '');
     const so = r[C.so];
@@ -938,16 +982,16 @@ function parseTk(wb, fname) {
       groups.set(gid, g);
     }
     g.net += net || 0; g.tax += tax || 0; g.n++; g.rows.push(i + 1);
-    if (C.mh >= 0 && r[C.mh]) g.mh.add(String(r[C.mh]).trim());
+    if (C.mh >= 0 && r[C.mh]) g.mh.add((C.ct >= 0 && r[C.ct] ? '[' + String(r[C.ct]).trim() + '] ' : '') + String(r[C.mh]).trim());
     if (C.ts >= 0 && r[C.ts] !== null && r[C.ts] !== '') { const v = num(r[C.ts]); g.ts.add(v !== null && v <= 1 ? Math.round(v * 100) + '%' : String(r[C.ts])); }
   }
   const out = [];
   for (const [gid, g] of groups) out.push({
     gid, khoa: g.khoa, khmau: g.khmau, khhd: g.khhd, so_hd: g.so_hd, ngay: g.ngay, mst_nb: g.mst_nb, ten_nb: g.ten_nb,
     mat_hang: [...g.mh].join('; '), thue_suat: [...g.ts].join(', '), tien_chua_thue: Math.round(g.net), tien_thue: Math.round(g.tax),
-    so_dong: g.n, dong_excel: g.rows.join(','), file_ten: fname
+    so_dong: g.n, dong_excel: g.rows.join(','), file_ten: fname, nguon_tk
   });
-  return { ky, sheet: sn, rows: out, nLines, sumNet, sumTax };
+  return { ky, sheet: sn, rows: out, nLines, sumNet, sumTax, nguon_tk };
 }
 
 /* =====================================================================
@@ -1025,35 +1069,55 @@ async function markSlotEmpty(nguon, cat) {
 /* =====================================================================
    NẠP TỜ KHAI
    ===================================================================== */
-async function handleTkFile(file) {
-  const box = $('tkMsg'); box.innerHTML = '<div class="warnbox">Đang đọc…</div>';
+/* tình trạng tờ khai từng đơn vị của 1 kỳ (từ nhật ký file; dữ liệu cũ chỉ có tk_file → coi là Sofitel) */
+function tkStatus(ky) {
+  const k = S.kys.get(ky) || {}; const out = {};
+  (k.files || []).filter(f => f.kind === 'tk').forEach(f => out[f.nguon_tk] = f);
+  if (!out.SSP && k.tk_file && [...S.tk.values()].some(t => t.ky === ky && tkSrcOf(t) === 'SSP')) out.SSP = { file: k.tk_file, at: k.tk_at, by: k.tk_by };
+  return out;
+}
+async function handleTkFiles(files) {
+  const box = $('tkMsg'); box.innerHTML = '<div class="warnbox">Đang đọc ' + files.length + ' file…</div>';
+  const msgs = [];
+  for (const f of files) msgs.push(await importTkFile(f));
+  box.innerHTML = msgs.join('');
+}
+async function importTkFile(file) {
   try {
     const wb = await readWb(file);
     const p = parseTk(wb, file.name);
+    const src = p.nguon_tk;
     let ky = p.ky;
-    if (!ky) { const v = prompt('Không đọc được kỳ tính thuế trong file. Nhập kỳ (MM/YYYY):', kyLabel(S.ky)); if (!v) { box.innerHTML = ''; return; } const m = /(\d{1,2})\/(\d{4})/.exec(v); if (!m) throw new Error('Kỳ không hợp lệ'); ky = m[2] + '-' + pad(m[1]); }
+    if (!ky) { const v = prompt('Không đọc được kỳ tính thuế trong file “' + file.name + '”. Nhập kỳ (MM/YYYY):', kyLabel(S.ky)); if (!v) return ''; const m = /(\d{1,2})\/(\d{4})/.exec(v); if (!m) throw new Error('Kỳ không hợp lệ'); ky = m[2] + '-' + pad(m[1]); }
     const k = S.kys.get(ky);
     if (k && k.chot) throw new Error('Kỳ ' + kyLabel(ky) + ' đã chốt. Mở lại kỳ trước khi nạp tờ khai.');
-    const had = [...S.tk.values()].filter(t => t.ky === ky).length;
-    if (had && !confirm('Kỳ ' + kyLabel(ky) + ' đã có tờ khai (' + had + ' HĐ, file “' + ((k && k.tk_file) || '?') + '”).\nNạp file mới sẽ THAY THẾ toàn bộ tờ khai của kỳ này. Duyệt/ghi chú cũ theo khóa HĐ vẫn giữ. Tiếp tục?')) { box.innerHTML = ''; return; }
+    const old = [...S.tk.values()].filter(t => t.ky === ky && tkSrcOf(t) === src);
+    const prev = tkStatus(ky)[src];
+    if (old.length && !confirm('Kỳ ' + kyLabel(ky) + ' đã có tờ khai ' + TK_SRC[src] + ' (' + old.length + ' HĐ, file “' + ((prev && prev.file) || '?') + '”).\nNạp file mới sẽ THAY THẾ tờ khai ' + TK_SRC[src] + ' của kỳ này (tờ khai đơn vị kia giữ nguyên). Duyệt/ghi chú theo khóa HĐ vẫn giữ. Tiếp tục?')) return '';
     const rows = p.rows.map(r => {
-      const id = ky + '|' + (r.khoa || r.gid);
+      // id Sofitel giữ dạng cũ <kỳ>|<khóa> để không mất duyệt/ghi chú đã có; Central Plaza thêm |CP|
+      const id = ky + '|' + (src === 'SSP' ? '' : src + '|') + (r.khoa || r.gid);
       const o = { id, ky }; Object.assign(o, r); delete o.gid; o.updated_at = nowIso(); o.updated_by = me(); return o;
     });
-    // khóa trùng trong cùng file (cùng HĐ ở 2 nhóm dòng không liền nhau) đã được gộp theo khóa
-    const { error } = await S.sb.from(T.tk).delete().eq('ky', ky);
-    if (error) throw error;
+    // xoá tờ khai cũ của đúng đơn vị này (dòng cũ chưa có nguon_tk được tính là Sofitel)
+    let del = S.sb.from(T.tk).delete().eq('ky', ky);
+    del = src === 'SSP' ? del.or('nguon_tk.eq.SSP,nguon_tk.is.null') : del.eq('nguon_tk', src);
+    const { error } = await del;
+    if (error) throw /nguon_tk/.test(error.message) ? new Error('Chưa có cột nguon_tk trên Supabase. Chạy đoạn SQL bổ sung (xem hướng dẫn) rồi nạp lại.') : error;
     await upsertChunks(T.tk, rows);
-    for (const [id, t] of S.tk) if (t.ky === ky) S.tk.delete(id);
+    old.forEach(t => S.tk.delete(t.id));
     rows.forEach(r => S.tk.set(r.id, r));
-    await saveKy(ky, { tk_at: nowIso(), tk_by: me(), tk_file: file.name });
-    await logAct('nap_to_khai', { ky, file: file.name, hd: rows.length, dong: p.nLines, net: Math.round(p.sumNet), tax: Math.round(p.sumTax) });
+    const files = ((S.kys.get(ky) || {}).files || []).filter(f => !(f.kind === 'tk' && f.nguon_tk === src))
+      .concat([{ kind: 'tk', nguon_tk: src, at: nowIso(), by: me(), file: file.name, hd: rows.length, dong: p.nLines, net: Math.round(p.sumNet), tax: Math.round(p.sumTax) }]);
+    await saveKy(ky, { tk_at: nowIso(), tk_by: me(), tk_file: file.name, files });
+    await logAct('nap_to_khai', { ky, don_vi: src, file: file.name, hd: rows.length, dong: p.nLines, net: Math.round(p.sumNet), tax: Math.round(p.sumTax) });
     S.ky = ky; initKySelect(); recompute(); renderAll();
     const noKey = rows.filter(r => !r.khoa).length;
-    box.innerHTML = '<div class="okbox">✔ ' + esc(file.name) + ' (sheet “' + esc(p.sheet) + '”) — kỳ <b>' + kyLabel(ky) + '</b><br>' +
+    return '<div class="okbox">✔ <b>' + TK_SRC[src] + '</b> — ' + esc(file.name) + ' (sheet “' + esc(p.sheet) + '”) — kỳ <b>' + kyLabel(ky) + '</b><br>' +
       p.nLines.toLocaleString('vi-VN') + ' dòng → ' + rows.length.toLocaleString('vi-VN') + ' hóa đơn (đã gộp dòng nhiều thuế suất)' +
-      (noKey ? ' · ' + noKey + ' dòng không có số HĐ/MST' : '') + '<br>Tổng chưa thuế <b>' + fmt(p.sumNet) + '</b> · Thuế <b>' + fmt(p.sumTax) + '</b> (đối chiếu với dòng Total trong file)</div>';
-  } catch (e) { box.innerHTML = '<div class="errbox">✖ ' + esc(e.message) + '</div>'; }
+      (noKey ? ' · ' + noKey + ' dòng không có số HĐ/MST' : '') + (src === 'CP' ? ' · file không có ký hiệu HĐ → ghép theo MST + số HĐ' : '') +
+      '<br>Tổng chưa thuế <b>' + fmt(p.sumNet) + '</b> · Thuế <b>' + fmt(p.sumTax) + '</b> (đối chiếu với dòng tổng trong file)</div>';
+  } catch (e) { return '<div class="errbox">✖ ' + esc(file.name) + ': ' + esc(e.message) + '</div>'; }
 }
 
 /* =====================================================================
@@ -1293,7 +1357,7 @@ function renderTongQuan() {
   const card = (cls, t, v, s, go) => '<div class="kpi ' + cls + (go ? ' click" data-go="' + go : '') + '"><div class="t">' + t + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></div>';
   $('kpiGrid').innerHTML =
     card('', 'HĐ cổng thuế lập trong kỳ', own.length.toLocaleString('vi-VN'), fmtBn(sum(own, pNet)) + ' chưa thuế', 'doichieu:p:') +
-    card('b', 'HĐ trên tờ khai', tkRows.length.toLocaleString('vi-VN'), fmtBn(tkRows.reduce((a, t) => a + (+t.tien_chua_thue || 0), 0)) + ' · thuế ' + fmtBn(tkRows.reduce((a, t) => a + (+t.tien_thue || 0), 0)), 'goc') +
+    card('b', 'HĐ trên tờ khai', tkRows.length.toLocaleString('vi-VN'), fmtBn(tkRows.reduce((a, t) => a + (+t.tien_chua_thue || 0), 0)) + ' · thuế ' + fmtBn(tkRows.reduce((a, t) => a + (+t.tien_thue || 0), 0)), 'goc') .replace('</div></div>', '<br>' + Object.keys(TK_SRC).map(s => TK_SRC[s] + ': ' + tkRows.filter(t => tkSrcOf(t) === s).length.toLocaleString('vi-VN')).join(' · ') + '</div></div>') +
     card('g', 'Khớp', st.khop.length.toLocaleString('vi-VN'), (rows.length ? (st.khop.length / rows.length * 100).toFixed(1) : 0) + '% số dòng của kỳ', 'doichieu:all:khop') +
     card('r', 'Lệch tiền', st.lech.length.toLocaleString('vi-VN'), 'chênh ' + fmtBn(sum(st.lech, r => r.dNet ?? r.dTot)) + ' chưa thuế', 'doichieu:all:lech') +
     card('a', 'Chưa có trên tờ khai', st.chua_tk.length.toLocaleString('vi-VN'), fmtBn(sum(st.chua_tk, pNet)) + ' chưa thuế', 'doichieu:p:chua_tk') +
@@ -1323,7 +1387,7 @@ function renderTongQuan() {
   const slotsDone = lan => slotStatus(ky, lan).filter(s => s.ok).length;
   $('todoList').innerHTML =
     step(!!k.lan1_at, !k.lan1_at && today > nx, '1. Tải cổng thuế lần 1 — hạn ' + nx.toLocaleDateString('vi-VN'), k.lan1_at ? slotsDone(1) + '/6 tổ hợp · ' + fmtTs(k.lan1_at) + ' · ' + esc(k.lan1_by) : 'Chưa tải') +
-    step(!!k.tk_at, false, '2. Nạp tờ khai nội bộ', k.tk_at ? esc(k.tk_file) + ' · ' + fmtTs(k.tk_at) + ' · ' + esc(k.tk_by) : 'Chưa nạp') +
+    (() => { const ts = tkStatus(ky); const n = Object.keys(ts).length; return step(n === 2, false, '2. Nạp 2 tờ khai nội bộ (' + n + '/2)', Object.keys(TK_SRC).map(s => ts[s] ? '✔ ' + TK_SRC[s] + ': ' + esc(ts[s].file) + ' · ' + fmtTs(ts[s].at) + ' · ' + esc(ts[s].by) : '○ ' + TK_SRC[s] + ': chưa nạp').join('<br>')); })() +
     step(!!k.snap_lan1, false, '3. Lưu kết quả lần 1', k.snap_lan1 ? fmtTs(k.snap_lan1.at) + ' · ' + esc(k.snap_lan1.by) : 'Chưa lưu (tự lưu khi nạp lần 2)') +
     step(!!k.lan2_at, !k.lan2_at && today > nxEnd, '4. Tải cổng thuế lần 2 — hạn ' + nxEnd.toLocaleDateString('vi-VN'), k.lan2_at ? slotsDone(2) + '/6 tổ hợp · ' + fmtTs(k.lan2_at) + ' · ' + esc(k.lan2_by) : 'Chưa tải') +
     step(done === notOk.length && notOk.length > 0, false, '5. Xử lý dòng không khớp', done + '/' + notOk.length + ' đã duyệt / loại trừ') +
@@ -1347,6 +1411,161 @@ function renderTongQuan() {
 }
 
 /* ---------- ĐỐI CHIẾU ---------- */
+/* ---------- LỌC & SẮP XẾP THEO ĐẦU CỘT (dùng chung các bảng) ----------
+   cột: { k, l: nhãn, v: giá trị hiển thị/lọc, s: giá trị sắp xếp (tùy chọn), num: cột số, opts: lọc bằng danh sách, nof: không lọc }
+   ô lọc chữ: gõ nhiều từ = phải chứa đủ; "!từ" = không chứa; "=" = ô trống
+   ô lọc số: >0  <0  >=1000  =0  <>0  100..500  hoặc gõ chữ số để tìm */
+S.cf = {};
+const EMPTY_OPT = '∅';
+function cfState(key) { return S.cf[key] || (S.cf[key] = { f: {}, sort: null }); }
+const isBlank = v => v === null || v === undefined || v === '';
+function numTest(v, q) {
+  q = q.replace(/\s/g, '');
+  if (q === '=') return isBlank(v);
+  let m = /^(-?[\d.,]+)\.\.(-?[\d.,]+)$/.exec(q);
+  if (m) return !isBlank(v) && Number(v) >= num(m[1]) && Number(v) <= num(m[2]);
+  m = /^(>=|<=|<>|!=|>|<|=)(-?[\d.,]+)$/.exec(q);
+  if (m) {
+    const x = num(m[2]);
+    if (isBlank(v)) return m[1] === '<>' || m[1] === '!=';
+    const n = Number(v);
+    return { '>=': n >= x, '<=': n <= x, '>': n > x, '<': n < x, '=': n === x, '<>': n !== x, '!=': n !== x }[m[1]];
+  }
+  const d = q.replace(/\D/g, '');
+  return d ? !isBlank(v) && String(Math.round(Math.abs(Number(v)))).includes(d) : true;
+}
+function cellMatch(c, r, q) {
+  const v = c.v(r);
+  if (c.opts) return q === EMPTY_OPT ? isBlank(v) : String(v ?? '') === q;
+  if (c.num) return numTest(v, q);
+  const s = norm(v);
+  if (q.trim() === '=') return !s;
+  return norm(q).split(' ').filter(Boolean).every(t => t[0] === '!' ? !s.includes(t.slice(1)) : s.includes(t));
+}
+function applyCols(key, rows, cols) {
+  const st = cfState(key);
+  const act = cols.filter(c => !isBlank(st.f[c.k]));
+  let out = act.length ? rows.filter(r => act.every(c => cellMatch(c, r, st.f[c.k]))) : rows.slice();
+  const c = st.sort && cols.find(x => x.k === st.sort.k);
+  if (c) {
+    const g = c.s || c.v, d = st.sort.d;
+    out = out.map((r, i) => [r, g(r), i]).sort((a, b) => {
+      const ea = isBlank(a[1]), eb = isBlank(b[1]);
+      if (ea || eb) return ea && eb ? a[2] - b[2] : ea ? 1 : -1;     // ô trống luôn nằm cuối
+      const x = typeof a[1] === 'number' && typeof b[1] === 'number' ? a[1] - b[1] : String(a[1]).localeCompare(String(b[1]), 'vi', { numeric: true, sensitivity: 'base' });
+      return x * d || a[2] - b[2];
+    }).map(a => a[0]);
+  }
+  return out;
+}
+function headHtml(key, cols, base, lead) {
+  const st = cfState(key);
+  const top = cols.map(c => {
+    const on = st.sort && st.sort.k === c.k;
+    return '<th class="srt' + (c.num ? ' n' : '') + (on ? ' on' : '') + '" data-srt="' + c.k + '" title="Bấm để sắp xếp tăng / giảm / bỏ">' + c.l + '<span class="arr">' + (on ? (st.sort.d > 0 ? '▲' : '▼') : '⇅') + '</span></th>';
+  }).join('');
+  const flt = cols.map(c => {
+    const q = st.f[c.k] || '';
+    if (c.nof) return '<th></th>';
+    if (c.opts) {
+      const vals = [...new Set(base.map(r => String(c.v(r) ?? '')))].sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }));
+      return '<th><select data-cf="' + c.k + '" class="cfin' + (q ? ' on' : '') + '"><option value="">(tất cả)</option>' +
+        vals.map(v => { const ov = v === '' ? EMPTY_OPT : v; return '<option value="' + esc(ov) + '"' + (ov === q ? ' selected' : '') + '>' + esc(v || '(trống)') + '</option>'; }).join('') + '</select></th>';
+    }
+    return '<th><input data-cf="' + c.k + '" class="cfin' + (q ? ' on' : '') + '" value="' + esc(q) + '" placeholder="' + (c.num ? '>0 · <0 · 1..9' : 'lọc…') + '" title="' + (c.num ? 'Ví dụ: >0   <0   <>0   =0   100..500   = (trống)' : 'Nhiều từ = chứa đủ · !từ = không chứa · = ô trống') + '"></th>';
+  }).join('');
+  return '<thead><tr>' + (lead !== undefined ? '<th rowspan="2" class="lead">' + lead + '</th>' : '') + top + '</tr><tr class="frow">' + flt + '</tr></thead>';
+}
+function wireHead(tbl, key, pageKey, rerender) {
+  const st = cfState(key);
+  const h = tbl.querySelector('thead tr').offsetHeight;
+  tbl.querySelectorAll('thead tr.frow th').forEach(th => th.style.top = h + 'px');
+  tbl.querySelectorAll('th[data-srt]').forEach(th => th.onclick = () => {
+    const k = th.dataset.srt;
+    st.sort = !st.sort || st.sort.k !== k ? { k, d: 1 } : st.sort.d > 0 ? { k, d: -1 } : null;
+    rerender();
+  });
+  tbl.querySelectorAll('[data-cf]').forEach(el => {
+    const k = el.dataset.cf;
+    const apply = () => {
+      st.f[k] = el.value.trim(); S.page[pageKey] = 0; rerender();
+      const n = tbl.querySelector('input[data-cf="' + k + '"]');
+      if (n && el.tagName === 'INPUT') { n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
+    };
+    el.onclick = e => e.stopPropagation();
+    if (el.tagName === 'SELECT') el.onchange = apply;
+    else { let t = null; el.oninput = () => { clearTimeout(t); t = setTimeout(apply, 350); }; el.onkeydown = e => { if (e.key === 'Enter') { clearTimeout(t); apply(); } if (e.key === 'Escape') { clearTimeout(t); el.value = ''; apply(); } }; }
+  });
+}
+function clearCols(key) { S.cf[key] = { f: {}, sort: null }; }
+const tagText = r => rowTags(r).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+const X = r => r.p || r.t;
+const RS_COLS = [
+  { k: 'st', l: 'Trạng thái', opts: 1, v: r => ST[r.status], s: r => ST_ORDER[r.status] },
+  { k: 'src', l: 'Nguồn · KQKT', opts: 1, v: r => r.p ? SRC[r.p.nguon] + ' · ' + (KQ[kqCat(r.p.kqkt)] || r.p.kqkt) : 'Tờ khai' },
+  { k: 'dv', l: 'Tờ khai', opts: 1, v: r => r.t ? TK_SRC[tkSrcOf(r.t)] : '' },
+  { k: 'mst', l: 'MST', v: r => X(r).mst_nb },
+  { k: 'ten', l: 'Người bán', v: r => X(r).ten_nb + (r.t && r.t.mat_hang ? ' · ' + r.t.mat_hang : ''), s: r => X(r).ten_nb },
+  { k: 'kh', l: 'Ký hiệu', v: r => (X(r).khmau || '') + X(r).khhd },
+  { k: 'so', l: 'Số HĐ', v: r => X(r).so_hd },
+  { k: 'ngay', l: 'Ngày lập', v: r => fmtDate(X(r).ngay), s: r => X(r).ngay },
+  { k: 'pn', l: 'Cổng: chưa thuế', num: 1, v: r => r.p ? r.p.tien_chua_thue : null },
+  { k: 'px', l: 'Cổng: thuế', num: 1, v: r => r.p ? r.p.tien_thue : null },
+  { k: 'pt', l: 'Cổng: thanh toán', num: 1, v: r => r.p ? r.p.tong_tt : null },
+  { k: 'tn', l: 'TK: chưa thuế', num: 1, v: r => r.t ? Number(r.t.tien_chua_thue) : null },
+  { k: 'tx', l: 'TK: thuế', num: 1, v: r => r.t ? Number(r.t.tien_thue) : null },
+  { k: 'dl', l: 'Chênh lệch', num: 1, v: r => r.status === 'khop' || !r.p || !r.t ? null : r.mode === 'tong' ? r.dTot : (r.dNet || 0) + (r.dTax || 0) },
+  { k: 'tag', l: 'Ghi nhận', v: tagText },
+  { k: 'act', l: 'Duyệt', opts: 1, v: r => ACT[actOf(r.id)] || '' },
+  { k: 'note', l: 'Ghi chú', v: r => (rvOf(r.id) || {}).ghi_chu || '' }
+];
+const GD_COLS = [
+  { k: 'ky', l: 'Kỳ lập HĐ', opts: 1, v: r => kyLabel(r.p.ky), s: r => r.p.ky },
+  { k: 'age', l: 'Tuổi (tháng)', num: 1, v: r => kyDiff(r.p.ky, S.ky) },
+  { k: 'src', l: 'Nguồn', opts: 1, v: r => SRC[r.p.nguon] },
+  { k: 'mst', l: 'MST', v: r => r.p.mst_nb },
+  { k: 'ten', l: 'Người bán', v: r => r.p.ten_nb },
+  { k: 'kh', l: 'Ký hiệu', v: r => (r.p.khmau || '') + r.p.khhd },
+  { k: 'so', l: 'Số HĐ', v: r => r.p.so_hd },
+  { k: 'ngay', l: 'Ngày lập', v: r => fmtDate(r.p.ngay), s: r => r.p.ngay },
+  { k: 'pn', l: 'Chưa thuế', num: 1, v: r => r.p.tien_chua_thue },
+  { k: 'px', l: 'Thuế', num: 1, v: r => r.p.tien_thue },
+  { k: 'pt', l: 'Thanh toán', num: 1, v: r => r.p.tong_tt },
+  { k: 'tag', l: 'Ghi nhận', v: tagText },
+  { k: 'act', l: 'Duyệt', opts: 1, v: r => ACT[actOf(r.id)] || '' },
+  { k: 'note', l: 'Ghi chú', v: r => (rvOf(r.id) || {}).ghi_chu || '' }
+];
+const GOC_P_COLS = [
+  { k: 'src', l: 'Nguồn', opts: 1, v: p => SRC[p.nguon] },
+  { k: 'kq', l: 'Kết quả kiểm tra', opts: 1, v: p => p.kqkt },
+  { k: 'mau', l: 'Mẫu', opts: 1, v: p => p.khmau },
+  { k: 'kh', l: 'Ký hiệu', v: p => p.khhd },
+  { k: 'so', l: 'Số HĐ', v: p => p.so_hd },
+  { k: 'ngay', l: 'Ngày lập', v: p => fmtDate(p.ngay), s: p => p.ngay },
+  { k: 'mst', l: 'MST', v: p => p.mst_nb },
+  { k: 'ten', l: 'Người bán', v: p => p.ten_nb },
+  { k: 'pn', l: 'Chưa thuế', num: 1, v: p => p.tien_chua_thue },
+  { k: 'px', l: 'Thuế', num: 1, v: p => p.tien_thue },
+  { k: 'ck', l: 'Chiết khấu', num: 1, v: p => p.chiet_khau },
+  { k: 'pt', l: 'Thanh toán', num: 1, v: p => p.tong_tt },
+  { k: 'tt', l: 'Trạng thái HĐ', opts: 1, v: p => p.trang_thai },
+  { k: 'lan', l: 'Lần', opts: 1, v: p => p.lan_dau === p.lan_cuoi ? String(p.lan_dau) : p.lan_dau + '→' + p.lan_cuoi },
+  { k: 'file', l: 'File', opts: 1, v: p => p.file_ten }
+];
+const GOC_T_COLS = [
+  { k: 'dv', l: 'Tờ khai', opts: 1, v: t => TK_SRC[tkSrcOf(t)] },
+  { k: 'kh', l: 'Ký hiệu', v: t => (t.khmau || '') + t.khhd },
+  { k: 'so', l: 'Số HĐ', v: t => t.so_hd },
+  { k: 'ngay', l: 'Ngày', v: t => fmtDate(t.ngay), s: t => t.ngay },
+  { k: 'mst', l: 'MST', v: t => t.mst_nb },
+  { k: 'ten', l: 'Người bán', v: t => t.ten_nb },
+  { k: 'mh', l: 'Mặt hàng', opts: 1, v: t => t.mat_hang },
+  { k: 'ts', l: 'Thuế suất', opts: 1, v: t => t.thue_suat },
+  { k: 'tn', l: 'Chưa thuế', num: 1, v: t => Number(t.tien_chua_thue) },
+  { k: 'tx', l: 'Thuế', num: 1, v: t => Number(t.tien_thue) },
+  { k: 'dong', l: 'Dòng Excel', v: t => t.dong_excel, s: t => Number(String(t.dong_excel).split(',')[0]) }
+];
+
 function rowText(r) { const x = r.p || r.t; const rv = rvOf(r.id); return norm([x.mst_nb, x.ten_nb, x.so_hd, x.khhd, r.t && r.t.mat_hang, rv && rv.ghi_chu].join(' ')); }
 function statusPill(r) { return '<span class="pill st-' + r.status + '">' + ST[r.status] + '</span>'; }
 function rowTags(r) {
@@ -1357,6 +1576,7 @@ function rowTags(r) {
   if (r.how === 'mst_so') s += '<span class="tag red" title="Ghép theo MST + số HĐ vì ký hiệu khác nhau">Khác ký hiệu</span>';
   if (r.mode === 'tong') s += '<span class="tag" title="Cổng thuế không có tiền thuế → so tổng thanh toán">So tổng TT</span>';
   if (r.p) { const tt = TT_TAG[ttKind(r.p.trang_thai)]; if (tt) s += '<span class="tag ' + tt[1] + '">' + tt[0] + '</span>'; if (r.p.lan_dau === 2) s += '<span class="tag blue">Mới ở lần 2</span>'; }
+  if (r.t && tkSrcOf(r.t) === 'CP') s += '<span class="tag blue" title="Tờ khai Central Plaza Office Building">TK Central Plaza</span>';
   if (r.t && r.t.so_dong > 1) s += '<span class="tag" title="Dòng Excel: ' + esc(r.t.dong_excel) + '">' + r.t.so_dong + ' dòng TK</span>';
   return s;
 }
@@ -1399,17 +1619,18 @@ function renderDoiChieu() {
   $('lockBox').innerHTML = locked ? '<div class="okbox">🔒 Kỳ ' + kyLabel(S.ky) + ' đã chốt lúc ' + fmtTs(k.chot_at) + ' bởi ' + esc(k.chot_by) + '. Không sửa được duyệt/nạp dữ liệu — bấm “Mở lại kỳ” nếu cần.</div>' : '';
   $('btnChot').textContent = locked ? '🔓 Mở lại kỳ' : '🔒 Chốt kỳ';
   $('btnSnap1').disabled = locked;
-  const rows = filteredRows();
+  const base = filteredRows();
+  const rows = applyCols('rs', base, RS_COLS);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE)); if (S.page.rs >= pages) S.page.rs = 0;
   const view = rows.slice(S.page.rs * PAGE, (S.page.rs + 1) * PAGE);
   const sum = (f) => rows.reduce((a, r) => a + (Number(f(r)) || 0), 0);
-  $('rsTable').innerHTML = '<thead><tr><th><input type="checkbox" id="ckAll"' + (locked ? ' disabled' : '') + '></th><th>Trạng thái</th><th>Nguồn · KQKT</th><th>MST</th><th>Người bán</th><th>Ký hiệu</th><th>Số HĐ</th><th>Ngày lập</th>' +
-    '<th class="n">Cổng: chưa thuế</th><th class="n">Cổng: thuế</th><th class="n">Cổng: thanh toán</th><th class="n">TK: chưa thuế</th><th class="n">TK: thuế</th><th class="n">Chênh lệch</th><th>Ghi nhận</th><th>Duyệt</th><th>Ghi chú</th></tr></thead><tbody>' +
+  $('rsTable').innerHTML = headHtml('rs', RS_COLS, base, '<input type="checkbox" id="ckAll"' + (locked ? ' disabled' : '') + '>') + '<tbody>' +
     view.map(r => {
       const x = r.p || r.t; const rv = rvOf(r.id);
       return '<tr data-id="' + esc(r.id) + '"' + (S.sel.has(r.id) ? ' class="sel"' : '') + '><td><input type="checkbox" data-ck="' + esc(r.id) + '"' + (S.sel.has(r.id) ? ' checked' : '') + (locked ? ' disabled' : '') + '></td>' +
         '<td class="nw">' + statusPill(r) + '</td>' +
         '<td class="nw small">' + (r.p ? SRC[r.p.nguon] + '<br><span class="muted">' + esc(KQ[kqCat(r.p.kqkt)] || r.p.kqkt) + '</span>' : '<span class="muted">Tờ khai</span>') + '</td>' +
+        '<td class="nw small">' + (r.t ? (tkSrcOf(r.t) === 'CP' ? '<span class="tag blue">Central Plaza</span>' : 'Sofitel') : '') + '</td>' +
         '<td class="nw">' + esc(x.mst_nb) + '</td><td class="wrap">' + esc(x.ten_nb) + (r.t && r.t.mat_hang ? '<div class="small muted">' + esc(r.t.mat_hang) + '</div>' : '') + '</td>' +
         '<td class="nw">' + esc((x.khmau || '') + x.khhd) + '</td><td class="nw">' + esc(x.so_hd) + '</td><td class="nw">' + fmtDate(x.ngay) + '</td>' +
         '<td class="n nw">' + (r.p ? fmtN(r.p.tien_chua_thue) : '') + '</td><td class="n nw">' + (r.p ? fmtN(r.p.tien_thue) : '') + '</td><td class="n nw">' + (r.p ? fmtN(r.p.tong_tt) : '') + '</td>' +
@@ -1417,9 +1638,10 @@ function renderDoiChieu() {
         '<td class="n nw">' + diffCell(r) + '</td><td>' + rowTags(r) + '</td><td>' + actSelect(r.id, locked) + '</td>' +
         '<td class="notecell" data-note="' + esc(r.id) + '">' + (rv && rv.ghi_chu ? esc(rv.ghi_chu).replace(/\n/g, '<br>') : '<span class="muted">+ ghi chú</span>') + '</td></tr>';
     }).join('') + '</tbody>' +
-    '<tfoot><tr><td></td><td colspan="7">' + rows.length.toLocaleString('vi-VN') + ' dòng (lọc)</td><td class="n">' + fmtN(sum(r => r.p && r.p.tien_chua_thue)) + '</td><td class="n">' + fmtN(sum(r => r.p && r.p.tien_thue)) + '</td><td class="n">' + fmtN(sum(r => r.p && r.p.tong_tt)) + '</td><td class="n">' + fmtN(sum(r => r.t && r.t.tien_chua_thue)) + '</td><td class="n">' + fmtN(sum(r => r.t && r.t.tien_thue)) + '</td><td colspan="4"></td></tr></tfoot>';
+    '<tfoot><tr><td></td><td colspan="8">' + rows.length.toLocaleString('vi-VN') + ' dòng (lọc)</td><td class="n">' + fmtN(sum(r => r.p && r.p.tien_chua_thue)) + '</td><td class="n">' + fmtN(sum(r => r.p && r.p.tien_thue)) + '</td><td class="n">' + fmtN(sum(r => r.p && r.p.tong_tt)) + '</td><td class="n">' + fmtN(sum(r => r.t && r.t.tien_chua_thue)) + '</td><td class="n">' + fmtN(sum(r => r.t && r.t.tien_thue)) + '</td><td colspan="4"></td></tr></tfoot>';
   pager('rsPager', 'rs', pages, rows.length, renderDoiChieu);
   const tb = $('rsTable');
+  wireHead(tb, 'rs', 'rs', renderDoiChieu);
   tb.querySelectorAll('[data-ck]').forEach(c => c.onclick = e => { e.stopPropagation(); c.checked ? S.sel.add(c.dataset.ck) : S.sel.delete(c.dataset.ck); c.closest('tr').classList.toggle('sel', c.checked); updBulk(); });
   const ca = $('ckAll'); if (ca) ca.onclick = () => { view.forEach(r => ca.checked ? S.sel.add(r.id) : S.sel.delete(r.id)); renderDoiChieu(); };
   tb.querySelectorAll('[data-act]').forEach(s => { s.onclick = e => e.stopPropagation(); s.onchange = async () => { try { await setReview([s.dataset.act], s.value || null); s.className = 'act ' + s.value; } catch (e) { toast(e.message, true); } }; });
@@ -1444,7 +1666,7 @@ $('bulkNote').onclick = async () => { if (!S.sel.size) return; const v = prompt(
 $('bulkClear').onclick = () => { S.sel.clear(); renderDoiChieu(); };
 ['fScope', 'fStatus', 'fAction', 'fSrc', 'fKqkt', 'fTT'].forEach(id => $(id).onchange = () => { S.page.rs = 0; renderDoiChieu(); });
 let qT = null; $('fQ').oninput = () => { clearTimeout(qT); qT = setTimeout(() => { S.page.rs = 0; renderDoiChieu(); }, 250); };
-$('btnClearF').onclick = () => { ['fScope'].forEach(id => $(id).value = 'all'); ['fStatus', 'fAction', 'fSrc', 'fKqkt', 'fTT', 'fQ'].forEach(id => $(id).value = ''); S.page.rs = 0; renderDoiChieu(); };
+$('btnClearF').onclick = () => { ['fScope'].forEach(id => $(id).value = 'all'); ['fStatus', 'fAction', 'fSrc', 'fKqkt', 'fTT', 'fQ'].forEach(id => $(id).value = ''); clearCols('rs'); S.page.rs = 0; renderDoiChieu(); };
 
 /* chi tiết 1 dòng */
 function findRow(id) { return S.calc.res.get(id) || S.calc.tkRes.get(id) || (id.startsWith('T:') && S.tk.get(id.slice(2)) ? { id, p: null, t: S.tk.get(id.slice(2)), status: 'khop' } : null); }
@@ -1483,7 +1705,8 @@ function openRow(id) {
 }
 
 /* ---------- GỐI ĐẦU ---------- */
-function goiDauRows() {
+function goiDauRows() { return applyCols('gd', goiDauBase(), GD_COLS); }
+function goiDauBase() {
   const incl = $('gIncl').value === 'all', a = $('gAct').value, q = norm($('gQ').value);
   return carryForKy(S.ky, incl).filter(r => {
     const x = actOf(r.id);
@@ -1495,29 +1718,33 @@ function goiDauRows() {
 }
 function kyDiff(a, b) { const [y1, m1] = a.split('-').map(Number), [y2, m2] = b.split('-').map(Number); return (y2 - y1) * 12 + (m2 - m1); }
 function renderGoiDau() {
-  const rows = goiDauRows(); const locked = kyLocked(S.ky);
+  const base = goiDauBase(); const rows = applyCols('gd', base, GD_COLS); const locked = kyLocked(S.ky);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE)); if (S.page.gd >= pages) S.page.gd = 0;
   const view = rows.slice(S.page.gd * PAGE, (S.page.gd + 1) * PAGE);
-  let lastKy = '';
+  let lastKy = ''; const grouped = !cfState('gd').sort;   // dòng nhóm theo kỳ chỉ hiện khi đang ở thứ tự mặc định
   const sumBy = {}; rows.forEach(r => { const s = sumBy[r.p.ky] || (sumBy[r.p.ky] = { n: 0, v: 0 }); s.n++; s.v += Number(r.p.tien_chua_thue ?? r.p.tong_tt) || 0; });
-  $('gdTable').innerHTML = '<thead><tr><th>Kỳ lập HĐ</th><th>Tuổi</th><th>Nguồn</th><th>MST</th><th>Người bán</th><th>Ký hiệu</th><th>Số HĐ</th><th>Ngày lập</th><th class="n">Chưa thuế</th><th class="n">Thuế</th><th class="n">Thanh toán</th><th>Ghi nhận</th><th>Duyệt</th><th>Ghi chú</th></tr></thead><tbody>' +
+  const tot = f => rows.reduce((a, r) => a + (Number(r.p[f]) || 0), 0);
+  $('gdTable').innerHTML = headHtml('gd', GD_COLS, base) + '<tbody>' +
     view.map(r => {
       const p = r.p; const rv = rvOf(r.id); let grp = '';
-      if (p.ky !== lastKy) { lastKy = p.ky; grp = '<tr><td colspan="14" style="background:#f5f7fb;font-weight:700;color:var(--navy)">Kỳ ' + kyLabel(p.ky) + ' — ' + sumBy[p.ky].n + ' HĐ · ' + fmt(sumBy[p.ky].v) + '</td></tr>'; }
+      if (grouped && p.ky !== lastKy) { lastKy = p.ky; grp = '<tr><td colspan="14" style="background:#f5f7fb;font-weight:700;color:var(--navy)">Kỳ ' + kyLabel(p.ky) + ' — ' + sumBy[p.ky].n + ' HĐ · ' + fmt(sumBy[p.ky].v) + '</td></tr>'; }
       const age = kyDiff(p.ky, S.ky);
       return grp + '<tr data-id="' + esc(r.id) + '"><td class="nw">' + kyLabel(p.ky) + '</td><td class="nw">' + (age > 0 ? '<span class="tag ' + (age >= 3 ? 'red' : 'warn') + '">' + age + ' tháng</span>' : '<span class="tag">kỳ này</span>') + '</td><td class="small">' + SRC[p.nguon] + '</td>' +
         '<td class="nw">' + esc(p.mst_nb) + '</td><td class="wrap">' + esc(p.ten_nb) + '</td><td class="nw">' + esc(p.khmau + p.khhd) + '</td><td class="nw">' + esc(p.so_hd) + '</td><td class="nw">' + fmtDate(p.ngay) + '</td>' +
         '<td class="n nw">' + fmtN(p.tien_chua_thue) + '</td><td class="n nw">' + fmtN(p.tien_thue) + '</td><td class="n nw">' + fmtN(p.tong_tt) + '</td><td>' + rowTags(r) + '</td><td>' + actSelect(r.id, locked) + '</td>' +
         '<td class="notecell" data-note="' + esc(r.id) + '">' + (rv && rv.ghi_chu ? esc(rv.ghi_chu) : '<span class="muted">+ ghi chú</span>') + '</td></tr>';
-    }).join('') + '</tbody>';
+    }).join('') + '</tbody>' +
+    '<tfoot><tr><td colspan="8">' + rows.length.toLocaleString('vi-VN') + ' HĐ (lọc)</td><td class="n">' + fmtN(tot('tien_chua_thue')) + '</td><td class="n">' + fmtN(tot('tien_thue')) + '</td><td class="n">' + fmtN(tot('tong_tt')) + '</td><td colspan="3"></td></tr></tfoot>';
   pager('gdPager', 'gd', pages, rows.length, renderGoiDau);
   const tb = $('gdTable');
+  wireHead(tb, 'gd', 'gd', renderGoiDau);
   tb.querySelectorAll('[data-act]').forEach(s => { s.onclick = e => e.stopPropagation(); s.onchange = async () => { try { await setReview([s.dataset.act], s.value || null); renderGoiDau(); } catch (e) { toast(e.message, true); } }; });
   tb.querySelectorAll('[data-note]').forEach(c => c.onclick = e => { e.stopPropagation(); if (locked) return; const cur = (rvOf(c.dataset.note) || {}).ghi_chu || ''; const v = prompt('Ghi chú:', cur); if (v === null) return; setReview([c.dataset.note], undefined, v.trim(), 'set').then(renderGoiDau, er => toast(er.message, true)); });
   tb.querySelectorAll('tbody tr[data-id]').forEach(tr => tr.onclick = () => openRow(tr.dataset.id));
 }
 ['gIncl', 'gAct'].forEach(id => $(id).onchange = () => { S.page.gd = 0; renderGoiDau(); });
 $('gQ').oninput = () => { clearTimeout(qT); qT = setTimeout(() => { S.page.gd = 0; renderGoiDau(); }, 250); };
+$('gClear').onclick = () => { $('gIncl').value = 'prev'; $('gAct').value = 'open'; $('gQ').value = ''; clearCols('gd'); S.page.gd = 0; renderGoiDau(); };
 
 /* ---------- LẦN 1 vs HIỆN TẠI ---------- */
 async function renderLan12() {
@@ -1563,6 +1790,10 @@ function renderNap() {
       (s.ok ? (s.empty ? 'Không có HĐ' : s.cnt.toLocaleString('vi-VN') + ' HĐ') + ' · ' + s.files.map(f => esc(f.file)).join(', ') : 'Chưa có file · <a href="#" data-empty="' + s.n + '|' + s.c + '">Không có HĐ</a>') + '</div></div>').join('');
   $('slotBox').querySelectorAll('[data-empty]').forEach(a => a.onclick = e => { e.preventDefault(); const [n, c] = a.dataset.empty.split('|'); markSlotEmpty(n, c).catch(er => toast(er.message, true)); });
   $('bmlLink').href = bookmarkletSrc(location.href.split('#')[0]);
+  const ts = tkStatus(S.ky);
+  $('tkSlots').innerHTML = Object.keys(TK_SRC).map(s => { const f = ts[s]; const n = [...S.tk.values()].filter(t => t.ky === S.ky && tkSrcOf(t) === s).length;
+    return '<div class="slot ' + (f ? 'ok' : '') + '"><div class="h">' + (f ? '✔ ' : '○ ') + 'Tờ khai ' + TK_SRC[s] + ' · kỳ ' + kyLabel(S.ky) + '</div><div class="c">' +
+      (f ? n.toLocaleString('vi-VN') + ' HĐ · ' + esc(f.file) + '<br>' + fmtTs(f.at) + ' · ' + esc(f.by || '') : 'Chưa nạp') + '</div></div>'; }).join('');
 }
 document.querySelectorAll('#segLan button').forEach(b => b.onclick = () => { S.lan = Number(b.dataset.lan); renderNap(); });
 function wireDrop(dz, fi, handler, multi) {
@@ -1573,7 +1804,7 @@ function wireDrop(dz, fi, handler, multi) {
   dz.ondrop = e => { e.preventDefault(); dz.classList.remove('hot'); const fs = [...e.dataTransfer.files].filter(f => /\.xlsx?$/i.test(f.name)); if (fs.length) handler(multi ? fs : fs[0]); };
 }
 wireDrop($('dzPortal'), $('fiPortal'), handlePortalFiles, true);
-wireDrop($('dzTk'), $('fiTk'), handleTkFile, false);
+wireDrop($('dzTk'), $('fiTk'), handleTkFiles, true);
 $('bmlLink').onclick = e => { e.preventDefault(); toast('Hãy KÉO nút này lên thanh dấu trang, rồi bấm nó khi đang ở trang cổng thuế.'); };
 $('btnIcs').onclick = () => {
   const d = new Date(); const y = d.getFullYear(), m = pad(d.getMonth() + 1);
@@ -1584,7 +1815,10 @@ $('btnIcs').onclick = () => {
 };
 
 /* ---------- DỮ LIỆU GỐC ---------- */
-function gocRows() {
+const gocKey = () => S.goc === 'p' ? 'goc_p' : 'goc_t';
+const gocCols = () => S.goc === 'p' ? GOC_P_COLS : GOC_T_COLS;
+function gocRows() { return applyCols(gocKey(), gocBase(), gocCols()); }
+function gocBase() {
   const q = norm($('gocQ').value);
   const list = S.goc === 'p' ? [...S.portal.values()].filter(p => p.ky === S.ky) : [...S.tk.values()].filter(t => t.ky === S.ky);
   return list.filter(x => !q || norm([x.mst_nb, x.ten_nb, x.so_hd, x.khhd, x.mat_hang].join(' ')).includes(q))
@@ -1592,24 +1826,26 @@ function gocRows() {
 }
 function renderGoc() {
   document.querySelectorAll('#segGoc button').forEach(b => b.classList.toggle('on', b.dataset.g === S.goc));
-  const rows = gocRows();
+  const base = gocBase(); const rows = applyCols(gocKey(), base, gocCols());
   const pages = Math.max(1, Math.ceil(rows.length / PAGE)); if (S.page.goc >= pages) S.page.goc = 0;
   const view = rows.slice(S.page.goc * PAGE, (S.page.goc + 1) * PAGE);
   const s = f => rows.reduce((a, x) => a + (Number(x[f]) || 0), 0);
   if (S.goc === 'p') {
-    $('gocTable').innerHTML = '<thead><tr><th>Nguồn</th><th>Kết quả kiểm tra</th><th>Mẫu</th><th>Ký hiệu</th><th>Số HĐ</th><th>Ngày lập</th><th>MST</th><th>Người bán</th><th class="n">Chưa thuế</th><th class="n">Thuế</th><th class="n">Chiết khấu</th><th class="n">Thanh toán</th><th>Trạng thái HĐ</th><th>Lần</th><th>File</th></tr></thead><tbody>' +
+    $('gocTable').innerHTML = headHtml('goc_p', GOC_P_COLS, base) + '<tbody>' +
       view.map(p => '<tr data-id="P:' + esc(p.id) + '"><td class="small">' + SRC[p.nguon] + '</td><td class="small">' + esc(p.kqkt) + '</td><td>' + esc(p.khmau) + '</td><td>' + esc(p.khhd) + '</td><td>' + esc(p.so_hd) + '</td><td class="nw">' + fmtDate(p.ngay) + '</td><td class="nw">' + esc(p.mst_nb) + '</td><td class="wrap">' + esc(p.ten_nb) + '</td><td class="n nw">' + fmtN(p.tien_chua_thue) + '</td><td class="n nw">' + fmtN(p.tien_thue) + '</td><td class="n nw">' + fmtN(p.chiet_khau) + '</td><td class="n nw">' + fmtN(p.tong_tt) + '</td><td class="small">' + esc(p.trang_thai) + '</td><td>' + (p.lan_dau === p.lan_cuoi ? p.lan_dau : p.lan_dau + '→' + p.lan_cuoi) + '</td><td class="small muted">' + esc(p.file_ten) + '</td></tr>').join('') +
       '</tbody><tfoot><tr><td colspan="8">' + rows.length.toLocaleString('vi-VN') + ' HĐ</td><td class="n">' + fmtN(s('tien_chua_thue')) + '</td><td class="n">' + fmtN(s('tien_thue')) + '</td><td class="n">' + fmtN(s('chiet_khau')) + '</td><td class="n">' + fmtN(s('tong_tt')) + '</td><td colspan="3"></td></tr></tfoot>';
   } else {
-    $('gocTable').innerHTML = '<thead><tr><th>Ký hiệu</th><th>Số HĐ</th><th>Ngày</th><th>MST</th><th>Người bán</th><th>Mặt hàng</th><th>Thuế suất</th><th class="n">Chưa thuế</th><th class="n">Thuế</th><th>Dòng Excel</th></tr></thead><tbody>' +
-      view.map(t => '<tr data-id="' + esc(S.calc.tk2p.has(t.id) ? 'P:' + S.calc.tk2p.get(t.id) : 'T:' + t.id) + '"><td>' + esc(t.khmau + t.khhd) + '</td><td>' + esc(t.so_hd) + '</td><td class="nw">' + fmtDate(t.ngay) + '</td><td class="nw">' + esc(t.mst_nb) + '</td><td class="wrap">' + esc(t.ten_nb) + '</td><td class="small">' + esc(t.mat_hang) + '</td><td>' + esc(t.thue_suat) + '</td><td class="n nw">' + fmtN(t.tien_chua_thue) + '</td><td class="n nw">' + fmtN(t.tien_thue) + '</td><td class="small muted">' + esc(t.dong_excel) + '</td></tr>').join('') +
-      '</tbody><tfoot><tr><td colspan="7">' + rows.length.toLocaleString('vi-VN') + ' HĐ</td><td class="n">' + fmtN(s('tien_chua_thue')) + '</td><td class="n">' + fmtN(s('tien_thue')) + '</td><td></td></tr></tfoot>';
+    $('gocTable').innerHTML = headHtml('goc_t', GOC_T_COLS, base) + '<tbody>' +
+      view.map(t => '<tr data-id="' + esc(S.calc.tk2p.has(t.id) ? 'P:' + S.calc.tk2p.get(t.id) : 'T:' + t.id) + '"><td class="small">' + esc(TK_SRC[tkSrcOf(t)]) + '</td><td>' + esc(t.khmau + t.khhd) + '</td><td>' + esc(t.so_hd) + '</td><td class="nw">' + fmtDate(t.ngay) + '</td><td class="nw">' + esc(t.mst_nb) + '</td><td class="wrap">' + esc(t.ten_nb) + '</td><td class="small">' + esc(t.mat_hang) + '</td><td>' + esc(t.thue_suat) + '</td><td class="n nw">' + fmtN(t.tien_chua_thue) + '</td><td class="n nw">' + fmtN(t.tien_thue) + '</td><td class="small muted">' + esc(t.dong_excel) + '</td></tr>').join('') +
+      '</tbody><tfoot><tr><td colspan="8">' + rows.length.toLocaleString('vi-VN') + ' HĐ</td><td class="n">' + fmtN(s('tien_chua_thue')) + '</td><td class="n">' + fmtN(s('tien_thue')) + '</td><td></td></tr></tfoot>';
   }
   pager('gocPager', 'goc', pages, rows.length, renderGoc);
+  wireHead($('gocTable'), gocKey(), 'goc', renderGoc);
   $('gocTable').querySelectorAll('tbody tr[data-id]').forEach(tr => tr.onclick = () => openRow(tr.dataset.id));
 }
 document.querySelectorAll('#segGoc button').forEach(b => b.onclick = () => { S.goc = b.dataset.g; S.page.goc = 0; renderGoc(); });
 $('gocQ').oninput = () => { clearTimeout(qT); qT = setTimeout(() => { S.page.goc = 0; renderGoc(); }, 250); };
+$('gocClear').onclick = () => { $('gocQ').value = ''; clearCols(gocKey()); S.page.goc = 0; renderGoc(); };
 
 /* ---------- NHẬT KÝ ---------- */
 const LOG_LBL = { nap_cong_thue: 'Nạp dữ liệu cổng thuế', nap_to_khai: 'Nạp tờ khai', luu_lan1: 'Lưu kết quả lần 1', chot_ky: 'Chốt kỳ', mo_lai_ky: 'Mở lại kỳ', duyet_hang_loat: 'Duyệt hàng loạt', phuc_hoi: 'Phục hồi dữ liệu', cai_dat: 'Đổi cài đặt' };
@@ -1641,7 +1877,7 @@ function exportRowObj(r) {
     'Nguồn': r.p ? SRC[r.p.nguon] : 'Tờ khai', 'Kết quả kiểm tra': r.p ? r.p.kqkt : '', 'Trạng thái HĐ': r.p ? r.p.trang_thai : '',
     'MST người bán': x.mst_nb, 'Tên người bán': x.ten_nb, 'Ký hiệu mẫu': x.khmau, 'Ký hiệu HĐ': x.khhd, 'Số HĐ': x.so_hd, 'Ngày lập': fmtDate(x.ngay),
     'Cổng: chưa thuế': r.p ? r.p.tien_chua_thue : null, 'Cổng: thuế': r.p ? r.p.tien_thue : null, 'Cổng: thanh toán': r.p ? r.p.tong_tt : null,
-    'TK: kỳ': r.t ? kyLabel(r.t.ky) : '', 'TK: chưa thuế': r.t ? Number(r.t.tien_chua_thue) : null, 'TK: thuế': r.t ? Number(r.t.tien_thue) : null, 'TK: mặt hàng': r.t ? r.t.mat_hang : '',
+    'TK: kỳ': r.t ? kyLabel(r.t.ky) : '', 'TK: đơn vị': r.t ? TK_SRC[tkSrcOf(r.t)] : '', 'TK: chưa thuế': r.t ? Number(r.t.tien_chua_thue) : null, 'TK: thuế': r.t ? Number(r.t.tien_thue) : null, 'TK: mặt hàng': r.t ? r.t.mat_hang : '',
     'Chênh chưa thuế': r.dNet ?? null, 'Chênh thuế': r.dTax ?? null, 'Chênh tổng TT': r.dTot ?? null,
     'Duyệt': ACT[rv.action] || '', 'Ghi chú': rv.ghi_chu || '', 'Người cập nhật': rv.updated_by || '', 'Cập nhật lúc': rv.updated_at ? fmtTs(rv.updated_at) : ''
   };
@@ -1662,7 +1898,7 @@ $('btnExportKy').onclick = () => {
   XLSX.writeFile(wb, 'Doi chieu hoa don ' + ky + ' ' + stamp() + '.xlsx');
 };
 function portalExport(list) { return list.map((p, i) => ({ 'STT': i + 1, 'Nguồn': SRC[p.nguon], 'Kết quả kiểm tra': p.kqkt, 'Ký hiệu mẫu số': p.khmau, 'Ký hiệu HĐ': p.khhd, 'Số HĐ': p.so_hd, 'Ngày lập': fmtDate(p.ngay), 'MST người bán': p.mst_nb, 'Tên người bán': p.ten_nb, 'Tổng tiền chưa thuế': p.tien_chua_thue, 'Tổng tiền thuế': p.tien_thue, 'Chiết khấu TM': p.chiet_khau, 'Tổng tiền thanh toán': p.tong_tt, 'Tiền tệ': p.tien_te, 'Trạng thái HĐ': p.trang_thai, 'Lần tải': p.lan_dau === p.lan_cuoi ? p.lan_dau : p.lan_dau + '→' + p.lan_cuoi, 'File': p.file_ten })); }
-function tkExport(list) { return list.map(t => ({ 'Ký hiệu mẫu': t.khmau, 'Ký hiệu HĐ': t.khhd, 'Số HĐ': t.so_hd, 'Ngày': fmtDate(t.ngay), 'MST người bán': t.mst_nb, 'Tên người bán': t.ten_nb, 'Mặt hàng': t.mat_hang, 'Thuế suất': t.thue_suat, 'Chưa thuế': Number(t.tien_chua_thue), 'Thuế GTGT': Number(t.tien_thue), 'Số dòng gộp': t.so_dong, 'Dòng Excel': t.dong_excel })); }
+function tkExport(list) { return list.map(t => ({ 'Đơn vị': TK_SRC[tkSrcOf(t)], 'Ký hiệu mẫu': t.khmau, 'Ký hiệu HĐ': t.khhd, 'Số HĐ': t.so_hd, 'Ngày': fmtDate(t.ngay), 'MST người bán': t.mst_nb, 'Tên người bán': t.ten_nb, 'Mặt hàng': t.mat_hang, 'Thuế suất': t.thue_suat, 'Chưa thuế': Number(t.tien_chua_thue), 'Thuế GTGT': Number(t.tien_thue), 'Số dòng gộp': t.so_dong, 'Dòng Excel': t.dong_excel })); }
 $('btnExportGoiDau').onclick = () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, sheetFrom(goiDauRows().map(r => Object.assign({ 'Kỳ lập HĐ': kyLabel(r.p.ky), 'Tuổi (tháng)': kyDiff(r.p.ky, S.ky) }, exportRowObj(r)))), 'Gối đầu'); XLSX.writeFile(wb, 'Goi dau den ky ' + S.ky + ' ' + stamp() + '.xlsx'); };
 $('btnExportGoc').onclick = () => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, sheetFrom(S.goc === 'p' ? portalExport(gocRows()) : tkExport(gocRows())), S.goc === 'p' ? 'Hợp nhất cổng thuế' : 'Tờ khai'); XLSX.writeFile(wb, (S.goc === 'p' ? 'Hop nhat cong thue ' : 'To khai ') + S.ky + '.xlsx'); };
 $('btnPrint').onclick = () => window.print();
