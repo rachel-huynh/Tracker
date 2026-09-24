@@ -988,13 +988,27 @@ async function boot() {
   else openModal('mLogin');
   S.sb.auth.onAuthStateChange((ev, sess) => { if (ev === 'SIGNED_OUT') { S.user = null; openModal('mLogin'); } });
 }
+/* che Project URL khi hiển thị: https://pyfw…supabase.co (4 ký tự đầu của mã dự án) */
+function maskUrl(u) {
+  const m = /^(https?:\/\/)([^./]+)\.(.+)$/.exec(String(u || '').trim());
+  return m ? m[1] + m[2].slice(0, 4) + '…' + m[3] : (u ? String(u).slice(0, 12) + '…' : '');
+}
+/* ô URL hiện dạng đã che; nếu người dùng không sửa thì khi lưu vẫn dùng URL thật đã lưu */
+function fillCfgForm() {
+  const c = getCfg(), el = $('cfgUrl');
+  el.dataset.real = c.url || ''; el.value = c.url ? maskUrl(c.url) : ''; $('cfgKey').value = c.key || ''; $('cfgErr').textContent = '';
+}
+$('cfgUrl').addEventListener('focus', e => { if (e.target.dataset.real && e.target.value === maskUrl(e.target.dataset.real)) e.target.select(); });
 $('btnCfgSave').onclick = () => {
-  const url = $('cfgUrl').value.trim().replace(/\/+$/, ''), key = $('cfgKey').value.trim();
-  if (!/^https:\/\/.+/.test(url) || key.length < 20) { $('cfgErr').textContent = 'URL hoặc key chưa hợp lệ.'; return; }
+  const el = $('cfgUrl');
+  let url = el.value.trim().replace(/\/+$/, '');
+  if (el.dataset.real && url === maskUrl(el.dataset.real)) url = el.dataset.real;   // không sửa → giữ URL thật
+  const key = $('cfgKey').value.trim();
+  if (!/^https:\/\/[^…]+$/.test(url) || key.length < 20) { $('cfgErr').textContent = 'URL hoặc key chưa hợp lệ.'; return; }
   setCfg({ url, key }); closeModal('mCfg'); boot();
 };
-$('lnkCfg').onclick = e => { e.preventDefault(); const c = getCfg(); $('cfgUrl').value = c.url || ''; $('cfgKey').value = c.key || ''; closeModal('mLogin'); openModal('mCfg'); };
-$('btnCfg').onclick = () => { const c = getCfg(); $('cfgUrl').value = c.url || ''; $('cfgKey').value = c.key || ''; openModal('mCfg'); };
+$('lnkCfg').onclick = e => { e.preventDefault(); fillCfgForm(); closeModal('mLogin'); openModal('mCfg'); };
+$('btnCfg').onclick = () => { fillCfgForm(); openModal('mCfg'); };
 $('btnLogin').onclick = async () => {
   $('lgErr').textContent = '';
   const { data, error } = await S.sb.auth.signInWithPassword({ email: $('lgMail').value.trim(), password: $('lgPass').value });
@@ -1016,7 +1030,7 @@ function setLive(state, txt) { const el = $('liveState'); el.className = 'live '
 async function onLogin(user) {
   S.user = user;
   $('sideUser').style.display = ''; $('suName').textContent = (user.email || '').split('@')[0]; $('suMail').textContent = user.email;
-  const c = getCfg(); $('cfgInfo').innerHTML = 'Đang dùng: <b>' + esc(c.url) + '</b>';
+  const c = getCfg(); $('cfgInfo').innerHTML = 'Đang dùng: <b>' + esc(maskUrl(c.url)) + '</b>';
   setLive('', 'Đang tải…');
   try { await loadAll(); }
   catch (e) {
