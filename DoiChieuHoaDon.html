@@ -337,7 +337,7 @@ td.nw{white-space:nowrap}
           </div>
           <div class="panel">
             <h3><span class="ttl">② Tờ khai nội bộ <small>(Bảng kê HĐ mua vào)</small></span></h3>
-            <div class="dropzone" id="dzTk"><b>Kéo thả 2 file tờ khai của tháng</b><br><span class="small"><b>Sofitel Saigon Plaza</b> (vd “Hoa don dau vao - to khai 2026.08.xlsx”) và <b>Central Plaza</b> (vd “Mau mua vao - 2608.xlsx”) · app tự nhận đơn vị · nạp lại 1 file chỉ THAY THẾ tờ khai của đúng đơn vị đó</span></div>
+            <div class="dropzone" id="dzTk"><b>Kéo thả 2 file tờ khai của tháng</b><br><span class="small"><b>Sofitel Saigon Plaza</b> (vd “Hoa don dau vao - to khai 2026.08.xlsx”) và <b>Central Plaza &amp; JVC</b> (vd “Mau mua vao - 2608.xlsx”) · app tự nhận đơn vị · nạp lại 1 file chỉ THAY THẾ tờ khai của đúng đơn vị đó</span></div>
             <input type="file" id="fiTk" accept=".xlsx,.xls" multiple hidden>
             <div id="tkSlots" class="slots" style="grid-template-columns:repeat(2,minmax(0,1fr))"></div>
             <div id="tkMsg" style="margin-top:10px"></div>
@@ -906,7 +906,7 @@ function parsePortal(wb, fname) {
 /* Tờ khai nội bộ: Bảng kê HĐ chứng từ HHDV mua vào — mỗi tháng 2 file cùng MST 0300674923:
    SSP = Sofitel Saigon Plaza (sheet "VAT Input MM.YY", có ký hiệu HĐ)
    CP  = Central Plaza Office Building (mẫu 01-2/GTGT "Sheet1", KHÔNG có cột ký hiệu → ghép theo MST + số HĐ) */
-const TK_SRC = { SSP: 'Sofitel Saigon Plaza', CP: 'Central Plaza' };
+const TK_SRC = { SSP: 'Sofitel Saigon Plaza', CP: 'Central Plaza & JVC' };
 const tkSrcOf = t => t.nguon_tk || 'SSP';   // dữ liệu nạp trước khi có cột này = Sofitel
 /* tiêu đề nhiều tầng: ghép chữ của dòng i..i+3 theo từng cột */
 function hdrWindow(rows, i) {
@@ -1576,7 +1576,7 @@ function rowTags(r) {
   if (r.how === 'mst_so') s += '<span class="tag red" title="Ghép theo MST + số HĐ vì ký hiệu khác nhau">Khác ký hiệu</span>';
   if (r.mode === 'tong') s += '<span class="tag" title="Cổng thuế không có tiền thuế → so tổng thanh toán">So tổng TT</span>';
   if (r.p) { const tt = TT_TAG[ttKind(r.p.trang_thai)]; if (tt) s += '<span class="tag ' + tt[1] + '">' + tt[0] + '</span>'; if (r.p.lan_dau === 2) s += '<span class="tag blue">Mới ở lần 2</span>'; }
-  if (r.t && tkSrcOf(r.t) === 'CP') s += '<span class="tag blue" title="Tờ khai Central Plaza Office Building">TK Central Plaza</span>';
+  if (r.t && tkSrcOf(r.t) === 'CP') s += '<span class="tag blue" title="Tờ khai Central Plaza Office Building &amp; JVC">TK Central Plaza &amp; JVC</span>';
   if (r.t && r.t.so_dong > 1) s += '<span class="tag" title="Dòng Excel: ' + esc(r.t.dong_excel) + '">' + r.t.so_dong + ' dòng TK</span>';
   return s;
 }
@@ -1630,7 +1630,7 @@ function renderDoiChieu() {
       return '<tr data-id="' + esc(r.id) + '"' + (S.sel.has(r.id) ? ' class="sel"' : '') + '><td><input type="checkbox" data-ck="' + esc(r.id) + '"' + (S.sel.has(r.id) ? ' checked' : '') + (locked ? ' disabled' : '') + '></td>' +
         '<td class="nw">' + statusPill(r) + '</td>' +
         '<td class="nw small">' + (r.p ? SRC[r.p.nguon] + '<br><span class="muted">' + esc(KQ[kqCat(r.p.kqkt)] || r.p.kqkt) + '</span>' : '<span class="muted">Tờ khai</span>') + '</td>' +
-        '<td class="nw small">' + (r.t ? (tkSrcOf(r.t) === 'CP' ? '<span class="tag blue">Central Plaza</span>' : 'Sofitel') : '') + '</td>' +
+        '<td class="nw small">' + (r.t ? (tkSrcOf(r.t) === 'CP' ? '<span class="tag blue">Central Plaza &amp; JVC</span>' : 'Sofitel') : '') + '</td>' +
         '<td class="nw">' + esc(x.mst_nb) + '</td><td class="wrap">' + esc(x.ten_nb) + (r.t && r.t.mat_hang ? '<div class="small muted">' + esc(r.t.mat_hang) + '</div>' : '') + '</td>' +
         '<td class="nw">' + esc((x.khmau || '') + x.khhd) + '</td><td class="nw">' + esc(x.so_hd) + '</td><td class="nw">' + fmtDate(x.ngay) + '</td>' +
         '<td class="n nw">' + (r.p ? fmtN(r.p.tien_chua_thue) : '') + '</td><td class="n nw">' + (r.p ? fmtN(r.p.tien_thue) : '') + '</td><td class="n nw">' + (r.p ? fmtN(r.p.tong_tt) : '') + '</td>' +
