@@ -823,7 +823,9 @@ function carryForKy(ky, inclCur) {
   return out;
 }
 function allKys() {
-  const s = new Set([prevKy()]);
+  // luôn có sẵn 24 kỳ gần nhất để chọn nạp bổ sung kỳ cũ (vd tháng 7 khi đang làm tháng 8)
+  const s = new Set(); let k0 = prevKy();
+  for (let i = 0; i < 24; i++) { s.add(k0); k0 = kyAdd(k0, -1); }
   for (const p of S.portal.values()) s.add(p.ky);
   for (const t of S.tk.values()) s.add(t.ky);
   for (const k of S.kys.keys()) s.add(k);
@@ -1070,7 +1072,7 @@ function bookmarkletSrc(appUrl) {
     if (!m) return;
     var mm = +m.split('/')[0], yy = +m.split('/')[1];
     if (!mm || !yy) { alert('Kỳ không hợp lệ'); return; }
-    var w = window.open('about:blank', 'hdapp');
+    var w = window.open('about:blank', 'hdapp' + Date.now());
     if (w) w.document.write('<p style="font:14px Segoe UI;padding:20px">Đang tải hóa đơn kỳ ' + m + ' từ cổng thuế…</p>');
     var last = new Date(yy, mm, 0).getDate();
     var from = '01/' + p2(mm) + '/' + yy + 'T00:00:00', to = p2(last) + '/' + p2(mm) + '/' + yy + 'T23:59:59';
@@ -1131,6 +1133,8 @@ function handleRecvHash() {
   history.replaceState(null, '', location.pathname + location.search);
   if (window.opener) { try { window.opener.postMessage('hd-ready', PORTAL_ORIGIN); } catch (e) { } }
 }
+// trang đã mở sẵn mà chỉ đổi #… (không tải lại) → vẫn báo sẵn sàng nhận
+window.addEventListener('hashchange', () => { if (S.user) handleRecvHash(); });
 window.addEventListener('message', e => {
   if (e.origin !== PORTAL_ORIGIN || !e.data || e.data.type !== 'hd-portal-json') return;
   const d = e.data; if (!Array.isArray(d.rows)) return;
