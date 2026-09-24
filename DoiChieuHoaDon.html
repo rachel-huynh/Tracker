@@ -115,6 +115,8 @@ td.nw{white-space:nowrap}
 .act.loai_tru{border-color:#e7b7b1;color:var(--red);font-weight:700}
 .act.cho{border-color:#f0d49b;color:#94600f;font-weight:700}
 .notecell{cursor:pointer;color:#44506a;font-size:11.5px}
+.gobtn{border:1px solid #cfd6e2;background:#fff;color:var(--navy);border-radius:50%;width:22px;height:22px;padding:0;margin-right:8px;font-size:12px;line-height:20px;text-align:center;vertical-align:middle}
+.gobtn:hover{background:var(--navy);color:#fff;border-color:var(--navy)}
 .notecell:hover{text-decoration:underline}
 .pager{display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:8px;font-size:12px}
 .bulk{display:none;background:#fdf8ea;border:1px solid #f0d49b;border-radius:6px;padding:6px 10px;margin-bottom:8px;gap:6px;align-items:center;flex-wrap:wrap}
@@ -1429,7 +1431,7 @@ function renderTongQuan() {
     card(done === notOk.length && notOk.length ? 'g' : '', 'Tiến độ xử lý', done + '/' + notOk.length, 'dòng không khớp đã duyệt/loại trừ', 'doichieu:all:!khop');
   document.querySelectorAll('#kpiGrid [data-go]').forEach(el => el.onclick = () => {
     const [tab, scope, status] = el.dataset.go.split(':');
-    if (tab === 'doichieu') { $('fScope').value = scope || 'all'; $('fStatus').value = status || ''; $('fAction').value = ''; $('fQ').value = ''; S.page.rs = 0; }
+    if (tab === 'doichieu') { goResults(status); $('fScope').value = scope || 'all'; renderDoiChieu(); return; }
     showTab(tab);
   });
   // nhắc việc
@@ -1468,10 +1470,12 @@ function renderTongQuan() {
   const line = (lbl, arr, cls) => {
     const pn = sum(arr, r => r.p && r.p.tien_chua_thue), px = sum(arr, r => r.p && r.p.tien_thue), pt = sum(arr, r => r.p && r.p.tong_tt);
     const tn = sum(arr, r => r.t && r.t.tien_chua_thue), tx = sum(arr, r => r.t && r.t.tien_thue);
-    return '<tr><td>' + (cls ? '<span class="pill st-' + cls + '">' + lbl + '</span>' : '<b>' + lbl + '</b>') + '</td><td class="n">' + arr.length.toLocaleString('vi-VN') + '</td><td class="n">' + fmtN(pn) + '</td><td class="n">' + fmtN(px) + '</td><td class="n">' + fmtN(pt) + '</td><td class="n">' + fmtN(tn) + '</td><td class="n">' + fmtN(tx) + '</td></tr>';
+    const go = '<button class="gobtn" data-gost="' + (cls || '') + '" title="Mở Kết quả đối chiếu, lọc sẵn: ' + esc(cls ? lbl : 'tất cả dòng của kỳ') + '">➜</button>';
+    return '<tr><td class="nw">' + go + (cls ? '<span class="pill st-' + cls + '">' + lbl + '</span>' : '<b>' + lbl + '</b>') + '</td><td class="n">' + arr.length.toLocaleString('vi-VN') + '</td><td class="n">' + fmtN(pn) + '</td><td class="n">' + fmtN(px) + '</td><td class="n">' + fmtN(pt) + '</td><td class="n">' + fmtN(tn) + '</td><td class="n">' + fmtN(tx) + '</td></tr>';
   };
   $('sumTable').innerHTML = '<thead><tr><th>Trạng thái</th><th class="n">Số dòng</th><th class="n">Cổng: chưa thuế</th><th class="n">Cổng: thuế</th><th class="n">Cổng: thanh toán</th><th class="n">Tờ khai: chưa thuế</th><th class="n">Tờ khai: thuế</th></tr></thead><tbody>' +
     Object.keys(ST).map(s => st[s].length ? line(ST[s], st[s], s) : '').join('') + '</tbody><tfoot>' + line('Tổng cộng ' + (isMonth() ? 'kỳ ' : '') + perLabel(), rows) + '</tfoot>';
+  $('sumTable').querySelectorAll('[data-gost]').forEach(b => b.onclick = () => goResults(b.dataset.gost));
   // biểu đồ: 12 tháng / 8 quý / các năm gần nhất tùy chế độ xem
   const pk = [...new Set(allKys().map(m => perKeyOf(m, S.mode)))].sort();
   const kys = pk.slice(-(S.mode === 'm' ? 12 : S.mode === 'q' ? 8 : 6));
@@ -1748,6 +1752,15 @@ $('bulkNote').onclick = async () => { if (!S.sel.size) return; const v = prompt(
 $('bulkClear').onclick = () => { S.sel.clear(); renderDoiChieu(); };
 ['fScope', 'fStatus', 'fAction', 'fSrc', 'fKqkt', 'fTT'].forEach(id => $(id).onchange = () => { S.page.rs = 0; renderDoiChieu(); });
 let qT = null; $('fQ').oninput = () => { clearTimeout(qT); qT = setTimeout(() => { S.page.rs = 0; renderDoiChieu(); }, 250); };
+/* mở Kết quả đối chiếu với bộ lọc sạch, chỉ lọc đúng 1 trạng thái ('' = tất cả dòng của kỳ) */
+function goResults(status) {
+  $('fScope').value = 'all';
+  ['fAction', 'fSrc', 'fKqkt', 'fTT', 'fQ'].forEach(id => $(id).value = '');
+  $('fStatus').value = status || '';
+  clearCols('rs'); S.sel.clear(); S.page.rs = 0;
+  showTab('doichieu');
+  window.scrollTo(0, 0); const sc = document.querySelector('#tab-doichieu .tscroll'); if (sc) { sc.scrollTop = 0; sc.scrollLeft = 0; }
+}
 $('btnClearF').onclick = () => { ['fScope'].forEach(id => $(id).value = 'all'); ['fStatus', 'fAction', 'fSrc', 'fKqkt', 'fTT', 'fQ'].forEach(id => $(id).value = ''); clearCols('rs'); S.page.rs = 0; renderDoiChieu(); };
 
 /* chi tiết 1 dòng */
