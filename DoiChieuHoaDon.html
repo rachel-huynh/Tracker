@@ -1444,7 +1444,11 @@ function renderTongQuan() {
   $('remindBox').innerHTML = rm;
   $('remindBox').querySelectorAll('[data-gotab]').forEach(a => a.onclick = e => { e.preventDefault(); setMonth(due); initKySelect(); showTab('nap'); });
   // việc cần làm
-  const step = (ok, late, t, s) => '<div class="todo ' + (ok ? 'done' : late ? 'late' : '') + '"><b>' + (ok ? '✔ ' : '') + t + '</b><div>' + s + '</div></div>';
+  // go = nơi làm bước đó: 'nap1' | 'nap2' | 'tk' | 'rs' (Kết quả đối chiếu) | 'open' (dòng không khớp chưa xử lý)
+  const GO_TIP = { nap1: 'Mở Tải dữ liệu — lần 1', nap2: 'Mở Tải dữ liệu — lần 2', tk: 'Mở Tải dữ liệu — ô ② Tờ khai', rs: 'Mở Kết quả đối chiếu', open: 'Mở Kết quả đối chiếu, lọc dòng không khớp chưa xử lý' };
+  const step = (ok, late, t, s, go) => '<div class="todo ' + (ok ? 'done' : late ? 'late' : '') + '" style="display:flex;align-items:flex-start;gap:4px">' +
+    (go ? '<button class="gobtn" data-todo="' + go + '" title="' + GO_TIP[go] + '">➜</button>' : '') +
+    '<div style="margin:0;flex:1"><b>' + (ok ? '✔ ' : '') + t + '</b><div>' + s + '</div></div></div>';
   const [y, m] = ky.split('-').map(Number); const nx = new Date(y, m, 10), nxEnd = new Date(y, m + 1, 0);
   const slotsDone = lan => slotStatus(ky, lan).filter(s => s.ok).length;
   if (!isMonth()) {
@@ -1455,17 +1459,18 @@ function renderTongQuan() {
       ms.map(m => {
         const km = S.kys.get(m) || {}; const [yy, mo] = m.split('-').map(Number);
         const rs = rowsForKy(m).filter(r => r.status !== 'khop'); const dn = rs.filter(r => actOf(r.id) === 'duyet' || actOf(r.id) === 'loai_tru').length;
-        return '<tr data-month="' + m + '" style="cursor:pointer"><td><b>' + kyLabel(m) + '</b></td><td>' + ic(km.lan1_at, today > new Date(yy, mo, 10)) + '</td><td>' + Object.keys(tkStatus(m)).length + '/2</td><td>' + ic(km.lan2_at, today > new Date(yy, mo + 1, 0)) + '</td><td class="n">' + dn + '/' + rs.length + '</td><td>' + ic(km.chot, false) + '</td></tr>';
+        return '<tr data-month="' + m + '" style="cursor:pointer"><td class="nw"><button class="gobtn" title="Mở xem tháng ' + kyLabel(m) + '">➜</button><b>' + kyLabel(m) + '</b></td><td>' + ic(km.lan1_at, today > new Date(yy, mo, 10)) + '</td><td>' + Object.keys(tkStatus(m)).length + '/2</td><td>' + ic(km.lan2_at, today > new Date(yy, mo + 1, 0)) + '</td><td class="n">' + dn + '/' + rs.length + '</td><td>' + ic(km.chot, false) + '</td></tr>';
       }).join('') + (ms.length ? '' : '<tr><td colspan="6" class="muted">Chưa đến kỳ nào.</td></tr>') + '</tbody></table></div><div class="note">Bấm vào 1 tháng để mở xem theo tháng (tải dữ liệu, lưu lần 1, chốt kỳ làm theo từng tháng).</div>';
     $('todoList').querySelectorAll('[data-month]').forEach(tr => tr.onclick = () => { setMonth(tr.dataset.month); initKySelect(); periodChanged(); });
   } else
   $('todoList').innerHTML =
-    step(!!k.lan1_at, !k.lan1_at && today > nx, '1. Tải cổng thuế lần 1 — hạn ' + nx.toLocaleDateString('vi-VN'), k.lan1_at ? slotsDone(1) + '/6 tổ hợp · ' + fmtTs(k.lan1_at) + ' · ' + esc(k.lan1_by) : 'Chưa tải') +
-    (() => { const ts = tkStatus(ky); const n = Object.keys(ts).length; return step(n === 2, false, '2. Nạp 2 tờ khai nội bộ (' + n + '/2)', Object.keys(TK_SRC).map(s => ts[s] ? '✔ ' + TK_SRC[s] + ': ' + esc(ts[s].file) + ' · ' + fmtTs(ts[s].at) + ' · ' + esc(ts[s].by) : '○ ' + TK_SRC[s] + ': chưa nạp').join('<br>')); })() +
-    step(!!k.snap_lan1, false, '3. Lưu kết quả lần 1', k.snap_lan1 ? fmtTs(k.snap_lan1.at) + ' · ' + esc(k.snap_lan1.by) : 'Chưa lưu (tự lưu khi nạp lần 2)') +
-    step(!!k.lan2_at, !k.lan2_at && today > nxEnd, '4. Tải cổng thuế lần 2 — hạn ' + nxEnd.toLocaleDateString('vi-VN'), k.lan2_at ? slotsDone(2) + '/6 tổ hợp · ' + fmtTs(k.lan2_at) + ' · ' + esc(k.lan2_by) : 'Chưa tải') +
-    step(done === notOk.length && notOk.length > 0, false, '5. Xử lý dòng không khớp', done + '/' + notOk.length + ' đã duyệt / loại trừ') +
-    step(!!k.chot, false, '6. Chốt kỳ', k.chot ? fmtTs(k.chot_at) + ' · ' + esc(k.chot_by) : 'Chưa chốt');
+    step(!!k.lan1_at, !k.lan1_at && today > nx, '1. Tải cổng thuế lần 1 — hạn ' + nx.toLocaleDateString('vi-VN'), k.lan1_at ? slotsDone(1) + '/6 tổ hợp · ' + fmtTs(k.lan1_at) + ' · ' + esc(k.lan1_by) : 'Chưa tải', 'nap1') +
+    (() => { const ts = tkStatus(ky); const n = Object.keys(ts).length; return step(n === 2, false, '2. Nạp 2 tờ khai nội bộ (' + n + '/2)', Object.keys(TK_SRC).map(s => ts[s] ? '✔ ' + TK_SRC[s] + ': ' + esc(ts[s].file) + ' · ' + fmtTs(ts[s].at) + ' · ' + esc(ts[s].by) : '○ ' + TK_SRC[s] + ': chưa nạp').join('<br>'), 'tk'); })() +
+    step(!!k.snap_lan1, false, '3. Lưu kết quả lần 1', k.snap_lan1 ? fmtTs(k.snap_lan1.at) + ' · ' + esc(k.snap_lan1.by) : 'Chưa lưu (tự lưu khi nạp lần 2)', 'rs') +
+    step(!!k.lan2_at, !k.lan2_at && today > nxEnd, '4. Tải cổng thuế lần 2 — hạn ' + nxEnd.toLocaleDateString('vi-VN'), k.lan2_at ? slotsDone(2) + '/6 tổ hợp · ' + fmtTs(k.lan2_at) + ' · ' + esc(k.lan2_by) : 'Chưa tải', 'nap2') +
+    step(done === notOk.length && notOk.length > 0, false, '5. Xử lý dòng không khớp', done + '/' + notOk.length + ' đã duyệt / loại trừ', 'open') +
+    step(!!k.chot, false, '6. Chốt kỳ', k.chot ? fmtTs(k.chot_at) + ' · ' + esc(k.chot_by) : 'Chưa chốt', 'rs');
+  $('todoList').querySelectorAll('[data-todo]').forEach(b => b.onclick = () => goTodo(b.dataset.todo));
   // bảng tổng hợp
   const line = (lbl, arr, cls) => {
     const pn = sum(arr, r => r.p && r.p.tien_chua_thue), px = sum(arr, r => r.p && r.p.tien_thue), pt = sum(arr, r => r.p && r.p.tong_tt);
@@ -1752,6 +1757,13 @@ $('bulkNote').onclick = async () => { if (!S.sel.size) return; const v = prompt(
 $('bulkClear').onclick = () => { S.sel.clear(); renderDoiChieu(); };
 ['fScope', 'fStatus', 'fAction', 'fSrc', 'fKqkt', 'fTT'].forEach(id => $(id).onchange = () => { S.page.rs = 0; renderDoiChieu(); });
 let qT = null; $('fQ').oninput = () => { clearTimeout(qT); qT = setTimeout(() => { S.page.rs = 0; renderDoiChieu(); }, 250); };
+/* nút ➜ ở "Việc cần làm" */
+function goTodo(go) {
+  if (go === 'nap1' || go === 'nap2') { S.lan = go === 'nap1' ? 1 : 2; showTab('nap'); window.scrollTo(0, 0); return; }
+  if (go === 'tk') { showTab('nap'); const el = $('dzTk'); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('hot'); setTimeout(() => el.classList.remove('hot'), 1500); } return; }
+  if (go === 'open') { goResults('!khop'); $('fAction').value = 'none'; renderDoiChieu(); return; }
+  goResults('');
+}
 /* mở Kết quả đối chiếu với bộ lọc sạch, chỉ lọc đúng 1 trạng thái ('' = tất cả dòng của kỳ) */
 function goResults(status) {
   $('fScope').value = 'all';
