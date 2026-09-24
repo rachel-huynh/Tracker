@@ -1074,12 +1074,8 @@ function bookmarkletSrc(appUrl) {
     if (w) w.document.write('<p style="font:14px Segoe UI;padding:20px">Đang tải hóa đơn kỳ ' + m + ' từ cổng thuế…</p>');
     var last = new Date(yy, mm, 0).getDate();
     var from = '01/' + p2(mm) + '/' + yy + 'T00:00:00', to = p2(last) + '/' + p2(mm) + '/' + yy + 'T23:59:59';
-<<<<<<< HEAD
     /* API cùng tên miền với trang (bản 2026: /api/query | /api/sco-query), giống cách trang Tra cứu hóa đơn tự gọi */
     var base = 'https://hoadondientu.gdt.gov.vn/api';
-=======
-    var base = 'https://hoadondientu.gdt.gov.vn:30000';
->>>>>>> 3e7fb39c6ec4bea2b3a9e2c0be35fd50f513d020
     var sets = [['HDDT', '/query/invoices/purchase', 5], ['HDDT', '/query/invoices/purchase', 6], ['HDDT', '/query/invoices/purchase', 8],
                 ['MTT', '/sco-query/invoices/purchase', 5], ['MTT', '/sco-query/invoices/purchase', 6], ['MTT', '/sco-query/invoices/purchase', 8]];
     var out = [], log = [];
@@ -1087,15 +1083,9 @@ function bookmarkletSrc(appUrl) {
       for (var i = 0; i < sets.length; i++) {
         var s = sets[i], state = '', n = 0, guard = 0, ok = true;
         do {
-<<<<<<< HEAD
           var u = base + s[1] + '?sort=tdlap:desc&size=50' + (state ? '&state=' + encodeURIComponent(state) : '') + '&search=tdlap=ge=' + from + ';tdlap=le=' + to + ';ttxly==' + s[2];
           var r; try { r = await fetch(u, { headers: { Authorization: 'Bearer ' + tok, 'Accept-Language': 'vi', 'End-Point': '/tra-cuu/tra-cuu-hoa-don' } }); } catch (e) { log.push(s[0] + ' ttxly=' + s[2] + ': lỗi mạng (' + e.message + ')'); ok = false; break; }
           if (!r.ok) { log.push(s[0] + ' ttxly=' + s[2] + ': HTTP ' + r.status + (r.status === 401 || r.status === 403 ? ' (phiên đăng nhập hết hạn — đăng nhập lại)' : '')); ok = false; break; }
-=======
-          var u = base + s[1] + '?sort=tdlap:desc,khmshdon:asc,shdon:desc&size=50&search=' + encodeURIComponent('tdlap=ge=' + from + ';tdlap=le=' + to + ';ttxly==' + s[2]) + (state ? '&state=' + encodeURIComponent(state) : '');
-          var r; try { r = await fetch(u, { headers: { Authorization: 'Bearer ' + tok } }); } catch (e) { log.push(s[0] + ' ttxly=' + s[2] + ': lỗi mạng'); ok = false; break; }
-          if (!r.ok) { log.push(s[0] + ' ttxly=' + s[2] + ': HTTP ' + r.status); ok = false; break; }
->>>>>>> 3e7fb39c6ec4bea2b3a9e2c0be35fd50f513d020
           var j = await r.json(); var ds = j.datas || [];
           ds.forEach(function (v) { v.__src = s[0]; v.__ttxly = s[2]; out.push(v); });
           n += ds.length; state = j.state || '';
