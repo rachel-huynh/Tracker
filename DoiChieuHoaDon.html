@@ -198,7 +198,8 @@ td.nw{white-space:nowrap}
     <header id="hdr">
       <div class="pagetitle" id="pageTitle">Tổng quan kỳ</div>
       <div class="ctl">
-        <label class="small muted">Kỳ tờ khai</label>
+        <label class="small muted">Xem theo</label>
+        <div class="seg" id="segMode"><button data-m="m">Tháng</button><button data-m="q">Quý</button><button data-m="y">Năm</button></div>
         <select id="selKy"></select>
         <span id="kyState" class="live">—</span>
         <span id="liveState" class="live"><i></i> Chưa kết nối</span>
@@ -560,7 +561,7 @@ const TT_TAG = { thay_the: ['HĐ thay thế', 'blue'], dieu_chinh: ['HĐ điều
    TRẠNG THÁI
    ===================================================================== */
 const S = {
-  sb: null, user: null, ky: null, tab: 'tongquan', lan: 1,
+  sb: null, user: null, ky: null, mode: 'm', per: null, tab: 'tongquan', lan: 1,
   portal: new Map(), tk: new Map(), rv: new Map(), kys: new Map(), kv: {},
   tol: 0, calc: null, sel: new Set(), page: { rs: 0, gd: 0, goc: 0 }, goc: 'p',
   pendingRecv: null
@@ -837,6 +838,43 @@ function carryForKy(ky, inclCur) {
   }
   return out;
 }
+/* ---------- KỲ XEM: Tháng / Quý / Năm ----------
+   S.mode = 'm' | 'q' | 'y', S.per = '2026-08' | '2026-Q3' | '2026'.
+   S.ky = tháng "làm việc": ở chế độ tháng = S.per; ở Quý/Năm = tháng cuối của kỳ nhưng không vượt quá tháng trước
+   (dùng cho tuổi gối đầu, tải dữ liệu, chốt…). */
+const perKeyOf = (ky, mode) => mode === 'm' ? ky : mode === 'q' ? ky.slice(0, 4) + '-Q' + Math.ceil(Number(ky.slice(5, 7)) / 3) : ky.slice(0, 4);
+function perMonths(mode = S.mode, key = S.per) {
+  if (mode === 'm') return [key];
+  const y = key.slice(0, 4);
+  if (mode === 'y') return Array.from({ length: 12 }, (_, i) => y + '-' + pad(i + 1));
+  const q = Number(key.slice(-1)); return [1, 2, 3].map(i => y + '-' + pad((q - 1) * 3 + i));
+}
+function perLabel(mode = S.mode, key = S.per) { return mode === 'm' ? kyLabel(key) : mode === 'q' ? 'Quý ' + key.slice(-1) + '/' + key.slice(0, 4) : 'Năm ' + key; }
+const isMonth = () => S.mode === 'm';
+const inPer = ky => perMonths().includes(ky);
+function workKy(mode = S.mode, key = S.per) { const ms = perMonths(mode, key); return mode === 'm' ? key : (ms.filter(m => m <= prevKy()).pop() || ms[0]); }
+function setMonth(ky) { S.mode = 'm'; S.per = ky; S.ky = ky; }
+/* các dòng của một kỳ bất kỳ: gộp các tháng, 1 HĐ chỉ 1 dòng (ưu tiên dòng "HĐ lập trong kỳ" hơn dòng "gối đầu") */
+function rowsForPer(mode, key) {
+  if (mode === 'm') return rowsForKy(key);
+  const map = new Map();
+  perMonths(mode, key).forEach(m => rowsForKy(m).forEach(r => { const o = map.get(r.id); if (!o || (o.scope === 'g' && r.scope === 'p')) map.set(r.id, r); }));
+  return [...map.values()];
+}
+const viewRows = () => rowsForPer(S.mode, S.per);
+/* gối đầu tính đến hết kỳ xem: HĐ lập trước kỳ (hoặc cả trong kỳ) chưa khớp tờ khai nào đến tháng làm việc */
+function carryView(inclCur) {
+  const start = perMonths()[0], end = S.ky; const out = [];
+  for (const r of S.calc.res.values()) {
+    const p = r.p;
+    if (p.ky > end || (!inclCur && p.ky >= start)) continue;
+    if (r.t && r.t.ky <= end) continue;
+    out.push(r);
+  }
+  return out;
+}
+const rowKy = r => r.scope === 'p' ? r.p.ky : r.t ? r.t.ky : r.p.ky;   // tháng mà dòng thuộc về (để biết đã chốt chưa)
+
 function allKys() {
   // luôn có sẵn 24 kỳ gần nhất để chọn nạp bổ sung kỳ cũ (vd tháng 7 khi đang làm tháng 8)
   const s = new Set(); let k0 = prevKy();
@@ -1042,7 +1080,7 @@ async function importPortalRows(parsedList, lan, sourceLabel) {
   }
   await logAct('nap_cong_thue', { lan, via: sourceLabel, kys: [...byKy.keys()], rows: rows.length, files: parsedList.map(p => p.fname) });
   msgs.push('→ Đã hợp nhất & lưu ' + rows.length.toLocaleString('vi-VN') + ' hóa đơn (lần ' + lan + ').');
-  if (byKy.size === 1) S.ky = [...byKy.keys()][0];
+  if (byKy.size === 1) setMonth([...byKy.keys()][0]);
   initKySelect(); recompute(); renderAll();
   return msgs;
 }
@@ -1111,7 +1149,7 @@ async function importTkFile(file) {
       .concat([{ kind: 'tk', nguon_tk: src, at: nowIso(), by: me(), file: file.name, hd: rows.length, dong: p.nLines, net: Math.round(p.sumNet), tax: Math.round(p.sumTax) }]);
     await saveKy(ky, { tk_at: nowIso(), tk_by: me(), tk_file: file.name, files });
     await logAct('nap_to_khai', { ky, don_vi: src, file: file.name, hd: rows.length, dong: p.nLines, net: Math.round(p.sumNet), tax: Math.round(p.sumTax) });
-    S.ky = ky; initKySelect(); recompute(); renderAll();
+    setMonth(ky); initKySelect(); recompute(); renderAll();
     const noKey = rows.filter(r => !r.khoa).length;
     return '<div class="okbox">✔ <b>' + TK_SRC[src] + '</b> — ' + esc(file.name) + ' (sheet “' + esc(p.sheet) + '”) — kỳ <b>' + kyLabel(ky) + '</b><br>' +
       p.nLines.toLocaleString('vi-VN') + ' dòng → ' + rows.length.toLocaleString('vi-VN') + ' hóa đơn (đã gộp dòng nhiều thuế suất)' +
@@ -1239,7 +1277,7 @@ $('btnRecvOk').onclick = async () => {
     if (empties.length) await saveKy(d.ky, { files: (k.files || []).concat(empties) });
     closeModal('mRecv'); S.pendingRecv = null;
     toast(msgs[msgs.length - 1] || 'Đã nạp');
-    S.ky = d.ky; initKySelect(); showTab('nap');
+    setMonth(d.ky); initKySelect(); showTab('nap');
     $('portalMsg').innerHTML = '<div class="okbox">' + msgs.map(esc).join('<br>') + '</div>';
   } catch (e) { toast(e.message, true); }
   $('btnRecvOk').disabled = false;
@@ -1305,6 +1343,8 @@ $('btnChot').onclick = async () => {
    ===================================================================== */
 const TITLES = { tongquan: 'Tổng quan kỳ', doichieu: 'Kết quả đối chiếu', goidau: 'Gối đầu — hóa đơn tồn', lan12: 'So sánh lần 1 – lần 2', nap: 'Tải dữ liệu', goc: 'Dữ liệu đã hợp nhất', nhatky: 'Nhật ký', caidat: 'Cài đặt & Sao lưu' };
 function showTab(t) {
+  // tải dữ liệu & so sánh lần 1–2 luôn làm theo từng tháng
+  if ((t === 'nap' || t === 'lan12') && !isMonth()) { setMonth(S.ky); initKySelect(); toast('Trang này làm việc theo tháng — đang chuyển sang tháng ' + kyLabel(S.ky)); }
   S.tab = t;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   document.querySelectorAll('section.tab').forEach(s => s.classList.toggle('on', s.id === 'tab-' + t));
@@ -1312,33 +1352,53 @@ function showTab(t) {
   renderAll();
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+const hasData = k => [...S.portal.values()].some(p => p.ky === k) || [...S.tk.values()].some(t => t.ky === k);
 function initKySelect() {
   const kys = allKys();
   if (!S.ky || !kys.includes(S.ky)) {
     // mặc định: kỳ mới nhất đã có dữ liệu, nếu không có thì kỳ trước
-    S.ky = kys.find(k => [...S.portal.values()].some(p => p.ky === k) || [...S.tk.values()].some(t => t.ky === k)) || prevKy();
+    S.ky = kys.find(hasData) || prevKy();
   }
-  $('selKy').innerHTML = kys.map(k => '<option value="' + k + '"' + (k === S.ky ? ' selected' : '') + '>' + kyLabel(k) + (S.kys.get(k) && S.kys.get(k).chot ? ' 🔒' : '') + '</option>').join('');
+  if (!S.per || perKeyOf(perMonths(S.mode, S.per)[0], S.mode) !== S.per) S.per = perKeyOf(S.ky, S.mode);
+  const opts = [...new Set(kys.map(k => perKeyOf(k, S.mode)).concat([S.per]))].sort().reverse();
+  const lockIcon = p => { const ms = perMonths(S.mode, p).filter(m => S.kys.has(m) || hasData(m)); return ms.length && ms.every(kyLocked) ? ' 🔒' : ''; };
+  $('selKy').innerHTML = opts.map(p => '<option value="' + p + '"' + (p === S.per ? ' selected' : '') + '>' + perLabel(S.mode, p) + lockIcon(p) + '</option>').join('');
+  S.ky = workKy();
+  document.querySelectorAll('#segMode button').forEach(b => b.classList.toggle('on', b.dataset.m === S.mode));
 }
-$('selKy').onchange = () => { S.ky = $('selKy').value; S.sel.clear(); S.page = { rs: 0, gd: 0, goc: 0 }; renderAll(); };
+function periodChanged() { S.sel.clear(); S.page = { rs: 0, gd: 0, goc: 0 }; renderAll(); }
+$('selKy').onchange = () => { S.per = $('selKy').value; S.ky = workKy(); periodChanged(); };
+document.querySelectorAll('#segMode button').forEach(b => b.onclick = () => {
+  const m = b.dataset.m; if (m === S.mode) return;
+  S.mode = m; S.per = perKeyOf(S.ky, m);
+  if ((S.tab === 'nap' || S.tab === 'lan12') && m !== 'm') S.tab = 'tongquan';
+  initKySelect(); showTab(S.tab);
+});
 
 function renderAll() {
   if (!S.calc || !S.user) return;
-  document.querySelectorAll('.kyLbl').forEach(e => e.textContent = kyLabel(S.ky));
+  document.querySelectorAll('.kyLbl').forEach(e => e.textContent = perLabel());
   $('tolLbl').textContent = fmt(S.tol) || '0';
-  const k = S.kys.get(S.ky) || {};
   const ks = $('kyState');
-  ks.className = 'live' + (k.chot ? ' ok' : '');
-  ks.textContent = k.chot ? '🔒 Đã chốt' : k.lan2_at ? 'Đã tải lần 2' : k.lan1_at ? 'Đã tải lần 1' : 'Chưa tải';
-  const carry = carryForKy(S.ky, false).filter(r => actOf(r.id) !== 'loai_tru').length;
+  if (isMonth()) {
+    const k = S.kys.get(S.ky) || {};
+    ks.className = 'live' + (k.chot ? ' ok' : '');
+    ks.textContent = k.chot ? '🔒 Đã chốt' : k.lan2_at ? 'Đã tải lần 2' : k.lan1_at ? 'Đã tải lần 1' : 'Chưa tải';
+  } else {
+    const ms = perMonths().filter(m => m <= prevKy());
+    const nChot = ms.filter(kyLocked).length;
+    ks.className = 'live' + (ms.length && nChot === ms.length ? ' ok' : '');
+    ks.textContent = '🔒 ' + nChot + '/' + ms.length + ' tháng đã chốt';
+  }
+  const carry = carryView(false).filter(r => actOf(r.id) !== 'loai_tru').length;
   const bd = $('bdGoiDau'); bd.style.display = carry ? '' : 'none'; bd.textContent = carry;
   const fn = { tongquan: renderTongQuan, doichieu: renderDoiChieu, goidau: renderGoiDau, lan12: renderLan12, nap: renderNap, goc: renderGoc, nhatky: renderLog, caidat: renderCaiDat }[S.tab];
   fn && fn();
 }
 
 /* ---------- TỔNG QUAN ---------- */
-function statsForKy(ky) {
-  const rows = rowsForKy(ky);
+function statsForKy(ky) { return statsFor(rowsForKy(ky)); }
+function statsFor(rows) {
   const st = Object.fromEntries(Object.keys(ST).map(k => [k, []]));
   rows.forEach(r => st[r.status].push(r));
   const own = rows.filter(r => r.scope === 'p');
@@ -1348,12 +1408,12 @@ function statsForKy(ky) {
 let chart = null;
 function renderTongQuan() {
   const ky = S.ky, k = S.kys.get(ky) || {};
-  const { rows, st, own, sum } = statsForKy(ky);
+  const { rows, st, own, sum } = statsFor(viewRows());
   const pNet = r => r.p ? (r.p.tien_chua_thue ?? r.p.tong_tt) : 0;
-  const carry = carryForKy(ky, false).filter(r => actOf(r.id) !== 'loai_tru');
+  const carry = carryView(false).filter(r => actOf(r.id) !== 'loai_tru');
   const notOk = rows.filter(r => r.status !== 'khop');
   const done = notOk.filter(r => actOf(r.id) === 'duyet' || actOf(r.id) === 'loai_tru').length;
-  const tkRows = [...S.tk.values()].filter(t => t.ky === ky);
+  const tkRows = [...S.tk.values()].filter(t => inPer(t.ky));
   const card = (cls, t, v, s, go) => '<div class="kpi ' + cls + (go ? ' click" data-go="' + go : '') + '"><div class="t">' + t + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></div>';
   $('kpiGrid').innerHTML =
     card('', 'HĐ cổng thuế lập trong kỳ', own.length.toLocaleString('vi-VN'), fmtBn(sum(own, pNet)) + ' chưa thuế', 'doichieu:p:') +
@@ -1380,11 +1440,23 @@ function renderTongQuan() {
   else if (d < 10) rm += '<div class="warnbox">Lần 1 kỳ ' + kyLabel(due) + ': ngày 10/' + pad(today.getMonth() + 1) + ' (còn ' + (10 - d) + ' ngày).</div>';
   if (d >= lastDay - 1 && !kd.lan2_at) rm += '<div class="errbox">⏰ <b>' + (d === lastDay ? 'Hôm nay' : 'Ngày mai') + ' là hạn tải lần 2</b> (cuối tháng) cho kỳ <b>' + kyLabel(due) + '</b>. <a href="#" data-gotab="nap">Tải dữ liệu →</a></div>';
   $('remindBox').innerHTML = rm;
-  $('remindBox').querySelectorAll('[data-gotab]').forEach(a => a.onclick = e => { e.preventDefault(); S.ky = due; initKySelect(); showTab('nap'); });
+  $('remindBox').querySelectorAll('[data-gotab]').forEach(a => a.onclick = e => { e.preventDefault(); setMonth(due); initKySelect(); showTab('nap'); });
   // việc cần làm
   const step = (ok, late, t, s) => '<div class="todo ' + (ok ? 'done' : late ? 'late' : '') + '"><b>' + (ok ? '✔ ' : '') + t + '</b><div>' + s + '</div></div>';
   const [y, m] = ky.split('-').map(Number); const nx = new Date(y, m, 10), nxEnd = new Date(y, m + 1, 0);
   const slotsDone = lan => slotStatus(ky, lan).filter(s => s.ok).length;
+  if (!isMonth()) {
+    // Quý / Năm: bảng tiến độ từng tháng, bấm 1 tháng để mở chế độ xem tháng
+    const ms = perMonths().filter(m => m <= prevKy());
+    const ic = (ok, late) => ok ? '<b style="color:var(--green)">✔</b>' : late ? '<b style="color:var(--red)">✖</b>' : '<span class="muted">○</span>';
+    $('todoList').innerHTML = '<div class="tscroll" style="max-height:none"><table class="grid"><thead><tr><th>Tháng</th><th>Lần 1</th><th>Tờ khai</th><th>Lần 2</th><th class="n">Xử lý không khớp</th><th>Chốt</th></tr></thead><tbody>' +
+      ms.map(m => {
+        const km = S.kys.get(m) || {}; const [yy, mo] = m.split('-').map(Number);
+        const rs = rowsForKy(m).filter(r => r.status !== 'khop'); const dn = rs.filter(r => actOf(r.id) === 'duyet' || actOf(r.id) === 'loai_tru').length;
+        return '<tr data-month="' + m + '" style="cursor:pointer"><td><b>' + kyLabel(m) + '</b></td><td>' + ic(km.lan1_at, today > new Date(yy, mo, 10)) + '</td><td>' + Object.keys(tkStatus(m)).length + '/2</td><td>' + ic(km.lan2_at, today > new Date(yy, mo + 1, 0)) + '</td><td class="n">' + dn + '/' + rs.length + '</td><td>' + ic(km.chot, false) + '</td></tr>';
+      }).join('') + (ms.length ? '' : '<tr><td colspan="6" class="muted">Chưa đến kỳ nào.</td></tr>') + '</tbody></table></div><div class="note">Bấm vào 1 tháng để mở xem theo tháng (tải dữ liệu, lưu lần 1, chốt kỳ làm theo từng tháng).</div>';
+    $('todoList').querySelectorAll('[data-month]').forEach(tr => tr.onclick = () => { setMonth(tr.dataset.month); initKySelect(); periodChanged(); });
+  } else
   $('todoList').innerHTML =
     step(!!k.lan1_at, !k.lan1_at && today > nx, '1. Tải cổng thuế lần 1 — hạn ' + nx.toLocaleDateString('vi-VN'), k.lan1_at ? slotsDone(1) + '/6 tổ hợp · ' + fmtTs(k.lan1_at) + ' · ' + esc(k.lan1_by) : 'Chưa tải') +
     (() => { const ts = tkStatus(ky); const n = Object.keys(ts).length; return step(n === 2, false, '2. Nạp 2 tờ khai nội bộ (' + n + '/2)', Object.keys(TK_SRC).map(s => ts[s] ? '✔ ' + TK_SRC[s] + ': ' + esc(ts[s].file) + ' · ' + fmtTs(ts[s].at) + ' · ' + esc(ts[s].by) : '○ ' + TK_SRC[s] + ': chưa nạp').join('<br>')); })() +
@@ -1399,15 +1471,17 @@ function renderTongQuan() {
     return '<tr><td>' + (cls ? '<span class="pill st-' + cls + '">' + lbl + '</span>' : '<b>' + lbl + '</b>') + '</td><td class="n">' + arr.length.toLocaleString('vi-VN') + '</td><td class="n">' + fmtN(pn) + '</td><td class="n">' + fmtN(px) + '</td><td class="n">' + fmtN(pt) + '</td><td class="n">' + fmtN(tn) + '</td><td class="n">' + fmtN(tx) + '</td></tr>';
   };
   $('sumTable').innerHTML = '<thead><tr><th>Trạng thái</th><th class="n">Số dòng</th><th class="n">Cổng: chưa thuế</th><th class="n">Cổng: thuế</th><th class="n">Cổng: thanh toán</th><th class="n">Tờ khai: chưa thuế</th><th class="n">Tờ khai: thuế</th></tr></thead><tbody>' +
-    Object.keys(ST).map(s => st[s].length ? line(ST[s], st[s], s) : '').join('') + '</tbody><tfoot>' + line('Tổng cộng kỳ ' + kyLabel(ky), rows) + '</tfoot>';
-  // biểu đồ
-  const kys = allKys().slice(0, 12).reverse();
+    Object.keys(ST).map(s => st[s].length ? line(ST[s], st[s], s) : '').join('') + '</tbody><tfoot>' + line('Tổng cộng ' + (isMonth() ? 'kỳ ' : '') + perLabel(), rows) + '</tfoot>';
+  // biểu đồ: 12 tháng / 8 quý / các năm gần nhất tùy chế độ xem
+  const pk = [...new Set(allKys().map(m => perKeyOf(m, S.mode)))].sort();
+  const kys = pk.slice(-(S.mode === 'm' ? 12 : S.mode === 'q' ? 8 : 6));
   const series = { khop: [], lech: [], chua_tk: [], chi_tk: [], thieu_cong: [], khong_cong: [] };
-  kys.forEach(kk => { const rs = rowsForKy(kk); Object.keys(series).forEach(s => series[s].push(rs.filter(r => r.status === s).length)); });
+  kys.forEach(kk => { const rs = rowsForPer(S.mode, kk); Object.keys(series).forEach(s => series[s].push(rs.filter(r => r.status === s).length)); });
+  const lbl = kk => S.mode === 'm' ? kyLabel(kk) : S.mode === 'q' ? 'Q' + kk.slice(-1) + '/' + kk.slice(0, 4) : kk;
   const colors = { khop: '#1e7e4f', lech: '#c0392b', chua_tk: '#e8a33d', chi_tk: '#2e5f9e', thieu_cong: '#9CA3AF', khong_cong: '#7a1d12' };
   const ds = Object.keys(series).map(s => ({ label: ST[s], data: series[s], backgroundColor: colors[s], stack: 'a' }));
-  if (chart) { chart.data.labels = kys.map(kyLabel); chart.data.datasets = ds; chart.update(); }
-  else chart = new Chart($('chTrend'), { type: 'bar', data: { labels: kys.map(kyLabel), datasets: ds }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { font: { size: 10 } } } } } });
+  if (chart) { chart.data.labels = kys.map(lbl); chart.data.datasets = ds; chart.update(); }
+  else chart = new Chart($('chTrend'), { type: 'bar', data: { labels: kys.map(lbl), datasets: ds }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { font: { size: 10 } } } } } });
 }
 
 /* ---------- ĐỐI CHIẾU ---------- */
@@ -1586,7 +1660,7 @@ function actSelect(id, locked) {
 }
 function filteredRows() {
   const scope = $('fScope').value, stt = $('fStatus').value, act = $('fAction').value, src = $('fSrc').value, kq = $('fKqkt').value, tt = $('fTT').value, q = norm($('fQ').value);
-  return rowsForKy(S.ky).filter(r => {
+  return viewRows().filter(r => {
     if (scope !== 'all' && r.scope !== scope) return false;
     if (stt === '!khop' ? r.status === 'khop' : stt && r.status !== stt) return false;
     const a = actOf(r.id);
@@ -1615,8 +1689,16 @@ function diffCell(r) {
 }
 function renderDoiChieu() {
   fillFilterOptions();
-  const locked = kyLocked(S.ky); const k = S.kys.get(S.ky) || {};
-  $('lockBox').innerHTML = locked ? '<div class="okbox">🔒 Kỳ ' + kyLabel(S.ky) + ' đã chốt lúc ' + fmtTs(k.chot_at) + ' bởi ' + esc(k.chot_by) + '. Không sửa được duyệt/nạp dữ liệu — bấm “Mở lại kỳ” nếu cần.</div>' : '';
+  const k = S.kys.get(S.ky) || {};
+  const locked = isMonth() && kyLocked(S.ky);
+  const rowLocked = r => kyLocked(rowKy(r));   // Quý/Năm: khóa riêng dòng thuộc tháng đã chốt
+  if (isMonth()) {
+    $('lockBox').innerHTML = locked ? '<div class="okbox">🔒 Kỳ ' + kyLabel(S.ky) + ' đã chốt lúc ' + fmtTs(k.chot_at) + ' bởi ' + esc(k.chot_by) + '. Không sửa được duyệt/nạp dữ liệu — bấm “Mở lại kỳ” nếu cần.</div>' : '';
+  } else {
+    const ch = perMonths().filter(kyLocked);
+    $('lockBox').innerHTML = '<div class="warnbox">Đang xem gộp <b>' + perLabel() + '</b>' + (ch.length ? ' · tháng đã chốt (không sửa duyệt được): <b>' + ch.map(kyLabel).join(', ') + '</b>' : '') + '. Lưu kết quả lần 1 và Chốt kỳ làm theo từng tháng — chọn <b>Tháng</b> ở góc trên.</div>';
+  }
+  $('btnChot').style.display = $('btnSnap1').style.display = isMonth() ? '' : 'none';
   $('btnChot').textContent = locked ? '🔓 Mở lại kỳ' : '🔒 Chốt kỳ';
   $('btnSnap1').disabled = locked;
   const base = filteredRows();
@@ -1626,8 +1708,8 @@ function renderDoiChieu() {
   const sum = (f) => rows.reduce((a, r) => a + (Number(f(r)) || 0), 0);
   $('rsTable').innerHTML = headHtml('rs', RS_COLS, base, '<input type="checkbox" id="ckAll"' + (locked ? ' disabled' : '') + '>') + '<tbody>' +
     view.map(r => {
-      const x = r.p || r.t; const rv = rvOf(r.id);
-      return '<tr data-id="' + esc(r.id) + '"' + (S.sel.has(r.id) ? ' class="sel"' : '') + '><td><input type="checkbox" data-ck="' + esc(r.id) + '"' + (S.sel.has(r.id) ? ' checked' : '') + (locked ? ' disabled' : '') + '></td>' +
+      const x = r.p || r.t; const rv = rvOf(r.id); const lk = locked || rowLocked(r);
+      return '<tr data-id="' + esc(r.id) + '"' + (S.sel.has(r.id) ? ' class="sel"' : '') + (lk ? ' data-lk="1"' : '') + '><td><input type="checkbox" data-ck="' + esc(r.id) + '"' + (S.sel.has(r.id) ? ' checked' : '') + (lk ? ' disabled' : '') + '></td>' +
         '<td class="nw">' + statusPill(r) + '</td>' +
         '<td class="nw small">' + (r.p ? SRC[r.p.nguon] + '<br><span class="muted">' + esc(KQ[kqCat(r.p.kqkt)] || r.p.kqkt) + '</span>' : '<span class="muted">Tờ khai</span>') + '</td>' +
         '<td class="nw small">' + (r.t ? (tkSrcOf(r.t) === 'CP' ? '<span class="tag blue">Central Plaza &amp; JVC</span>' : 'Sofitel') : '') + '</td>' +
@@ -1635,7 +1717,7 @@ function renderDoiChieu() {
         '<td class="nw">' + esc((x.khmau || '') + x.khhd) + '</td><td class="nw">' + esc(x.so_hd) + '</td><td class="nw">' + fmtDate(x.ngay) + '</td>' +
         '<td class="n nw">' + (r.p ? fmtN(r.p.tien_chua_thue) : '') + '</td><td class="n nw">' + (r.p ? fmtN(r.p.tien_thue) : '') + '</td><td class="n nw">' + (r.p ? fmtN(r.p.tong_tt) : '') + '</td>' +
         '<td class="n nw">' + (r.t ? fmtN(r.t.tien_chua_thue) : '') + '</td><td class="n nw">' + (r.t ? fmtN(r.t.tien_thue) : '') + '</td>' +
-        '<td class="n nw">' + diffCell(r) + '</td><td>' + rowTags(r) + '</td><td>' + actSelect(r.id, locked) + '</td>' +
+        '<td class="n nw">' + diffCell(r) + '</td><td>' + rowTags(r) + (lk && !locked ? '<span class="tag" title="Tháng ' + kyLabel(rowKy(r)) + ' đã chốt">🔒 ' + kyLabel(rowKy(r)) + '</span>' : '') + '</td><td>' + actSelect(r.id, lk) + '</td>' +
         '<td class="notecell" data-note="' + esc(r.id) + '">' + (rv && rv.ghi_chu ? esc(rv.ghi_chu).replace(/\n/g, '<br>') : '<span class="muted">+ ghi chú</span>') + '</td></tr>';
     }).join('') + '</tbody>' +
     '<tfoot><tr><td></td><td colspan="8">' + rows.length.toLocaleString('vi-VN') + ' dòng (lọc)</td><td class="n">' + fmtN(sum(r => r.p && r.p.tien_chua_thue)) + '</td><td class="n">' + fmtN(sum(r => r.p && r.p.tien_thue)) + '</td><td class="n">' + fmtN(sum(r => r.p && r.p.tong_tt)) + '</td><td class="n">' + fmtN(sum(r => r.t && r.t.tien_chua_thue)) + '</td><td class="n">' + fmtN(sum(r => r.t && r.t.tien_thue)) + '</td><td colspan="4"></td></tr></tfoot>';
@@ -1643,9 +1725,9 @@ function renderDoiChieu() {
   const tb = $('rsTable');
   wireHead(tb, 'rs', 'rs', renderDoiChieu);
   tb.querySelectorAll('[data-ck]').forEach(c => c.onclick = e => { e.stopPropagation(); c.checked ? S.sel.add(c.dataset.ck) : S.sel.delete(c.dataset.ck); c.closest('tr').classList.toggle('sel', c.checked); updBulk(); });
-  const ca = $('ckAll'); if (ca) ca.onclick = () => { view.forEach(r => ca.checked ? S.sel.add(r.id) : S.sel.delete(r.id)); renderDoiChieu(); };
+  const ca = $('ckAll'); if (ca) ca.onclick = () => { view.forEach(r => { if (ca.checked && !rowLocked(r)) S.sel.add(r.id); else S.sel.delete(r.id); }); renderDoiChieu(); };
   tb.querySelectorAll('[data-act]').forEach(s => { s.onclick = e => e.stopPropagation(); s.onchange = async () => { try { await setReview([s.dataset.act], s.value || null); s.className = 'act ' + s.value; } catch (e) { toast(e.message, true); } }; });
-  tb.querySelectorAll('[data-note]').forEach(c => c.onclick = e => { e.stopPropagation(); if (locked) return openRow(c.dataset.note); const cur = (rvOf(c.dataset.note) || {}).ghi_chu || ''; const v = prompt('Ghi chú:', cur); if (v === null) return; setReview([c.dataset.note], undefined, v.trim(), 'set').then(renderDoiChieu, er => toast(er.message, true)); });
+  tb.querySelectorAll('[data-note]').forEach(c => c.onclick = e => { e.stopPropagation(); if (c.closest('tr').dataset.lk) return openRow(c.dataset.note); const cur = (rvOf(c.dataset.note) || {}).ghi_chu || ''; const v = prompt('Ghi chú:', cur); if (v === null) return; setReview([c.dataset.note], undefined, v.trim(), 'set').then(renderDoiChieu, er => toast(er.message, true)); });
   tb.querySelectorAll('tbody tr').forEach(tr => tr.onclick = () => openRow(tr.dataset.id));
   updBulk();
 }
@@ -1674,7 +1756,7 @@ function openRow(id) {
   const r = findRow(id); if (!r) return;
   const x = r.p || r.t; const rv = rvOf(id) || {};
   const kyOfRow = r.t ? r.t.ky : r.p.ky;
-  const locked = kyLocked(S.ky) || kyLocked(kyOfRow);
+  const locked = (isMonth() && kyLocked(S.ky)) || kyLocked(kyOfRow);
   $('mrTitle').innerHTML = esc(x.ten_nb || x.mst_nb) + '<small>MST ' + esc(x.mst_nb) + ' · HĐ ' + esc((x.khmau || '') + x.khhd) + ' số ' + esc(x.so_hd) + '</small>';
   const cmpRow = (lbl, a, b, d) => '<tr><th>' + lbl + '</th><td class="n">' + a + '</td><td class="n">' + b + '</td><td class="n">' + (d || '') + '</td></tr>';
   const p = r.p, t = r.t;
@@ -1708,7 +1790,7 @@ function openRow(id) {
 function goiDauRows() { return applyCols('gd', goiDauBase(), GD_COLS); }
 function goiDauBase() {
   const incl = $('gIncl').value === 'all', a = $('gAct').value, q = norm($('gQ').value);
-  return carryForKy(S.ky, incl).filter(r => {
+  return carryView(incl).filter(r => {
     const x = actOf(r.id);
     if (a === 'open' && x === 'loai_tru') return false;
     if (a === 'loai_tru' && x !== 'loai_tru') return false;
@@ -1718,7 +1800,7 @@ function goiDauBase() {
 }
 function kyDiff(a, b) { const [y1, m1] = a.split('-').map(Number), [y2, m2] = b.split('-').map(Number); return (y2 - y1) * 12 + (m2 - m1); }
 function renderGoiDau() {
-  const base = goiDauBase(); const rows = applyCols('gd', base, GD_COLS); const locked = kyLocked(S.ky);
+  const base = goiDauBase(); const rows = applyCols('gd', base, GD_COLS); const locked = isMonth() && kyLocked(S.ky);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE)); if (S.page.gd >= pages) S.page.gd = 0;
   const view = rows.slice(S.page.gd * PAGE, (S.page.gd + 1) * PAGE);
   let lastKy = ''; const grouped = !cfState('gd').sort;   // dòng nhóm theo kỳ chỉ hiện khi đang ở thứ tự mặc định
@@ -1820,7 +1902,7 @@ const gocCols = () => S.goc === 'p' ? GOC_P_COLS : GOC_T_COLS;
 function gocRows() { return applyCols(gocKey(), gocBase(), gocCols()); }
 function gocBase() {
   const q = norm($('gocQ').value);
-  const list = S.goc === 'p' ? [...S.portal.values()].filter(p => p.ky === S.ky) : [...S.tk.values()].filter(t => t.ky === S.ky);
+  const list = S.goc === 'p' ? [...S.portal.values()].filter(p => inPer(p.ky)) : [...S.tk.values()].filter(t => inPer(t.ky));
   return list.filter(x => !q || norm([x.mst_nb, x.ten_nb, x.so_hd, x.khhd, x.mat_hang].join(' ')).includes(q))
     .sort((a, b) => String(a.ten_nb).localeCompare(String(b.ten_nb), 'vi') || String(a.so_hd).localeCompare(String(b.so_hd), 'vi', { numeric: true }));
 }
@@ -1885,17 +1967,27 @@ function exportRowObj(r) {
 function sheetFrom(arr) { const ws = XLSX.utils.json_to_sheet(arr); if (arr.length) ws['!cols'] = Object.keys(arr[0]).map(k => ({ wch: Math.min(40, Math.max(10, k.length + 2)) })); return ws; }
 $('btnExportKy').onclick = () => {
   if (!S.calc) return;
-  const ky = S.ky; const { rows, st } = statsForKy(ky); const k = S.kys.get(ky) || {};
+  const { rows, st } = statsFor(viewRows());
   const wb = XLSX.utils.book_new();
   const sum = (arr, f) => arr.reduce((a, r) => a + (Number(f(r)) || 0), 0);
   const tong = Object.keys(ST).map(s => ({ 'Trạng thái': ST[s], 'Số dòng': st[s].length, 'Cổng: chưa thuế': sum(st[s], r => r.p && r.p.tien_chua_thue), 'Cổng: thuế': sum(st[s], r => r.p && r.p.tien_thue), 'Cổng: thanh toán': sum(st[s], r => r.p && r.p.tong_tt), 'TK: chưa thuế': sum(st[s], r => r.t && r.t.tien_chua_thue), 'TK: thuế': sum(st[s], r => r.t && r.t.tien_thue) }));
-  tong.push({}, { 'Trạng thái': 'Kỳ', 'Số dòng': kyLabel(ky) }, { 'Trạng thái': 'Dung sai (đ)', 'Số dòng': S.tol }, { 'Trạng thái': 'Lần 1', 'Số dòng': k.lan1_at ? fmtTs(k.lan1_at) + ' · ' + k.lan1_by : '' }, { 'Trạng thái': 'Lần 2', 'Số dòng': k.lan2_at ? fmtTs(k.lan2_at) + ' · ' + k.lan2_by : '' }, { 'Trạng thái': 'Tờ khai', 'Số dòng': k.tk_file || '' }, { 'Trạng thái': 'Chốt', 'Số dòng': k.chot ? fmtTs(k.chot_at) + ' · ' + k.chot_by : 'Chưa chốt' }, { 'Trạng thái': 'Xuất lúc', 'Số dòng': fmtTs(nowIso()) + ' · ' + me() });
+  tong.push({}, { 'Trạng thái': 'Kỳ', 'Số dòng': perLabel() }, { 'Trạng thái': 'Dung sai (đ)', 'Số dòng': S.tol });
+  // tình trạng từng tháng trong kỳ
+  perMonths().filter(m => m <= prevKy() || S.kys.has(m)).forEach(m => {
+    const k = S.kys.get(m) || {}; const ts = tkStatus(m);
+    tong.push({ 'Trạng thái': 'Tháng ' + kyLabel(m), 'Số dòng': [
+      'Lần 1: ' + (k.lan1_at ? fmtTs(k.lan1_at) + ' · ' + k.lan1_by : 'chưa'),
+      'Lần 2: ' + (k.lan2_at ? fmtTs(k.lan2_at) + ' · ' + k.lan2_by : 'chưa'),
+      'Tờ khai: ' + (Object.keys(TK_SRC).map(s => TK_SRC[s] + ' ' + (ts[s] ? ts[s].file : 'chưa nạp')).join(' / ')),
+      'Chốt: ' + (k.chot ? fmtTs(k.chot_at) + ' · ' + k.chot_by : 'chưa')].join(' | ') });
+  });
+  tong.push({ 'Trạng thái': 'Xuất lúc', 'Số dòng': fmtTs(nowIso()) + ' · ' + me() });
   XLSX.utils.book_append_sheet(wb, sheetFrom(tong), 'Tổng hợp');
-  XLSX.utils.book_append_sheet(wb, sheetFrom(rows.map(exportRowObj)), 'Đối chiếu');
-  XLSX.utils.book_append_sheet(wb, sheetFrom(carryForKy(ky, true).map(r => Object.assign({ 'Kỳ lập HĐ': kyLabel(r.p.ky) }, exportRowObj(r)))), 'Gối đầu');
-  XLSX.utils.book_append_sheet(wb, sheetFrom(portalExport([...S.portal.values()].filter(p => p.ky === ky))), 'Hợp nhất cổng thuế');
-  XLSX.utils.book_append_sheet(wb, sheetFrom(tkExport([...S.tk.values()].filter(t => t.ky === ky))), 'Tờ khai');
-  XLSX.writeFile(wb, 'Doi chieu hoa don ' + ky + ' ' + stamp() + '.xlsx');
+  XLSX.utils.book_append_sheet(wb, sheetFrom(rows.map(r => Object.assign(isMonth() ? {} : { 'Tháng': kyLabel(rowKy(r)) }, exportRowObj(r)))), 'Đối chiếu');
+  XLSX.utils.book_append_sheet(wb, sheetFrom(carryView(true).map(r => Object.assign({ 'Kỳ lập HĐ': kyLabel(r.p.ky) }, exportRowObj(r)))), 'Gối đầu');
+  XLSX.utils.book_append_sheet(wb, sheetFrom(portalExport([...S.portal.values()].filter(p => inPer(p.ky)))), 'Hợp nhất cổng thuế');
+  XLSX.utils.book_append_sheet(wb, sheetFrom(tkExport([...S.tk.values()].filter(t => inPer(t.ky)))), 'Tờ khai');
+  XLSX.writeFile(wb, 'Doi chieu hoa don ' + S.per + ' ' + stamp() + '.xlsx');
 };
 function portalExport(list) { return list.map((p, i) => ({ 'STT': i + 1, 'Nguồn': SRC[p.nguon], 'Kết quả kiểm tra': p.kqkt, 'Ký hiệu mẫu số': p.khmau, 'Ký hiệu HĐ': p.khhd, 'Số HĐ': p.so_hd, 'Ngày lập': fmtDate(p.ngay), 'MST người bán': p.mst_nb, 'Tên người bán': p.ten_nb, 'Tổng tiền chưa thuế': p.tien_chua_thue, 'Tổng tiền thuế': p.tien_thue, 'Chiết khấu TM': p.chiet_khau, 'Tổng tiền thanh toán': p.tong_tt, 'Tiền tệ': p.tien_te, 'Trạng thái HĐ': p.trang_thai, 'Lần tải': p.lan_dau === p.lan_cuoi ? p.lan_dau : p.lan_dau + '→' + p.lan_cuoi, 'File': p.file_ten })); }
 function tkExport(list) { return list.map(t => ({ 'Đơn vị': TK_SRC[tkSrcOf(t)], 'Ký hiệu mẫu': t.khmau, 'Ký hiệu HĐ': t.khhd, 'Số HĐ': t.so_hd, 'Ngày': fmtDate(t.ngay), 'MST người bán': t.mst_nb, 'Tên người bán': t.ten_nb, 'Mặt hàng': t.mat_hang, 'Thuế suất': t.thue_suat, 'Chưa thuế': Number(t.tien_chua_thue), 'Thuế GTGT': Number(t.tien_thue), 'Số dòng gộp': t.so_dong, 'Dòng Excel': t.dong_excel })); }
