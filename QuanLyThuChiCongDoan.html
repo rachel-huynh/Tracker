@@ -2787,7 +2787,7 @@ function taoXlsx(sheets) {
     '<fill><patternFill patternType="solid"><fgColor rgb="FFEEF2F7"/><bgColor indexed="64"/></patternFill></fill></fills>' +
     '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>' + bd + '</borders>' +
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-    '<cellXfs count="17">' +
+    '<cellXfs count="18">' +
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +                                                                              // 0 thường
     '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +  // 1 tiêu đề cột
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' + // 2 chữ
@@ -2805,6 +2805,7 @@ function taoXlsx(sheets) {
     '<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' + // 14 chữ đậm có viền
     '<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>' + // 15 căn phải nghiêng
     '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' + // 16 đậm căn giữa
+    '<xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>' + // 17 số căn phải không viền
     '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
   sheets.forEach((s, i) => add('xl/worksheets/sheet' + (i + 1) + '.xml', sheetXml(s)));
   return zipStore(files);
@@ -3274,6 +3275,19 @@ function dtGia(rec, cot, dong) {
   return Number((rec[cot] || {})[dong.ma] || 0);
 }
 function dtSuaDuoc(dong) { return !!dong.ma && !dong.tong && !dong.ct; }
+/* Giải thích cho các ô TỰ TÍNH — chỉ dùng khi vẽ màn hình nhập liệu.
+   Bản in và bản tải Excel chỉ lấy dong.ten nên dòng giải thích không bao giờ lọt vào. */
+function dtGiaiThich(dong) {
+  if (dong.ct === 'cuoiky') return 'Ô tự tính = Tích lũy đầu kỳ (10) + Tổng cộng thu (II) − Tổng cộng chi (III)';
+  if (dong.tong) {
+    const ten = dong.tong.map(function (m) {
+      const d = dtDongTheoMa(m);
+      return d && d.tt ? d.tt : m;
+    });
+    return 'Ô tự tính = cộng ' + ten.join(' + ');
+  }
+  return '';
+}
 /* Năm hoàn chỉnh gần nhất: năm nay chưa kết thúc nên lấy năm trước */
 function namCoSo() { return new Date().getFullYear() - 1; }
 /* Gom số liệu thực hiện của năm cơ sở theo mục lục B14 */
@@ -3321,18 +3335,21 @@ function renderModDuToan() {
     '<label style="font-size:13px">Lấy số liệu từ năm: <select onchange="dtDoiNamCS(this.value)">' +
     years.map(function (y) { return '<option value="' + y + '"' + (y === rec.namCS ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></label>' +
     '<button class="btn sec" onclick="dtLayLai()">↻ Lấy lại số liệu</button>' +
-    '<button class="btn sec" onclick="printDuToan()">🖨 In dự toán</button>' +
-    '<button class="btn sec" onclick="xuatExcelDuToan()">📊 Tải Excel</button>' +
-    '<button class="btn sec" onclick="printDuToan()">📄 Tải PDF</button>' +
+    '<button class="btn sec" onclick="printDuToan()">🖨 In / Tải PDF (Mẫu 01 + B14)</button>' +
+    '<button class="btn sec" onclick="xuatExcelDuToan()">📊 Tải Excel (2 sheet)</button>' +
     '</div>' +
     '<p class="note">Dự toán năm <b>' + nam + '</b> được lấy bằng số liệu thực hiện của năm <b>' + rec.namCS +
     '</b> (năm gần nhất đã trọn vẹn). Mọi ô số ở 2 cột cuối đều <b>sửa trực tiếp được</b>; dòng in đậm là dòng tự cộng nên không nhập tay.</p>' +
-    '<h3>A — Các chỉ tiêu cơ bản</h3><div class="frm" style="margin-bottom:14px">' +
-    '<div class="fld"><label>Số lao động tính quỹ lương đóng KPCĐ (người)</label><input type="text" value="' + esc(rec.ct.laoDong) + '" onchange="dtSetCT(\'laoDong\',this.value)"></div>' +
-    '<div class="fld"><label>Số đoàn viên công đoàn (người)</label><input type="text" value="' + esc(rec.ct.doanVien) + '" onchange="dtSetCT(\'doanVien\',this.value)"></div>' +
-    '<div class="fld"><label>Quỹ lương đóng KPCĐ (đồng)</label><input type="text" class="num" value="' + (rec.ct.qlKPCD ? fmt(parseMoney(rec.ct.qlKPCD)) : '') + '" onchange="dtSetCT(\'qlKPCD\',this.value)"></div>' +
-    '<div class="fld"><label>Quỹ lương đóng ĐPCĐ (đồng)</label><input type="text" class="num" value="' + (rec.ct.qlDPCD ? fmt(parseMoney(rec.ct.qlDPCD)) : '') + '" onchange="dtSetCT(\'qlDPCD\',this.value)"></div>' +
+    '<h3>A — Các chỉ tiêu cơ bản <span class="note" style="font-weight:400">(dùng chung cho Mẫu 01-DTCS và Mẫu B14-TLĐ)</span></h3>' +
+    '<div class="frm" style="margin-bottom:6px">' +
+    '<div class="fld"><label>Số lao động tính quỹ lương đóng KPCĐ (người)</label><input type="text" value="' + esc(rec.ct.laoDong) + '" title="Số lao động làm căn cứ tính kinh phí công đoàn 2% — lấy theo số liệu nhân sự dự kiến của năm ' + nam + '" onchange="dtSetCT(\'laoDong\',this.value)"></div>' +
+    '<div class="fld"><label>Số đoàn viên công đoàn (người)</label><input type="text" value="' + esc(rec.ct.doanVien) + '" title="Số đoàn viên dự kiến năm ' + nam + ' — căn cứ tính đoàn phí 1%" onchange="dtSetCT(\'doanVien\',this.value)"></div>' +
+    '<div class="fld"><label>Quỹ lương đóng KPCĐ (đồng)</label><input type="text" class="num" value="' + (rec.ct.qlKPCD ? fmt(parseMoney(rec.ct.qlKPCD)) : '') + '" title="Tổng quỹ tiền lương làm căn cứ đóng kinh phí công đoàn (2%) của năm ' + nam + '" onchange="dtSetCT(\'qlKPCD\',this.value)"></div>' +
+    '<div class="fld"><label>Quỹ lương đóng ĐPCĐ (đồng)</label><input type="text" class="num" value="' + (rec.ct.qlDPCD ? fmt(parseMoney(rec.ct.qlDPCD)) : '') + '" title="Tổng quỹ tiền lương làm căn cứ đóng đoàn phí công đoàn (1%) của năm ' + nam + '" onchange="dtSetCT(\'qlDPCD\',this.value)"></div>' +
+    '<div class="fld half"><label>Ghi chú — dòng “Số lao động / Quỹ lương KPCĐ” (Mẫu 01)</label><input type="text" value="' + esc(rec.ct.gc1 || '') + '" onchange="dtSetCT(\'gc1\',this.value)"></div>' +
+    '<div class="fld half"><label>Ghi chú — dòng “Số đoàn viên / Quỹ lương ĐPCĐ” (Mẫu 01)</label><input type="text" value="' + esc(rec.ct.gc2 || '') + '" onchange="dtSetCT(\'gc2\',this.value)"></div>' +
     '</div>' +
+    '<p class="note" style="margin-bottom:14px">4 chỉ tiêu trên in ra ở <b>Mẫu 01-DTCS</b> (Bảng dự toán số Lao động – Đoàn viên – Quỹ lương) và ở phần A của <b>Mẫu B14-TLĐ</b>.</p>' +
     '<h3>B — Các chỉ tiêu thu, chi tài chính công đoàn</h3>' +
     '<div class="tblwrap"><table class="tbl"><tr>' +
     '<th style="width:5%">TT</th><th>Nội dung</th><th style="width:9%">Mục lục TCCĐ</th>' +
@@ -3341,16 +3358,18 @@ function renderModDuToan() {
   DT_DONG.forEach(function (d, i) {
     const uoc = dtGia(rec, 'uoc', d), dt = dtGia(rec, 'dt', d);
     const sua = dtSuaDuoc(d);
+    const gt = dtGiaiThich(d);     // chỉ hiển thị trên màn hình, KHÔNG có trong bản in / bản tải về
     h += '<tr' + (d.dam ? ' class="sum"' : '') + '>' +
       '<td class="center">' + esc(d.tt) + '</td>' +
-      '<td' + (d.dam ? ' class="b"' : '') + (d.con ? ' style="padding-left:22px"' : '') + '>' + esc(d.ten) + '</td>' +
+      '<td' + (d.dam ? ' class="b"' : '') + (d.con ? ' style="padding-left:22px"' : '') + '>' + esc(d.ten) +
+      (gt ? '<div class="note" style="font-weight:400">🔒 ' + esc(gt) + '</div>' : '') + '</td>' +
       '<td class="center">' + esc(d.ma) + '</td>' +
       '<td class="num">' + (sua
-        ? '<input class="num" type="text" value="' + (uoc ? fmt(uoc) : '') + '" onchange="dtSet(\'uoc\',\'' + d.ma + '\',this.value)">'
-        : '<b>' + (uoc === null ? '' : fmt(uoc)) + '</b>') + '</td>' +
+        ? '<input class="num" type="text" value="' + (uoc ? fmt(uoc) : '') + '" title="Ước thực hiện năm ' + rec.namCS + ' — mặc định lấy từ sổ thu chi, sửa tay được" onchange="dtSet(\'uoc\',\'' + d.ma + '\',this.value)">'
+        : '<b title="Ô tự tính, không nhập tay">' + (uoc === null ? '' : fmt(uoc)) + '</b>') + '</td>' +
       '<td class="num">' + (sua
-        ? '<input class="num" type="text" value="' + (dt ? fmt(dt) : '') + '" onchange="dtSet(\'dt\',\'' + d.ma + '\',this.value)">'
-        : '<b>' + (dt === null ? '' : fmt(dt)) + '</b>') + '</td>' +
+        ? '<input class="num" type="text" value="' + (dt ? fmt(dt) : '') + '" title="Số dự toán năm ' + nam + ' cho mục này — gõ số rồi rời ô là lưu" onchange="dtSet(\'dt\',\'' + d.ma + '\',this.value)">'
+        : '<b title="Ô tự tính, không nhập tay">' + (dt === null ? '' : fmt(dt)) + '</b>') + '</td>' +
       '<td></td></tr>';
   });
   h += '</table></div>' +
@@ -3388,17 +3407,49 @@ function dtBangIn(nam) {
   });
   return h + '</table>';
 }
+/* ---------- Mẫu 01-DTCS: Bảng dự toán số Lao động – Đoàn viên – Quỹ lương ---------- */
+function mau01In(nam) {
+  const rec = duToanRec(nam), s = DB.settings;
+  const so = function (v) { return v ? fmt(parseMoney(v)) : ''; };
+  return '<div class="pdoc">' +
+    '<div class="phead"><div class="porgwrap"><img class="plogo" src="' + LOGO_CD + '" alt=""><div class="porg">' +
+    'Công đoàn cấp trên: ' + esc(s.capTren) + '<br><span class="u">Công đoàn cơ sở: ' + esc(s.donVi) + '</span></div></div>' +
+    '<div class="pmau" style="font-style:italic">Mẫu 01-DTCS</div></div>' +
+    '<h1 class="ptitle" style="margin-bottom:0">Bảng Dự toán số Lao động - Đoàn viên - Quỹ lương</h1>' +
+    '<div class="center b" style="margin:4px 0 14px">Năm ' + nam + '</div>' +
+    '<table class="ptbl"><tr>' +
+    '<th style="width:26%">Chỉ tiêu</th><th style="width:14%">Số người</th>' +
+    '<th style="width:24%">Chỉ tiêu</th><th style="width:20%">Số tiền (đồng)</th><th style="width:16%">Ghi chú</th></tr>' +
+    '<tr><td style="height:46px">Số lao động tính quỹ lương đóng KPCĐ</td><td class="num">' + esc(rec.ct.laoDong || '') + '</td>' +
+    '<td>Quỹ lương đóng KPCĐ</td><td class="num">' + so(rec.ct.qlKPCD) + '</td><td>' + esc(rec.ct.gc1 || '') + '</td></tr>' +
+    '<tr><td style="height:46px">Số đoàn viên</td><td class="num">' + esc(rec.ct.doanVien || '') + '</td>' +
+    '<td>Quỹ lương đóng ĐPCĐ</td><td class="num">' + so(rec.ct.qlDPCD) + '</td><td>' + esc(rec.ct.gc2 || '') + '</td></tr>' +
+    '</table>' +
+    '<div class="psig" style="margin-top:26px">' +
+    '<div><div class="role">Xác nhận của thủ trưởng cơ quan/chủ doanh nghiệp</div><div class="name">&nbsp;</div></div>' +
+    '<div><div class="role">TM. BAN CHẤP HÀNH CĐCS<br>CHỦ TỊCH</div><div class="fn">(Ký đóng dấu)</div><div class="name">' + esc(s.chuTich).toUpperCase() + '</div></div>' +
+    '</div></div>';
+}
 function printDuToan() {
   const nam = dtState.nam, rec = duToanRec(nam), s = DB.settings;
-  const html = '<div class="pdoc">' +
+  const html = mau01In(nam) + '<div style="page-break-before:always"></div>' +
+    '<div class="pdoc">' +
     '<div class="phead"><div class="porgwrap"><img class="plogo" src="' + LOGO_CD + '" alt=""><div class="porg">' +
     esc(s.capTren) + '<br><span class="u">' + esc(s.donVi) + '</span></div></div>' +
     '<div class="pmau">Mẫu B14-TLĐ<br>(Ban hành kèm theo Hướng dẫn số 47/HD-TLĐ ngày 30/12/2021 của Tổng Liên đoàn)</div></div>' +
     '<h1 class="ptitle" style="margin-bottom:0">BÁO CÁO<br>DỰ TOÁN THU - CHI TÀI CHÍNH CÔNG ĐOÀN CƠ SỞ</h1>' +
     '<div class="center b" style="margin:4px 0 12px">NĂM ' + nam + '</div>' +
     '<div class="b">A - CÁC CHỈ TIÊU CƠ BẢN:</div>' +
-    '<div class="pinfo">- Số lao động tính quỹ lương đóng KPCĐ: <b>' + esc(rec.ct.laoDong || '……') + '</b> người. &nbsp;&nbsp; Quỹ lương đóng KPCĐ: <b>' + (rec.ct.qlKPCD ? fmt(parseMoney(rec.ct.qlKPCD)) : '……') + '</b> đồng.</div>' +
-    '<div class="pinfo">- Số đoàn viên công đoàn: <b>' + esc(rec.ct.doanVien || '……') + '</b> người. &nbsp;&nbsp; Quỹ lương đóng ĐPCĐ: <b>' + (rec.ct.qlDPCD ? fmt(parseMoney(rec.ct.qlDPCD)) : '……') + '</b> đồng.</div>' +
+    // số tiền quỹ lương căn lề PHẢI cho đúng mẫu
+    '<table style="width:100%;border-collapse:collapse;font-size:13px;margin:2px 0 6px">' +
+    '<tr><td style="width:44%;padding:1px 0">- Số lao động tính quỹ lương đóng KPCĐ: <b>' + esc(rec.ct.laoDong || '……') + '</b> người</td>' +
+    '<td style="width:28%">Quỹ lương đóng KPCĐ:</td>' +
+    '<td style="width:20%;text-align:right"><b>' + (rec.ct.qlKPCD ? fmt(parseMoney(rec.ct.qlKPCD)) : '……') + '</b></td>' +
+    '<td style="width:8%;padding-left:6px">đồng</td></tr>' +
+    '<tr><td style="padding:1px 0">- Số đoàn viên công đoàn: <b>' + esc(rec.ct.doanVien || '……') + '</b> người</td>' +
+    '<td>Quỹ lương đóng ĐPCĐ:</td>' +
+    '<td style="text-align:right"><b>' + (rec.ct.qlDPCD ? fmt(parseMoney(rec.ct.qlDPCD)) : '……') + '</b></td>' +
+    '<td style="padding-left:6px">đồng</td></tr></table>' +
     '<div class="b" style="margin-top:8px">B - CÁC CHỈ TIÊU THU, CHI TÀI CHÍNH CÔNG ĐOÀN:</div>' +
     dtBangIn(nam) +
     '<div class="b" style="margin-top:8px">C - THUYẾT MINH:</div>' +
@@ -3426,6 +3477,7 @@ function oNB(v) { return { v: v, t: 'n', s: 13 }; }
 function oSB(v) { return { v: v, t: 's', s: 14 }; }
 function oR(v) { return { v: v, t: 's', s: 15 }; }
 function oBC(v) { return { v: v, t: 's', s: 16 }; }
+function oNP(v) { return { v: v, t: 'n', s: 17 }; }   // số căn phải, KHÔNG viền (quỹ lương ở phần A)
 function hangTrong(n) { const r = []; for (let i = 0; i < n; i++) r.push(null); return r; }
 
 /* ---------- Tên kỳ báo cáo (quy = 0 nghĩa là cả năm) ---------- */
@@ -3533,10 +3585,10 @@ function xlsxDuToan(nam) {
   add(hangTrong(6));
   n = add([oB('A - CÁC CHỈ TIÊU CƠ BẢN:')]); merges.push('A' + n + ':F' + n);
   n = add([oP('- Số lao động tính quỹ lương đóng KPCĐ: ' + (rec.ct.laoDong || '……') + ' người'), null, null,
-  oP('Quỹ lương đóng KPCĐ:'), oN(parseMoney(rec.ct.qlKPCD) || 0), oP('đồng')]);
+  oP('Quỹ lương đóng KPCĐ:'), oNP(parseMoney(rec.ct.qlKPCD) || 0), oP('đồng')]);
   merges.push('A' + n + ':C' + n);
   n = add([oP('- Số đoàn viên công đoàn: ' + (rec.ct.doanVien || '……') + ' người'), null, null,
-  oP('Quỹ lương đóng ĐPCĐ:'), oN(parseMoney(rec.ct.qlDPCD) || 0), oP('đồng')]);
+  oP('Quỹ lương đóng ĐPCĐ:'), oNP(parseMoney(rec.ct.qlDPCD) || 0), oP('đồng')]);
   merges.push('A' + n + ':C' + n);
   n = add([oB('B - CÁC CHỈ TIÊU THU, CHI TÀI CHÍNH CÔNG ĐOÀN:')]); merges.push('A' + n + ':F' + n);
   add([oH('TT'), oH('Nội dung'), oH('Mục lục TCCĐ'), oH('Ước thực hiện năm ' + rec.namCS), oH('Dự toán năm ' + nam), oH('Ghi chú')]);
@@ -3570,7 +3622,41 @@ function xlsxDuToan(nam) {
     page: { orient: 'portrait', fit: 1 }
   };
 }
-function xuatExcelDuToan() { taiXlsx(taoXlsx([xlsxDuToan(dtState.nam)]), 'DuToan-B14-' + dtState.nam); }
+/* ---------- Excel: Mẫu 01-DTCS (Lao động – Đoàn viên – Quỹ lương) ---------- */
+function xlsxMau01(nam) {
+  const s = DB.settings, rec = duToanRec(nam);
+  const rows = [], merges = [];
+  const add = function (r) { rows.push(r); return rows.length; };
+  add([oP('Công đoàn cấp trên: ' + s.capTren), null, null, null, oI('Mẫu 01-DTCS')]);
+  merges.push('A1:C1');
+  add([oP('Công đoàn cơ sở: ' + s.donVi)]); merges.push('A2:C2');
+  add(hangTrong(5));
+  let n = add([oT('Bảng Dự toán số Lao động - Đoàn viên - Quỹ lương')]); merges.push('A' + n + ':E' + n);
+  n = add([oT2('Năm ' + nam)]); merges.push('A' + n + ':E' + n);
+  add(hangTrong(5));
+  add([oH('Chỉ tiêu'), oH('Số người'), oH('Chỉ tiêu'), oH('Số tiền (đồng)'), oH('Ghi chú')]);
+  add([oS('Số lao động tính quỹ lương đóng KPCĐ'), oN(parseMoney(rec.ct.laoDong) || null),
+  oS('Quỹ lương đóng KPCĐ'), oN(parseMoney(rec.ct.qlKPCD) || null), oS(rec.ct.gc1 || '')]);
+  add([oS('Số đoàn viên'), oN(parseMoney(rec.ct.doanVien) || null),
+  oS('Quỹ lương đóng ĐPCĐ'), oN(parseMoney(rec.ct.qlDPCD) || null), oS(rec.ct.gc2 || '')]);
+  add(hangTrong(5)); add(hangTrong(5));
+  n = add([oBC('Xác nhận của thủ trưởng cơ quan/chủ doanh nghiệp'), null, oBC('TM. BAN CHẤP HÀNH CĐCS')]);
+  merges.push('A' + n + ':B' + n, 'C' + n + ':E' + n);
+  n = add([null, null, oBC('CHỦ TỊCH')]); merges.push('C' + n + ':E' + n);
+  n = add([null, null, oI('(Ký đóng dấu)')]); merges.push('C' + n + ':E' + n);
+  add(hangTrong(5)); add(hangTrong(5));
+  n = add([null, null, oBC(String(s.chuTich || '').toUpperCase())]); merges.push('C' + n + ':E' + n);
+  return {
+    ten: 'Mau 01 LD-DV-QL ' + nam,
+    rows: rows, merges: merges,
+    w: [34, 14, 28, 20, 18],
+    page: { orient: 'portrait', fit: 1 }
+  };
+}
+function xuatExcelDuToan() {
+  const nam = dtState.nam;
+  taiXlsx(taoXlsx([xlsxMau01(nam), xlsxDuToan(nam)]), 'DuToan-' + nam);
+}
 
 /* ---------- Tải file xlsx xuống máy ---------- */
 function taiXlsx(bytes, tenGoc) {
