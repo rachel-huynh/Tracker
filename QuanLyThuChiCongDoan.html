@@ -264,6 +264,13 @@ const DM_CHI = [
   { ma: '37', ten: 'Đoàn phí nộp cấp trên trực tiếp' },
   { ma: '49', ten: 'Kinh phí phải nộp cấp trên trong kỳ (29%)' }
 ];
+/* Chuyển quỹ nội bộ: rút tiền từ ngân hàng nhập quỹ tiền mặt (hoặc ngược lại).
+   Đây KHÔNG phải thu/chi ngân sách — hai vế tự triệt tiêu nhau — nên báo cáo
+   quyết toán và dự toán bỏ qua mã này; sổ quỹ tiền mặt và sổ ngân hàng vẫn
+   ghi nhận đầy đủ để theo dõi dòng tiền thực tế. */
+const MA_NOI_BO = 'NB';
+const DM_NOI_BO = { ma: MA_NOI_BO, ten: 'Chuyển quỹ nội bộ (rút/nộp quỹ — không tính vào báo cáo)' };
+let NB_CAN_LUU = 0;   // số phiếu vừa chuẩn hóa sang mã NB, cần lưu & đồng bộ sau khi khởi động xong
 /* Hạn mức chi thăm hỏi cho mỗi đoàn viên trong 1 năm (đồng) */
 const HAN_MUC_TH = 3000000;
 const TH_LOAI = [
@@ -340,6 +347,18 @@ function migrateData() {
     if (!r.id) r.id = uid();          // cần mã riêng để đồng bộ từng dòng
   });
   (DB.phieu || []).forEach(p => { if (p.boPhan === undefined) p.boPhan = ''; });
+  // Rút quỹ / nộp quỹ giữa ngân hàng và tiền mặt là chuyển nội bộ, không phải thu–chi
+  // ngân sách. Trước đây vế thu bị gán mã 24 (thu khác) nên báo cáo bị thổi phồng,
+  // còn vế chi lại để trống mã → hai bên không triệt tiêu nhau. Chuẩn hóa về mã NB.
+  const reNoiBo = /r[uú]t\s*(qu[yỹ]|nh[aậ]p)|nh[aậ]p\s*qu[yỹ]\s*ti[eề]n\s*m[aặ]t|n[oộ]p\s*qu[yỹ]\s*ti[eề]n\s*m[aặ]t/i;
+  let nNB = 0;
+  (DB.phieu || []).forEach(p => {
+    if (p.maSo === MA_NOI_BO) return;
+    // nhận theo DIỄN GIẢI, không phụ thuộc mã cũ: thực tế phiếu rút quỹ đang bị gán
+    // lẫn lộn mã 24 (thu khác), 35 (chi khác) hoặc bỏ trống.
+    if (reNoiBo.test(p.dienGiai || '')) { p.maSo = MA_NOI_BO; nNB++; }
+  });
+  if (nNB) { NB_CAN_LUU = nNB; console.info('Đã chuẩn hóa ' + nNB + ' phiếu rút/nộp quỹ nội bộ sang mã ' + MA_NOI_BO + ' (không tính vào báo cáo).'); }
   // bổ sung các trường của mẫu Ủy nhiệm chi ngân hàng OCB cho dữ liệu cũ
   (DB.unc || []).forEach(u => {
     ['traChiNhanh', 'traDiaChi', 'nhanTinh', 'nhanDiaChi', 'nhanGTTT', 'nhanGTTTNgay', 'nhanGTTTNoi', 'maGD']
@@ -389,9 +408,13 @@ function dmOptions(dm, sel) {
   const list = dm === 'THU' ? DM_THU : dm === 'CHI' ? DM_CHI : DM_THU.concat(DM_CHI);
   let h = '<option value="">— Chọn mục / mã số —</option>';
   for (const it of list) h += '<option value="' + it.ma + '"' + (sel === it.ma ? ' selected' : '') + '>' + it.ma + ' — ' + esc(it.ten) + '</option>';
+  h += '<option value="' + MA_NOI_BO + '"' + (sel === MA_NOI_BO ? ' selected' : '') + '>' + MA_NOI_BO + ' — ' + esc(DM_NOI_BO.ten) + '</option>';
   return h;
 }
-function tenMuc(ma) { const it = DM_THU.concat(DM_CHI).find(x => x.ma === ma); return it ? it.ten : ''; }
+function tenMuc(ma) {
+  if (ma === MA_NOI_BO) return DM_NOI_BO.ten;
+  const it = DM_THU.concat(DM_CHI).find(x => x.ma === ma); return it ? it.ten : '';
+}
 
 /* ---------- Hạn mức thăm hỏi đoàn viên ---------- */
 function normName(s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
@@ -1612,7 +1635,8 @@ function renderModBaoCao() {
     '</div>' +
     '<h3>B — Các chỉ tiêu ngân sách · ' + (bcState.quy ? 'Quý ' + ['I', 'II', 'III', 'IV'][bcState.quy - 1] + ' năm ' : 'Cả năm ') + bcState.nam + '</h3>' +
     baoCaoTableHTML(bcState.quy, bcState.nam, false) +
-    '<p class="note" style="margin-top:8px">Số liệu tổng hợp tự động từ Phiếu Thu / Phiếu Chi trong kỳ. Dòng số dư kỳ trước lấy theo Sổ quỹ tiền mặt và Sổ TK ngân hàng. Mục IV, V tự tính theo tỷ lệ 29% thu KPCĐ / 40% thu đoàn phí (nếu chưa có phiếu chi mã 49).</p>' +
+    '<p class="note" style="margin-top:8px">Số liệu tổng hợp tự động từ Phiếu Thu / Phiếu Chi trong kỳ. Dòng số dư kỳ trước lấy theo Sổ quỹ tiền mặt và Sổ TK ngân hàng. Mục IV, V tự tính theo tỷ lệ 29% thu KPCĐ / 40% thu đoàn phí (nếu chưa có phiếu chi mã 49).<br>' +
+    '<b>Không tính vào báo cáo:</b> phiếu mang mã <b>' + MA_NOI_BO + ' — chuyển quỹ nội bộ</b> (rút tiền ngân hàng nhập quỹ tiền mặt và ngược lại) vì hai vế thu – chi tự triệt tiêu; phiếu tạm ứng / hoàn ứng cũng không vào báo cáo. Các khoản này vẫn hiện đầy đủ trong Sổ quỹ tiền mặt và Sổ TK ngân hàng.</p>' +
     '</div>';
 }
 function saveChiTieu() {
@@ -2385,6 +2409,10 @@ async function sbPullAll(replace, silent) {
   saveDB();
   SB_APPLYING = false;
   SB_SNAP = sbSnapshot();
+  // Chuẩn hóa lại dữ liệu vừa tải về (mã NB cho phiếu rút/nộp quỹ, id dòng thăm viếng…)
+  // rồi ĐẨY NGƯỢC LÊN, nếu không mỗi lần tải về lại bị ghi đè bằng dữ liệu cũ trên mây.
+  migrateData();
+  if (NB_CAN_LUU) { NB_CAN_LUU = 0; saveDB(); }
   if (!silent) reRenderAllModules(); else sbRefreshUI();
   return { p: ph.length, u: un.length, t: tv.length, k: kv.length };
 }
@@ -3107,6 +3135,8 @@ function khoiDongKhoFile() {
     .then(function () {
       FILE_IDB_OK = true;
       try { localStorage.setItem(STORE_KEY, JSON.stringify(dbChoLocal())); } catch (e) { }
+      // chuẩn hóa mã NB (nếu có) được lưu & đẩy lên Supabase sau khi kho ảnh sẵn sàng
+      if (NB_CAN_LUU) { NB_CAN_LUU = 0; saveDB(); }
       try { renderAll(); } catch (e) { }
     })
     .catch(function (e) {
