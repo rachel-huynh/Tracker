@@ -1582,8 +1582,11 @@ function baoCaoTableHTML(quy, nam, forPrint) {
     return '<tr' + (bold ? ' class="sum"' : '') + '><td class="center">' + muc + '</td><td' + (bold ? ' class="b"' : '') + '>' + noiDung + '</td><td class="center">' + ma + '</td>' +
       '<td class="num' + (bold ? ' b' : '') + '">' + (ky === '' ? '' : fmt(ky)) + '</td><td class="num' + (bold ? ' b' : '') + '">' + (lk === '' ? '' : fmt(lk)) + '</td><td></td></tr>';
   }
-  let h = '<div class="tblwrap"><table class="' + cls + '">' +
-    '<tr><th style="width:6%">Mục</th><th>Nội dung</th><th style="width:8%">Mã số</th><th style="width:15%" class="num">' + tenCot1(quy) + '</th><th style="width:16%" class="num">Lũy kế từ đầu năm đến nay</th><th style="width:12%" class="num">Cấp trên duyệt</th></tr>' +
+  // Bản in: để bảng tự co theo nội dung (không kéo căng hết khổ giấy).
+  // Bản trên màn hình vẫn chia theo tỉ lệ % cho dễ đọc.
+  const w = function (p) { return forPrint ? '' : ' style="width:' + p + '"'; };
+  let h = '<div class="tblwrap"><table class="' + cls + '"' + (forPrint ? ' style="width:auto;table-layout:auto"' : '') + '>' +
+    '<tr><th' + w('6%') + '>Mục</th><th>Nội dung</th><th' + w('8%') + '>Mã số</th><th' + w('15%') + ' class="num">' + tenCot1(quy) + '</th><th' + w('16%') + ' class="num">Lũy kế từ đầu năm<br>đến nay</th><th' + w('12%') + ' class="num">Cấp trên<br>duyệt</th></tr>' +
     '<tr><td class="center">A</td><td class="center">B</td><td class="center">C</td><td class="center">1</td><td class="center">2</td><td class="center">3</td></tr>' +
     bcDongs(quy, nam).map(function (x) { return row(x.muc, x.ten, x.ma, x.ky, x.lk, x.dam); }).join('') +
     '</table></div>';
@@ -1628,8 +1631,16 @@ function printBaoCao() {
     '<h1 class="ptitle" style="margin-bottom:0">BÁO CÁO<br>QUYẾT TOÁN THU - CHI NGÂN SÁCH CÔNG ĐOÀN CƠ SỞ</h1>' +
     '<div class="center b" style="margin:4px 0 12px">' + tenKy(bcState.quy, bcState.nam) + '</div>' +
     '<div class="b">A - CÁC CHỈ TIÊU CƠ BẢN</div>' +
-    '<div class="pinfo">- Số lao động: <b>' + esc(ct.laoDong || '……') + '</b> người. &nbsp;&nbsp; - Số cán bộ chuyên trách: <b>' + esc(ct.chuyenTrach || '……') + '</b> người.</div>' +
-    '<div class="pinfo">- Số đoàn viên: <b>' + esc(ct.doanVien || '……') + '</b> người. &nbsp;&nbsp; - Tổng quỹ tiền lương: <b>' + esc(ct.quyLuong ? fmt(parseMoney(ct.quyLuong)) : '……') + '</b> đồng.</div>' +
+    // số liệu căn lề PHẢI cho thẳng cột, nhất là ô Tổng quỹ tiền lương
+    '<table style="width:100%;border-collapse:collapse;font-size:13px;margin:2px 0 6px">' +
+    '<tr><td style="width:34%;padding:1px 0">- Số lao động: <b>' + esc(ct.laoDong || '……') + '</b> người</td>' +
+    '<td style="width:30%">- Số cán bộ chuyên trách:</td>' +
+    '<td style="width:22%;text-align:right"><b>' + esc(ct.chuyenTrach || '……') + '</b></td>' +
+    '<td style="width:14%;padding-left:6px">người</td></tr>' +
+    '<tr><td style="padding:1px 0">- Số đoàn viên: <b>' + esc(ct.doanVien || '……') + '</b> người</td>' +
+    '<td>- Tổng quỹ tiền lương:</td>' +
+    '<td style="text-align:right"><b>' + esc(ct.quyLuong ? fmt(parseMoney(ct.quyLuong)) : '……') + '</b></td>' +
+    '<td style="padding-left:6px">đồng</td></tr></table>' +
     '<div class="b" style="margin-top:8px">B - CÁC CHỈ TIÊU NGÂN SÁCH:</div>' +
     baoCaoTableHTML(bcState.quy, bcState.nam, true) +
     '<div class="b" style="margin-top:8px">C - THUYẾT MINH VÀ KIẾN NGHỊ CỦA CÔNG ĐOÀN CƠ SỞ</div>' +
@@ -3393,10 +3404,11 @@ function dtLayLai() {
 /* ---------- Bảng dự toán dạng in ---------- */
 function dtBangIn(nam) {
   const rec = duToanRec(nam);
-  let h = '<table class="ptbl" style="font-size:11px"><tr>' +
-    '<th style="width:5%">TT</th><th>Nội dung</th><th style="width:10%">Mục lục TCCĐ</th>' +
-    '<th style="width:16%">Ước thực hiện năm ' + rec.namCS + '</th>' +
-    '<th style="width:16%">Dự toán năm ' + nam + '</th><th style="width:10%">Ghi chú</th></tr>';
+  // bảng tự co theo nội dung, không kéo căng hết khổ giấy
+  let h = '<table class="ptbl" style="font-size:11px;width:auto;table-layout:auto"><tr>' +
+    '<th>TT</th><th>Nội dung</th><th>Mục lục<br>TCCĐ</th>' +
+    '<th>Ước thực hiện<br>năm ' + rec.namCS + '</th>' +
+    '<th>Dự toán<br>năm ' + nam + '</th><th>Ghi chú</th></tr>';
   DT_DONG.forEach(function (d) {
     const uoc = dtGia(rec, 'uoc', d), dt = dtGia(rec, 'dt', d);
     h += '<tr><td class="center">' + esc(d.tt) + '</td>' +
@@ -3413,7 +3425,7 @@ function mau01In(nam) {
   const so = function (v) { return v ? fmt(parseMoney(v)) : ''; };
   return '<div class="pdoc">' +
     '<div class="phead"><div class="porgwrap"><img class="plogo" src="' + LOGO_CD + '" alt=""><div class="porg">' +
-    'Công đoàn cấp trên: ' + esc(s.capTren) + '<br><span class="u">Công đoàn cơ sở: ' + esc(s.donVi) + '</span></div></div>' +
+    esc(s.capTren) + '<br><span class="u">' + esc(s.donVi) + '</span></div></div>' +
     '<div class="pmau" style="font-style:italic">Mẫu 01-DTCS</div></div>' +
     '<h1 class="ptitle" style="margin-bottom:0">Bảng Dự toán số Lao động - Đoàn viên - Quỹ lương</h1>' +
     '<div class="center b" style="margin:4px 0 14px">Năm ' + nam + '</div>' +
@@ -3531,8 +3543,9 @@ function xlsxBaoCao(quy, nam) {
   add([oB('A - CÁC CHỈ TIÊU CƠ BẢN')]);
   n = add([oP('- Số lao động: ' + (ct.laoDong || '……') + ' người'), null, null, oP('- Số cán bộ chuyên trách: ' + (ct.chuyenTrach || '……') + ' người')]);
   merges.push('A' + n + ':C' + n, 'D' + n + ':F' + n);
-  n = add([oP('- Số đoàn viên: ' + (ct.doanVien || '……') + ' người'), null, null, oP('- Tổng quỹ tiền lương: ' + (ct.quyLuong ? fmt(parseMoney(ct.quyLuong)) : '……') + ' đồng')]);
-  merges.push('A' + n + ':C' + n, 'D' + n + ':F' + n);
+  n = add([oP('- Số đoàn viên: ' + (ct.doanVien || '……') + ' người'), null, null,
+  oP('- Tổng quỹ tiền lương:'), oNP(parseMoney(ct.quyLuong) || 0), oP('đồng')]);
+  merges.push('A' + n + ':C' + n);
   add(hangTrong(6));
   add([oB('B - CÁC CHỈ TIÊU NGÂN SÁCH:')]);
   add([oH('Mục'), oH('Nội dung'), oH('Mã số'), oH(tenCot1(quy)), oH('Lũy kế từ đầu năm đến nay'), oH('Cấp trên duyệt')]);
@@ -3560,7 +3573,7 @@ function xlsxBaoCao(quy, nam) {
   return {
     ten: 'B07 ' + (quy ? 'Quy ' + quy + ' ' : '') + nam,
     rows: rows, merges: merges,
-    w: [7, 46, 9, 18, 20, 14],
+    w: [6, 44, 8, 15, 16, 12],   // vừa đủ nội dung, không để cột trống rộng
     page: { orient: 'portrait', fit: 1 }
   };
 }
@@ -3574,9 +3587,9 @@ function xlsxDuToan(nam) {
   const s = DB.settings, rec = duToanRec(nam);
   const rows = [], merges = [];
   const add = function (r) { rows.push(r); return rows.length; };
-  let n = add([oP('Công đoàn cấp trên: ' + s.capTren), null, null, null, oI('Mẫu B14-TLĐ (Ban hành kèm theo Hướng dẫn số 47/HD-TLĐ ngày 30/12/2021 của Tổng Liên đoàn)')]);
+  let n = add([oP(s.capTren), null, null, null, oI('Mẫu B14-TLĐ (Ban hành kèm theo Hướng dẫn số 47/HD-TLĐ ngày 30/12/2021 của Tổng Liên đoàn)')]);
   merges.push('A1:D1', 'E1:F3');
-  add([oP('Công đoàn cơ sở: ' + s.donVi)]); merges.push('A2:D2');
+  add([oP(s.donVi)]); merges.push('A2:D2');
   add([oP('Loại hình đơn vị: SXKD')]); merges.push('A3:D3');
   add(hangTrong(6));
   n = add([oT('BÁO CÁO')]); merges.push('A' + n + ':F' + n);
@@ -3627,9 +3640,9 @@ function xlsxMau01(nam) {
   const s = DB.settings, rec = duToanRec(nam);
   const rows = [], merges = [];
   const add = function (r) { rows.push(r); return rows.length; };
-  add([oP('Công đoàn cấp trên: ' + s.capTren), null, null, null, oI('Mẫu 01-DTCS')]);
+  add([oP(s.capTren), null, null, null, oI('Mẫu 01-DTCS')]);
   merges.push('A1:C1');
-  add([oP('Công đoàn cơ sở: ' + s.donVi)]); merges.push('A2:C2');
+  add([oP(s.donVi)]); merges.push('A2:C2');
   add(hangTrong(5));
   let n = add([oT('Bảng Dự toán số Lao động - Đoàn viên - Quỹ lương')]); merges.push('A' + n + ':E' + n);
   n = add([oT2('Năm ' + nam)]); merges.push('A' + n + ':E' + n);
