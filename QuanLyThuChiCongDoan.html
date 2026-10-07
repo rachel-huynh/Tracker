@@ -231,6 +231,7 @@ hr.sep { border: none; border-top: 1px dashed #cbd5e1; margin: 14px 0; }
     <div class="module" id="mod-soquy"></div>
     <div class="module" id="mod-sonh"></div>
     <div class="module" id="mod-baocao"></div>
+    <div class="module" id="mod-dutoan"></div>
     <div class="module" id="mod-kpdp"></div>
     <div class="module" id="mod-thamvieng"></div>
     <div class="module" id="mod-phucap"></div>
@@ -301,6 +302,8 @@ function defaultDB() {
       nguoiNhan: {},   // danh bạ người thụ hưởng: { khóa tên: {ten, stk, nh, tinh, diaChi} }
       soDu: {},        // { '2026': { TM: 0, NH: 0 } }
       chiTieu: {},     // { '2026': { laoDong, doanVien, chuyenTrach, quyLuong } }
+      nenAnh: 'vua',   // mức nén ảnh đính kèm: cao | vua | nhe
+      // (bỏ cờ fileIDB: trạng thái kho ảnh là của riêng từng máy, không nằm trong dữ liệu)
       // Cấu hình Supabase — chỉ lưu trên máy này, KHÔNG đồng bộ lên mây
       sb: { enabled: false, url: '', key: '', lastPush: '', lastPull: '' }
     },
@@ -308,7 +311,8 @@ function defaultDB() {
     unc: [],     // {id, so, ngay, traTen, traSTK, traNH, nhanTen, nhanSTK, nhanNH, soTien, bangChu, noiDung, pcRef, files[], createdAt}
     kpdp: {},    // { '2026': [ {ten, vals:[12 số]} ] }
     thamVieng: [], // {hoTen, boPhan, thamBenh, thamVieng, ghiChu}
-    phuCap: {}   // { '2026-1': [ {hoTen, chucVu, soTien, ghiChu} ] }
+    phuCap: {},  // { '2026-1': [ {hoTen, chucVu, soTien, ghiChu} ] }
+    duToan: {}   // { '2027': { namCS, ct:{}, uoc:{mã:số}, dt:{mã:số}, tm } } — mẫu B14-TLĐ
   };
 }
 let DB = null;
@@ -346,8 +350,18 @@ function migrateData() {
   if (DB.settings && DB.settings.cloud) delete DB.settings.cloud;   // bỏ cấu hình Firebase cũ
 }
 function saveDB() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
-  catch (e) { alert('KHÔNG LƯU ĐƯỢC DỮ LIỆU!\nDung lượng lưu trữ trình duyệt có thể đã đầy (thường do file đính kèm quá lớn).\nHãy xóa bớt file đính kèm hoặc Xuất dữ liệu để sao lưu.\n\nChi tiết: ' + e.message); }
+  // Khi kho ảnh đã chuyển sang IndexedDB thì localStorage chỉ giữ chữ & số
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(FILE_IDB_OK ? dbChoLocal() : DB)); }
+  catch (e) {
+    const tk = thongKeKho();
+    alert('KHÔNG LƯU ĐƯỢC DỮ LIỆU!\n\n' +
+      'Bộ nhớ trình duyệt đã đầy. Đang dùng: ' + mbStr(tk.local) + ', riêng ' + tk.soAnh + ' file đính kèm chiếm ' + mbStr(tk.byteAnh) + '.\n\n' +
+      'Cách xử lý (vào Cài đặt & Dữ liệu → mục Dung lượng lưu trữ):\n' +
+      '  • Bấm "Nén lại ảnh đã lưu" để giảm dung lượng ảnh;\n' +
+      '  • Hoặc bấm "Xuất dữ liệu" sao lưu rồi xóa bớt ảnh đính kèm.\n\n' +
+      'Chi tiết: ' + e.message);
+  }
+  try { if (FILE_IDB_OK) luuFileIDB(); } catch (e) { console.warn('Lưu file:', e); }
   try { sbAfterSave(); } catch (e) { console.warn('Đồng bộ:', e); }
 }
 
@@ -444,22 +458,18 @@ function handleFiles(input, arr, listElId) {
   input.value = '';
   let pending = files.length;
   if (!pending) return;
+  const el = $(listElId);
+  if (el) el.innerHTML = '<span class="note">Đang nén ' + pending + ' file…</span>';
   files.forEach(f => {
     if (f.type.indexOf('image/') === 0) {
-      const img = new Image();
-      const url = URL.createObjectURL(f);
-      img.onload = function () {
-        const MAX = 1400;
-        let w = img.width, h = img.height;
-        if (w > MAX || h > MAX) { const r = Math.min(MAX / w, MAX / h); w = Math.round(w * r); h = Math.round(h * r); }
-        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-        cv.getContext('2d').drawImage(img, 0, 0, w, h);
-        arr.push({ name: f.name, type: 'image/jpeg', data: cv.toDataURL('image/jpeg', 0.78) });
-        URL.revokeObjectURL(url);
+      // nén xuống dung lượng mục tiêu theo mức nén trong Cài đặt
+      nenAnh(f, mucNen()).then(function (kq) {
+        if (kq && kq.data) {
+          const ten = String(f.name || 'anh').replace(/\.(png|webp|heic|heif|bmp|tiff?)$/i, '.jpg');
+          arr.push({ name: ten, type: 'image/jpeg', data: kq.data });
+        }
         if (--pending === 0) renderAttList(arr, listElId);
-      };
-      img.onerror = function () { URL.revokeObjectURL(url); if (--pending === 0) renderAttList(arr, listElId); };
-      img.src = url;
+      }).catch(function () { if (--pending === 0) renderAttList(arr, listElId); });
     } else {
       if (f.size > 800 * 1024 && !confirm('File "' + f.name + '" khá lớn (' + Math.round(f.size / 1024) + ' KB). Lưu file lớn có thể làm đầy bộ nhớ trình duyệt. Vẫn đính kèm?')) {
         if (--pending === 0) renderAttList(arr, listElId);
@@ -476,7 +486,7 @@ function renderAttList(arr, elId) {
   el.innerHTML = arr.map((f, i) =>
     '<span class="att">' +
     (f.type.indexOf('image/') === 0 ? '<img class="thumb" src="' + f.data + '" onclick="viewImg(this.src)" alt="">' : '📄') +
-    ' ' + esc(f.name) +
+    ' ' + esc(f.name) + ' <span class="note">(' + Math.round(String(f.data || '').length / 1024) + ' KB)</span>' +
     ' <a href="' + f.data + '" download="' + esc(f.name) + '" title="Tải về">⬇</a>' +
     ' <span class="rm" title="Gỡ" onclick="rmAtt(\'' + elId + '\',' + i + ')">✕</span></span>'
   ).join('') || '<span class="note">Chưa có file đính kèm.</span>';
@@ -526,6 +536,7 @@ const NAV = [
   { id: 'soquy', ten: 'Sổ quỹ tiền mặt' },
   { id: 'sonh', ten: 'Sổ TK ngân hàng' },
   { id: 'baocao', ten: 'Báo cáo quyết toán quý' },
+  { id: 'dutoan', ten: 'Dự toán năm sau' },
   { grp: 'Bảng kê' },
   { id: 'kpdp', ten: 'Bảng kê nộp KP & ĐP' },
   { id: 'thamvieng', ten: 'Danh sách thăm hỏi' },
@@ -1526,6 +1537,7 @@ function printSo(kind, nam) {
    ================================================================ */
 const bcState = { quy: Math.ceil((new Date().getMonth() + 1) / 3), nam: new Date().getFullYear() };
 function quarterRange(quy, nam) {
+  if (!quy) return { from: nam + '-01-01', to: nam + '-12-31' };   // quy = 0 → cả năm
   const m1 = (quy - 1) * 3 + 1, m2 = quy * 3;
   const from = nam + '-' + String(m1).padStart(2, '0') + '-01';
   const lastDay = new Date(nam, m2, 0).getDate();
@@ -1545,8 +1557,8 @@ function baoCaoData(quy, nam) {
   DM_CHI.forEach(m => { d.chi[m.ma] = sumMa('PC', m.ma, r.from, r.to); d.chiLK[m.ma] = sumMa('PC', m.ma, y1, r.to); });
   // Mã 26 — số dư kỳ trước chuyển sang (không lấy theo phiếu mà theo số dư sổ)
   const sd = getSoDu(nam);
-  d.duTM_ky = quy === 1 ? sd.TM : balanceAt('TM', nam, beforeISO);
-  d.duNH_ky = quy === 1 ? sd.NH : balanceAt('CK', nam, beforeISO);
+  d.duTM_ky = quy <= 1 ? sd.TM : balanceAt('TM', nam, beforeISO);   // quý I hoặc cả năm → số dư đầu năm
+  d.duNH_ky = quy <= 1 ? sd.NH : balanceAt('CK', nam, beforeISO);
   d.duTM_lk = sd.TM; d.duNH_lk = sd.NH;
   d.congThu_ky = d.thu['22'] + d.thu['23'] + d.thu['24'];
   d.congThu_lk = d.thuLK['22'] + d.thuLK['23'] + d.thuLK['24'];
@@ -1565,39 +1577,15 @@ function baoCaoData(quy, nam) {
   return d;
 }
 function baoCaoTableHTML(quy, nam, forPrint) {
-  const d = baoCaoData(quy, nam);
   const cls = forPrint ? 'ptbl' : 'tbl';
   function row(muc, noiDung, ma, ky, lk, bold) {
     return '<tr' + (bold ? ' class="sum"' : '') + '><td class="center">' + muc + '</td><td' + (bold ? ' class="b"' : '') + '>' + noiDung + '</td><td class="center">' + ma + '</td>' +
       '<td class="num' + (bold ? ' b' : '') + '">' + (ky === '' ? '' : fmt(ky)) + '</td><td class="num' + (bold ? ' b' : '') + '">' + (lk === '' ? '' : fmt(lk)) + '</td><td></td></tr>';
   }
   let h = '<div class="tblwrap"><table class="' + cls + '">' +
-    '<tr><th style="width:6%">Mục</th><th>Nội dung</th><th style="width:8%">Mã số</th><th style="width:15%" class="num">Quyết toán kỳ này</th><th style="width:16%" class="num">Lũy kế từ đầu năm đến nay</th><th style="width:12%" class="num">Cấp trên duyệt</th></tr>' +
+    '<tr><th style="width:6%">Mục</th><th>Nội dung</th><th style="width:8%">Mã số</th><th style="width:15%" class="num">' + tenCot1(quy) + '</th><th style="width:16%" class="num">Lũy kế từ đầu năm đến nay</th><th style="width:12%" class="num">Cấp trên duyệt</th></tr>' +
     '<tr><td class="center">A</td><td class="center">B</td><td class="center">C</td><td class="center">1</td><td class="center">2</td><td class="center">3</td></tr>' +
-    row('I', 'PHẦN THU', '', '', '', true) +
-    row('1', 'Thu kinh phí Công đoàn', '22', d.thu['22'], d.thuLK['22']) +
-    row('2', 'Thu đoàn phí công đoàn', '23', d.thu['23'], d.thuLK['23']) +
-    row('3', 'Các khoản thu khác', '24', d.thu['24'], d.thuLK['24']) +
-    row('', 'Cộng thu NSCĐ', '', d.congThu_ky, d.congThu_lk, true) +
-    row('4', 'Kinh phí cấp trên cấp', '25', d.thu['25'], d.thuLK['25']) +
-    row('5', 'Số dư kỳ trước chuyển sang (Tiền mặt)', '26', d.duTM_ky, d.duTM_lk) +
-    row('6', 'Số dư kỳ trước chuyển sang (TK ngân hàng)', '', d.duNH_ky, d.duNH_lk) +
-    row('', 'Tổng cộng tiền kỳ trước chuyển sang', '', d.duKyTruoc_ky, d.duKyTruoc_lk, true) +
-    row('', 'TỔNG CỘNG (I)', '', d.tongThu_ky, d.tongThu_lk, true) +
-    row('II', 'PHẦN CHI', '', '', '', true) +
-    row('1', 'Lương, phụ cấp và các khoản phải nộp', '27', d.chi['27'], d.chiLK['27']) +
-    row('2', 'Phụ cấp cán bộ không chuyên trách', '28', d.chi['28'], d.chiLK['28']) +
-    row('3', 'Quản lý hành chánh', '29', d.chi['29'], d.chiLK['29']) +
-    row('4', 'Hoạt động phong trào', '31', d.chi['31'], d.chiLK['31']) +
-    row('5', 'Thăm hỏi đoàn viên', '33', d.chi['33'], d.chiLK['33']) +
-    row('6', 'Các khoản chi khác', '35', d.chi['35'], d.chiLK['35']) +
-    row('', 'Cộng chi NSCĐ', '', d.congChi_ky, d.congChi_lk, true) +
-    row('7', 'Kinh phí nộp cấp trên trực tiếp', '36', d.chi['36'], d.chiLK['36']) +
-    row('8', 'Đoàn phí nộp cấp trên trực tiếp', '37', d.chi['37'], d.chiLK['37']) +
-    row('', 'TỔNG CỘNG (II)', '', d.tongChi_ky, d.tongChi_lk, true) +
-    row('III', 'Số dư cuối kỳ (tồn quỹ tiền mặt + số dư TK ngân hàng)', '38', d.duCuoiKy, d.duCuoiKy, true) +
-    row('IV', 'Kinh phí phải nộp cấp trên trong kỳ (29%)', '49', d.chi['49'] || d.kpPhaiNop_ky, d.chiLK['49'] || d.kpPhaiNop_lk) +
-    row('V', 'Đoàn phí phải nộp cấp trên trong kỳ (40%)', '', d.dpPhaiNop_ky, d.dpPhaiNop_lk) +
+    bcDongs(quy, nam).map(function (x) { return row(x.muc, x.ten, x.ma, x.ky, x.lk, x.dam); }).join('') +
     '</table></div>';
   return h;
 }
@@ -1605,9 +1593,13 @@ function renderModBaoCao() {
   const ct = (DB.settings.chiTieu[bcState.nam]) || {};
   $('mod-baocao').innerHTML = '<h2 class="mtitle">Báo cáo quyết toán thu – chi ngân sách CĐCS (Mẫu B07/TLĐ)</h2>' +
     '<div class="card"><div class="searchrow">' +
-    '<label style="font-size:13px">Quý: <select onchange="bcState.quy=Number(this.value);renderAll()">' + [1, 2, 3, 4].map(q => '<option value="' + q + '"' + (q === bcState.quy ? ' selected' : '') + '>Quý ' + ['I', 'II', 'III', 'IV'][q - 1] + '</option>').join('') + '</select></label>' +
+    '<label style="font-size:13px">Kỳ: <select onchange="bcState.quy=Number(this.value);renderAll()">' +
+    [1, 2, 3, 4].map(q => '<option value="' + q + '"' + (q === bcState.quy ? ' selected' : '') + '>Quý ' + ['I', 'II', 'III', 'IV'][q - 1] + '</option>').join('') +
+    '<option value="0"' + (bcState.quy === 0 ? ' selected' : '') + '>Cả năm</option></select></label>' +
     '<label style="font-size:13px">Năm: <select onchange="bcState.nam=Number(this.value);renderAll()">' + namesOfYears().map(y => '<option value="' + y + '"' + (y === bcState.nam ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></label>' +
-    '<button class="btn sec" onclick="printBaoCao()">🖨 In báo cáo</button></div>' +
+    '<button class="btn sec" onclick="printBaoCao()">🖨 In báo cáo</button>' +
+    '<button class="btn sec" onclick="xuatExcelBaoCao()">📊 Tải Excel</button>' +
+    '<button class="btn sec" onclick="printBaoCao()">📄 Tải PDF</button></div>' +
     '<h3>A — Các chỉ tiêu cơ bản (năm ' + bcState.nam + ')</h3>' +
     '<div class="frm" style="margin-bottom:14px">' +
     '<div class="fld"><label>Số lao động (người)</label><input type="text" id="ct_laodong" value="' + esc(ct.laoDong || '') + '" onchange="saveChiTieu()"></div>' +
@@ -1615,7 +1607,7 @@ function renderModBaoCao() {
     '<div class="fld"><label>Số cán bộ chuyên trách</label><input type="text" id="ct_chuyentrach" value="' + esc(ct.chuyenTrach || '') + '" onchange="saveChiTieu()"></div>' +
     '<div class="fld"><label>Tổng quỹ tiền lương (đồng)</label><input type="text" id="ct_quyluong" value="' + esc(ct.quyLuong || '') + '" onchange="saveChiTieu()"></div>' +
     '</div>' +
-    '<h3>B — Các chỉ tiêu ngân sách · Quý ' + ['I', 'II', 'III', 'IV'][bcState.quy - 1] + ' năm ' + bcState.nam + '</h3>' +
+    '<h3>B — Các chỉ tiêu ngân sách · ' + (bcState.quy ? 'Quý ' + ['I', 'II', 'III', 'IV'][bcState.quy - 1] + ' năm ' : 'Cả năm ') + bcState.nam + '</h3>' +
     baoCaoTableHTML(bcState.quy, bcState.nam, false) +
     '<p class="note" style="margin-top:8px">Số liệu tổng hợp tự động từ Phiếu Thu / Phiếu Chi trong kỳ. Dòng số dư kỳ trước lấy theo Sổ quỹ tiền mặt và Sổ TK ngân hàng. Mục IV, V tự tính theo tỷ lệ 29% thu KPCĐ / 40% thu đoàn phí (nếu chưa có phiếu chi mã 49).</p>' +
     '</div>';
@@ -1631,11 +1623,10 @@ function saveChiTieu() {
 }
 function printBaoCao() {
   const s = DB.settings, ct = DB.settings.chiTieu[bcState.nam] || {};
-  const quyRoman = ['I', 'II', 'III', 'IV'][bcState.quy - 1];
   const html = '<div class="pdoc">' +
     '<div class="phead"><div class="porg">' + esc(s.capTren) + '<br><span class="u">' + esc(s.donVi) + '</span></div><div class="b" style="font-size:12px">Mẫu số: B07/TLĐ</div></div>' +
     '<h1 class="ptitle" style="margin-bottom:0">BÁO CÁO<br>QUYẾT TOÁN THU - CHI NGÂN SÁCH CÔNG ĐOÀN CƠ SỞ</h1>' +
-    '<div class="center b" style="margin:4px 0 12px">QUÝ ' + quyRoman + ' NĂM ' + bcState.nam + '</div>' +
+    '<div class="center b" style="margin:4px 0 12px">' + tenKy(bcState.quy, bcState.nam) + '</div>' +
     '<div class="b">A - CÁC CHỈ TIÊU CƠ BẢN</div>' +
     '<div class="pinfo">- Số lao động: <b>' + esc(ct.laoDong || '……') + '</b> người. &nbsp;&nbsp; - Số cán bộ chuyên trách: <b>' + esc(ct.chuyenTrach || '……') + '</b> người.</div>' +
     '<div class="pinfo">- Số đoàn viên: <b>' + esc(ct.doanVien || '……') + '</b> người. &nbsp;&nbsp; - Tổng quỹ tiền lương: <b>' + esc(ct.quyLuong ? fmt(parseMoney(ct.quyLuong)) : '……') + '</b> đồng.</div>' +
@@ -1956,6 +1947,7 @@ function renderModCaiDat() {
     '<div class="fld half"><label>Số dư đầu kỳ Tiền mặt năm ' + nam + '</label><input type="text" id="s_sdtm" value="' + fmt(sd.TM) + '"></div>' +
     '<div class="fld half"><label>Số dư đầu kỳ Ngân hàng năm ' + nam + '</label><input type="text" id="s_sdnh" value="' + fmt(sd.NH) + '"></div>' +
   '</div><div class="btnrow"><button class="btn" onclick="saveSettings()">💾 Lưu cài đặt</button><span class="note" id="s_msg"></span></div></div>' +
+  khoLuuTruHTML() +
   '<div class="card"><h3>Xuất / Nhập dữ liệu (chia sẻ bằng file)</h3>' +
     '<p class="note"><b>.xlsx</b> — mở bằng Excel để xem/lọc/in, gồm 8 sheet theo từng năm. <b>PDF</b> — bộ hồ sơ đầy đủ để lưu trữ hoặc gửi cấp trên (qua hộp thoại In → “Lưu dạng PDF”). <b>.json</b> — file dữ liệu gốc dùng để sao lưu và nạp lại vào app (Excel/PDF không nhập ngược lại được).</p>' +
     '<div class="btnrow"><button class="btn sec" onclick="hoiNamXuat(\'excel\')">📊 Xuất Excel (.xlsx)</button>' +
@@ -2754,8 +2746,19 @@ function sheetXml(sh) {
     rows += '<row r="' + (ri + 1) + '">' + cells + '</row>';
   });
   const freeze = sh.freeze ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="' + sh.freeze + '" topLeftCell="A' + (sh.freeze + 1) + '" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' : '';
+  // gộp ô (phải đứng SAU sheetData theo lược đồ OOXML)
+  const merges = (sh.merges && sh.merges.length)
+    ? '<mergeCells count="' + sh.merges.length + '">' + sh.merges.map(function (m) { return '<mergeCell ref="' + m + '"/>'; }).join('') + '</mergeCells>'
+    : '';
+  // thiết lập trang in để mở ra là in vừa khổ giấy
+  let sheetPr = '', trang = '';
+  if (sh.page) {
+    sheetPr = '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>';
+    trang = '<pageMargins left="0.5" right="0.4" top="0.6" bottom="0.5" header="0.3" footer="0.3"/>' +
+      '<pageSetup paperSize="9" orientation="' + (sh.page.orient || 'portrait') + '" fitToWidth="1" fitToHeight="0" horizontalDpi="300" verticalDpi="300"/>';
+  }
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-    freeze + cols + '<sheetData>' + rows + '</sheetData></worksheet>';
+    sheetPr + freeze + cols + '<sheetData>' + rows + '</sheetData>' + merges + trang + '</worksheet>';
 }
 function taoXlsx(sheets) {
   const enc = new TextEncoder(), files = [];
@@ -2778,12 +2781,13 @@ function taoXlsx(sheets) {
   const bd = '<border><left style="thin"><color rgb="FFB8C0CC"/></left><right style="thin"><color rgb="FFB8C0CC"/></right><top style="thin"><color rgb="FFB8C0CC"/></top><bottom style="thin"><color rgb="FFB8C0CC"/></bottom><diagonal/></border>';
   add('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
     '<numFmts count="1"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/></numFmts>' +
-    '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FF1E3A5F"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+    '<fonts count="6"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FF1E3A5F"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font>' +
+    '<font><b/><sz val="16"/><name val="Times New Roman"/></font><font><b/><sz val="13"/><name val="Times New Roman"/></font><font><i/><sz val="10"/><name val="Calibri"/></font></fonts>' +
     '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
     '<fill><patternFill patternType="solid"><fgColor rgb="FFEEF2F7"/><bgColor indexed="64"/></patternFill></fill></fills>' +
     '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>' + bd + '</borders>' +
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-    '<cellXfs count="7">' +
+    '<cellXfs count="17">' +
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +                                                                              // 0 thường
     '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +  // 1 tiêu đề cột
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' + // 2 chữ
@@ -2791,6 +2795,16 @@ function taoXlsx(sheets) {
     '<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>' + // 4 ngày
     '<xf numFmtId="3" fontId="2" fillId="2" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>' +            // 5 số tổng cộng
     '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>' +                                  // 6 chữ tổng cộng
+    '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +   // 7 tiêu đề lớn
+    '<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' + // 8 tiêu đề phụ
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>' +            // 9 chữ thường không viền
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>' +           // 10 chữ đậm không viền
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' + // 11 căn giữa có viền
+    '<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>' + // 12 chữ nghiêng nhỏ
+    '<xf numFmtId="3" fontId="2" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>' +                          // 13 số đậm có viền
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' + // 14 chữ đậm có viền
+    '<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>' + // 15 căn phải nghiêng
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' + // 16 đậm căn giữa
     '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
   sheets.forEach((s, i) => add('xl/worksheets/sheet' + (i + 1) + '.xml', sheetXml(s)));
   return zipStore(files);
@@ -2969,6 +2983,636 @@ function hoiNamXuat(loai) {
 }
 
 /* ================================================================
+   KHO FILE ĐÍNH KÈM — ĐỂ TRONG IndexedDB
+   localStorage chỉ ~5 MB mà ảnh chứng từ chiếm hầu hết (18 ảnh =
+   3,8 MB) nên trước đây hay báo "exceeded the quota" rồi mất dữ
+   liệu. Nay ảnh nằm trong IndexedDB (lớn hơn hàng nghìn lần),
+   localStorage chỉ còn giữ phần chữ & số.
+   ================================================================ */
+const IDB_TEN = 'cdcs_files', IDB_KHO = 'f';
+let IDB_DB = null, IDB_LOI = '', FILE_IDB_OK = false;
+let IDB_SIG = {};                 // id chủ sở hữu -> chữ ký file đã ghi
+function idbMo() {
+  if (IDB_DB) return Promise.resolve(IDB_DB);
+  return new Promise(function (res, rej) {
+    if (!window.indexedDB) { rej(new Error('Trình duyệt không hỗ trợ IndexedDB')); return; }
+    const r = indexedDB.open(IDB_TEN, 1);
+    r.onupgradeneeded = function (e) {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains(IDB_KHO)) d.createObjectStore(IDB_KHO);
+    };
+    r.onsuccess = function (e) { IDB_DB = e.target.result; res(IDB_DB); };
+    r.onerror = function () { rej(r.error || new Error('Không mở được IndexedDB')); };
+  });
+}
+function idbTx(mode, fn) {
+  return idbMo().then(function (d) {
+    return new Promise(function (res, rej) {
+      const tx = d.transaction(IDB_KHO, mode), st = tx.objectStore(IDB_KHO);
+      let out = null;
+      const rq = fn(st);
+      if (rq) rq.onsuccess = function () { out = rq.result; };
+      tx.oncomplete = function () { res(out); };
+      tx.onerror = function () { rej(tx.error); };
+      tx.onabort = function () { rej(tx.error); };
+    });
+  });
+}
+function idbGet(k) { return idbTx('readonly', function (st) { return st.get(k); }); }
+function idbSet(k, v) { return idbTx('readwrite', function (st) { return st.put(v, k); }); }
+function idbXoa(k) { return idbTx('readwrite', function (st) { return st.delete(k); }); }
+
+function fileSig(o) { return (o.files || []).map(function (f) { return (f.name || '') + ':' + String(f.data || '').length; }).join('|'); }
+function chuFile() { return (DB.phieu || []).concat(DB.unc || []); }
+/* bản sao DB đã BỎ nội dung file, dùng để ghi vào localStorage */
+function dbChoLocal() {
+  const out = {};
+  for (const k in DB) {
+    if (k === 'phieu' || k === 'unc') {
+      out[k] = DB[k].map(function (o) {
+        if (!o.files || !o.files.length) return o;
+        const c = Object.assign({}, o);
+        c.files = o.files.map(function (f) { return { name: f.name, type: f.type, size: String(f.data || '').length, idb: 1 }; });
+        return c;
+      });
+    } else out[k] = DB[k];
+  }
+  return out;
+}
+/* ghi các file vừa đổi xuống IndexedDB (gọi sau mỗi lần lưu) */
+function luuFileIDB() {
+  if (!window.indexedDB) return Promise.resolve();
+  const canGhi = [], dangCo = {};
+  chuFile().forEach(function (o) {
+    dangCo[o.id] = 1;
+    // CHỐT AN TOÀN: file đã lưu trong IndexedDB nhưng chưa nạp nội dung vào bộ nhớ
+    // (f.idb/f.size mà không có f.data) thì TUYỆT ĐỐI không ghi đè — nếu không sẽ
+    // xóa trắng file thật. Gặp lúc đồng bộ Supabase chạy xen vào lúc đang nạp kho ảnh.
+    const chuaNap = (o.files || []).some(function (f) { return !f.data && (f.idb || f.size); });
+    if (chuaNap) { dangCo[o.id] = 1; return; }
+    const sig = fileSig(o);
+    if (IDB_SIG[o.id] !== sig) canGhi.push({ id: o.id, files: (o.files || []).map(function (f) { return { name: f.name, type: f.type, data: f.data }; }), sig: sig });
+  });
+  const canXoa = Object.keys(IDB_SIG).filter(function (id) { return !dangCo[id]; });
+  if (!canGhi.length && !canXoa.length) return Promise.resolve();
+  return Promise.all(
+    canGhi.map(function (c) {
+      return (c.files.length ? idbSet(c.id, c.files) : idbXoa(c.id)).then(function () { IDB_SIG[c.id] = c.sig; });
+    }).concat(canXoa.map(function (id) {
+      return idbXoa(id).then(function () { delete IDB_SIG[id]; });
+    }))
+  ).catch(function (e) {
+    IDB_LOI = (e && e.message) || String(e);
+    console.warn('Lưu file đính kèm:', e);
+    throw e;
+  });
+}
+/* nạp nội dung file từ IndexedDB vào DB trong bộ nhớ */
+function napFileIDB() {
+  const ds = chuFile().filter(function (o) { return (o.files || []).length; });
+  return Promise.all(ds.map(function (o) {
+    // Ảnh còn nằm nguyên trong localStorage (chưa chuyển sang IndexedDB):
+    // KHÔNG đánh dấu đã lưu, để bước ghi ngay sau đó đẩy xuống IndexedDB.
+    if ((o.files || []).every(function (f) { return f.data; })) return null;
+    return idbGet(o.id).then(function (fs) {
+      const co = (fs || []).filter(function (f) { return f && f.data; });
+      if (co.length) o.files = co.map(function (f) { return { name: f.name, type: f.type, data: f.data }; });
+      else o.files = (o.files || []).filter(function (f) { return f.data; });   // không còn nội dung → bỏ mục rỗng
+      IDB_SIG[o.id] = fileSig(o);
+    }).catch(function () { });
+  })).then(function () { return true; });
+}
+/* Khởi động kho file: lần đầu chuyển ảnh từ localStorage sang IndexedDB.
+   Chỉ bật chế độ "tách file" SAU KHI chuyển thành công, để không bao giờ
+   có lúc localStorage đã bỏ ảnh mà IndexedDB chưa kịp nhận. */
+function khoiDongKhoFile() {
+  if (!window.indexedDB) { console.warn('Không có IndexedDB — vẫn lưu ảnh trong localStorage.'); return Promise.resolve(); }
+  IDB_SIG = {};
+  // 1) nạp nội dung ảnh đã cất trong IndexedDB  2) đẩy nốt ảnh còn nằm trong
+  // localStorage xuống IndexedDB  3) từ đó localStorage chỉ còn giữ chữ & số.
+  return napFileIDB()
+    .then(function () { return luuFileIDB(); })
+    .then(function () {
+      FILE_IDB_OK = true;
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(dbChoLocal())); } catch (e) { }
+      try { renderAll(); } catch (e) { }
+    })
+    .catch(function (e) {
+      IDB_LOI = (e && e.message) || String(e);
+      console.warn('Không dùng được IndexedDB cho kho ảnh:', e);
+    });
+}
+
+/* ================================================================
+   NÉN ẢNH ĐÍNH KÈM
+   ================================================================ */
+const MUC_NEN = {
+  cao: { px: 1200, kb: 100, ten: 'Cao — nhẹ nhất (≈100 KB/ảnh)' },
+  vua: { px: 1600, kb: 200, ten: 'Vừa — khuyên dùng (≈200 KB/ảnh)' },
+  nhe: { px: 2200, kb: 450, ten: 'Nhẹ — nét nhất (≈450 KB/ảnh)' }
+};
+function mucNen() { return MUC_NEN[(DB.settings && DB.settings.nenAnh) || 'vua'] || MUC_NEN.vua; }
+/* thu nhỏ + hạ chất lượng dần cho tới khi đạt dung lượng mục tiêu */
+function nenAnh(blob, cfg) {
+  cfg = cfg || mucNen();
+  return new Promise(function (res) {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = function () {
+      let w = img.width, h = img.height;
+      if (w > cfg.px || h > cfg.px) { const r = Math.min(cfg.px / w, cfg.px / h); w = Math.round(w * r); h = Math.round(h * r); }
+      const gh = cfg.kb * 1024;
+      const ve = function (ww, hh, q) {
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(1, ww); cv.height = Math.max(1, hh);
+        const cx = cv.getContext('2d');
+        cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);   // nền trắng cho ảnh PNG trong suốt
+        cx.drawImage(img, 0, 0, cv.width, cv.height);
+        return cv.toDataURL('image/jpeg', q);
+      };
+      let data = '';
+      const qs = [0.82, 0.72, 0.62, 0.52, 0.45];
+      for (let i = 0; i < qs.length; i++) { data = ve(w, h, qs[i]); if (data.length <= gh) break; }
+      let lan = 0;
+      while (data.length > gh && lan < 6 && w > 640) {
+        w = Math.round(w * 0.8); h = Math.round(h * 0.8); lan++;
+        data = ve(w, h, 0.6);
+      }
+      URL.revokeObjectURL(url);
+      res({ data: data, w: w, h: h });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); res(null); };
+    img.src = url;
+  });
+}
+function dataURIsangBlob(uri) {
+  const s = String(uri), i = s.indexOf(',');
+  const dau = s.slice(0, i), b64 = s.slice(i + 1);
+  const mime = (/:(.*?);/.exec(dau) || [, 'image/jpeg'])[1];
+  const bin = atob(b64), u8 = new Uint8Array(bin.length);
+  for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+  return new Blob([u8], { type: mime });
+}
+/* Nén lại toàn bộ ảnh đã lưu — dùng khi kho ảnh cũ quá nặng */
+function nenLaiAnhCu() {
+  const cfg = mucNen(), ds = [];
+  chuFile().forEach(function (o) {
+    (o.files || []).forEach(function (f, i) {
+      if (f.data && String(f.type || '').indexOf('image/') === 0) ds.push({ o: o, i: i, f: f });
+    });
+  });
+  if (!ds.length) { khoMsg('Không có ảnh nào để nén.', false); return; }
+  let truoc = 0, sau = 0, xong = 0;
+  khoMsg('Đang nén ' + ds.length + ' ảnh…', true);
+  const ke = function (k) {
+    if (k >= ds.length) {
+      saveDB();
+      const tk = Math.max(0, Math.round((1 - sau / (truoc || 1)) * 100));
+      if (currentMod === 'caidat') renderModCaiDat();
+      khoMsg('Đã nén xong ' + ds.length + ' ảnh: ' + mbStr(truoc) + ' → ' + mbStr(sau) + ' (tiết kiệm ' + tk + '%).', true);
+      return;
+    }
+    const it = ds[k], cu = String(it.f.data || '').length;
+    truoc += cu;
+    nenAnh(dataURIsangBlob(it.f.data), cfg).then(function (kq) {
+      if (kq && kq.data && kq.data.length < cu) { it.o.files[it.i].data = kq.data; it.o.files[it.i].type = 'image/jpeg'; sau += kq.data.length; }
+      else sau += cu;
+      xong++;
+      if (xong % 3 === 0) khoMsg('Đang nén ảnh… ' + xong + '/' + ds.length, true);
+      ke(k + 1);
+    }).catch(function () { sau += cu; ke(k + 1); });
+  };
+  ke(0);
+}
+/* ---------- Thống kê dung lượng ---------- */
+function dungLuongLocal() {
+  let n = 0;
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); n += (localStorage.getItem(k) || '').length + k.length; } } catch (e) { }
+  return n * 2;   // localStorage tính theo ký tự UTF-16
+}
+function thongKeKho() {
+  let soAnh = 0, byteAnh = 0, lonNhat = { ten: '', byte: 0 };
+  chuFile().forEach(function (o) {
+    (o.files || []).forEach(function (f) {
+      const b = String(f.data || '').length;
+      soAnh++; byteAnh += b;
+      if (b > lonNhat.byte) lonNhat = { ten: (o.so || o.id) + ' — ' + (f.name || ''), byte: b };
+    });
+  });
+  return { soAnh: soAnh, byteAnh: byteAnh, lonNhat: lonNhat, local: dungLuongLocal() };
+}
+function mbStr(b) { return (b / 1048576).toFixed(2) + ' MB'; }
+function khoMsg(txt, ok) {
+  const el = $('khoMsg');
+  if (!el) { if (!ok) alert(txt); return; }
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+  el.textContent = txt;
+}
+function doiMucNen(v) { DB.settings.nenAnh = v; saveDB(); khoMsg('Đã đổi mức nén — áp dụng cho ảnh đính kèm từ giờ. Muốn nén cả ảnh cũ thì bấm "Nén lại ảnh đã lưu".', true); }
+
+/* ================================================================
+   DỰ TOÁN THU - CHI TÀI CHÍNH CÔNG ĐOÀN CƠ SỞ
+   Mẫu B14-TLĐ (Hướng dẫn số 47/HD-TLĐ ngày 30/12/2021)
+   ================================================================ */
+/* Các dòng của mẫu B14 — sửa tại đây nếu Tổng Liên đoàn đổi mẫu.
+   ma      : mục lục tài chính công đoàn (khóa lưu số liệu)
+   tong    : dòng tự cộng từ các mã con (không cho nhập tay)
+   ct      : dòng tính theo công thức riêng
+   con     : dòng con (thụt lề)                                     */
+const DT_DONG = [
+  { tt: 'I', ten: 'TÀI CHÍNH CÔNG ĐOÀN TÍCH LŨY ĐẦU KỲ', ma: '10', dam: 1 },
+  { tt: 'II', ten: 'PHẦN THU', ma: '', dam: 1 },
+  { tt: '2.1', ten: 'Thu Đoàn phí công đoàn', ma: '22' },
+  { tt: '2.2', ten: 'Thu Kinh phí công đoàn', ma: '23' },
+  { tt: '2.3', ten: 'NSNN cấp hỗ trợ', ma: '24' },
+  { tt: '2.4', ten: 'Các khoản thu khác', ma: '25', tong: ['25.01', '25.02'] },
+  { tt: '', ten: 'a- Chuyên môn hỗ trợ', ma: '25.01', con: 1 },
+  { tt: '', ten: 'b- Thu khác', ma: '25.02', con: 1 },
+  { tt: '', ten: 'CỘNG THU TCCĐ (2.1+2.2+2.3+2.4)', ma: '', dam: 1, tong: ['22', '23', '24', '25'] },
+  { tt: '2.5', ten: 'Tài chính công đoàn cấp trên cấp', ma: '28', tong: ['28.01', '28.02'] },
+  { tt: '', ten: 'a. Kinh phí công đoàn cấp trên cấp theo phân phối', ma: '28.01', con: 1 },
+  { tt: '', ten: 'b. Tài chính công đoàn cấp trên cấp hỗ trợ', ma: '28.02', con: 1 },
+  { tt: '2.6', ten: 'Nhận bàn giao tài chính công đoàn', ma: '40' },
+  { tt: '', ten: 'TỔNG CỘNG THU (II = 2.1+2.2+2.3+2.4+2.5+2.6)', ma: '', dam: 1, tong: ['22', '23', '24', '25', '28', '40'] },
+  { tt: 'III', ten: 'PHẦN CHI', ma: '', dam: 1 },
+  { tt: '3.1', ten: 'Chi trực tiếp chăm lo, bảo vệ, đào tạo đoàn viên và người lao động', ma: '31' },
+  { tt: '3.2', ten: 'Chi tuyên truyền đoàn viên và người lao động', ma: '32' },
+  { tt: '3.3', ten: 'Chi quản lý hành chính', ma: '33' },
+  { tt: '3.4', ten: 'Chi lương, phụ cấp và các khoản phải nộp theo lương', ma: '34', tong: ['34.01', '34.02', '34.03'] },
+  { tt: '', ten: 'a- Lương cán bộ trong biên chế', ma: '34.01', con: 1 },
+  { tt: '', ten: 'b- Phụ cấp cán bộ công đoàn', ma: '34.02', con: 1 },
+  { tt: '', ten: 'c- Các khoản phải nộp theo lương', ma: '34.03', con: 1 },
+  { tt: '3.5', ten: 'Chi khác', ma: '37' },
+  { tt: '', ten: 'CỘNG CHI (3.1+3.2+3.3+3.4+3.5)', ma: '', dam: 1, tong: ['31', '32', '33', '34', '37'] },
+  { tt: '3.6', ten: 'Tài chính công đoàn (ĐPCĐ) phải nộp cấp trên quản lý trực tiếp', ma: '39' },
+  { tt: '3.7', ten: 'Bàn giao tài chính công đoàn', ma: '42' },
+  { tt: '', ten: 'TỔNG CỘNG CHI (III = 3.1+3.2+3.3+3.4+3.5+3.6+3.7)', ma: '', dam: 1, tong: ['31', '32', '33', '34', '37', '39', '42'] },
+  { tt: 'IV', ten: 'TÀI CHÍNH CÔNG ĐOÀN TÍCH LŨY CUỐI KỲ', ma: '50', dam: 1, ct: 'cuoiky' },
+  { tt: 'V', ten: 'KINH PHÍ DỰ PHÒNG', ma: '70', dam: 1 }
+];
+/* Quy đổi mã mục của app (mẫu B07 cũ) sang mục lục B14 mới.
+   Sửa tại đây nếu muốn xếp khoản chi sang dòng khác. */
+const DT_MAP_THU = { '22': '23', '23': '22', '24': '25.02', '25': '28.01' };
+const DT_MAP_CHI = { '27': '34.01', '28': '34.02', '29': '33', '31': '32', '33': '31', '35': '37', '36': '39', '37': '39', '49': '39' };
+const DT_TONG_THU = ['22', '23', '24', '25', '28', '40'];
+const DT_TONG_CHI = ['31', '32', '33', '34', '37', '39', '42'];
+
+function dtDongTheoMa(ma) { for (let i = 0; i < DT_DONG.length; i++) if (DT_DONG[i].ma === ma) return DT_DONG[i]; return null; }
+function dtGiaMa(rec, cot, ma) {
+  const d = dtDongTheoMa(ma);
+  if (d && d.tong) return d.tong.reduce(function (s, m) { return s + dtGiaMa(rec, cot, m); }, 0);
+  return Number((rec[cot] || {})[ma] || 0);
+}
+function dtGia(rec, cot, dong) {
+  if (dong.ct === 'cuoiky') {
+    return dtGiaMa(rec, cot, '10') +
+      DT_TONG_THU.reduce(function (s, m) { return s + dtGiaMa(rec, cot, m); }, 0) -
+      DT_TONG_CHI.reduce(function (s, m) { return s + dtGiaMa(rec, cot, m); }, 0);
+  }
+  if (dong.tong) return dong.tong.reduce(function (s, m) { return s + dtGiaMa(rec, cot, m); }, 0);
+  if (!dong.ma) return null;
+  return Number((rec[cot] || {})[dong.ma] || 0);
+}
+function dtSuaDuoc(dong) { return !!dong.ma && !dong.tong && !dong.ct; }
+/* Năm hoàn chỉnh gần nhất: năm nay chưa kết thúc nên lấy năm trước */
+function namCoSo() { return new Date().getFullYear() - 1; }
+/* Gom số liệu thực hiện của năm cơ sở theo mục lục B14 */
+function dtSoLieuNam(namCS) {
+  const from = namCS + '-01-01', to = namCS + '-12-31', v = {};
+  const them = function (ma, n) { if (ma) v[ma] = (v[ma] || 0) + (n || 0); };
+  DM_THU.forEach(function (m) { if (m.ma !== '26') them(DT_MAP_THU[m.ma], sumMa('PT', m.ma, from, to)); });
+  DM_CHI.forEach(function (m) { them(DT_MAP_CHI[m.ma], sumMa('PC', m.ma, from, to)); });
+  v['10'] = balanceAt('TM', namCS, to) + balanceAt('CK', namCS, to);
+  return v;
+}
+function duToanRec(nam, taoLai) {
+  if (!DB.duToan) DB.duToan = {};
+  if (!DB.duToan[nam] || taoLai) {
+    const namCS = (DB.duToan[nam] && DB.duToan[nam].namCS) || namCoSo();
+    const v = dtSoLieuNam(namCS);
+    const ctCS = (DB.settings.chiTieu && DB.settings.chiTieu[namCS]) || {};
+    DB.duToan[nam] = {
+      namCS: namCS,
+      ct: {
+        laoDong: ctCS.laoDong || '', doanVien: ctCS.doanVien || '',
+        qlKPCD: ctCS.quyLuong || '', qlDPCD: ctCS.quyLuong || ''
+      },
+      uoc: v,
+      dt: Object.assign({}, v),       // dự toán năm sau = số liệu năm cơ sở
+      tm: ''
+    };
+    saveDB();
+  }
+  return DB.duToan[nam];
+}
+const dtState = { nam: new Date().getFullYear() + 1 };
+
+function renderModDuToan() {
+  const nam = dtState.nam, rec = duToanRec(nam);
+  const years = namesOfYears();
+  const namDT = [];
+  for (let y = new Date().getFullYear(); y <= new Date().getFullYear() + 3; y++) namDT.push(y);
+  Object.keys(DB.duToan || {}).forEach(function (y) { if (namDT.indexOf(Number(y)) < 0) namDT.push(Number(y)); });
+  namDT.sort();
+  let h = '<h2 class="mtitle">Dự toán thu – chi tài chính công đoàn cơ sở (Mẫu B14-TLĐ)</h2>' +
+    '<div class="card"><div class="searchrow">' +
+    '<label style="font-size:13px">Dự toán năm: <select onchange="dtState.nam=Number(this.value);renderAll()">' +
+    namDT.map(function (y) { return '<option value="' + y + '"' + (y === nam ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></label>' +
+    '<label style="font-size:13px">Lấy số liệu từ năm: <select onchange="dtDoiNamCS(this.value)">' +
+    years.map(function (y) { return '<option value="' + y + '"' + (y === rec.namCS ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></label>' +
+    '<button class="btn sec" onclick="dtLayLai()">↻ Lấy lại số liệu</button>' +
+    '<button class="btn sec" onclick="printDuToan()">🖨 In dự toán</button>' +
+    '<button class="btn sec" onclick="xuatExcelDuToan()">📊 Tải Excel</button>' +
+    '<button class="btn sec" onclick="printDuToan()">📄 Tải PDF</button>' +
+    '</div>' +
+    '<p class="note">Dự toán năm <b>' + nam + '</b> được lấy bằng số liệu thực hiện của năm <b>' + rec.namCS +
+    '</b> (năm gần nhất đã trọn vẹn). Mọi ô số ở 2 cột cuối đều <b>sửa trực tiếp được</b>; dòng in đậm là dòng tự cộng nên không nhập tay.</p>' +
+    '<h3>A — Các chỉ tiêu cơ bản</h3><div class="frm" style="margin-bottom:14px">' +
+    '<div class="fld"><label>Số lao động tính quỹ lương đóng KPCĐ (người)</label><input type="text" value="' + esc(rec.ct.laoDong) + '" onchange="dtSetCT(\'laoDong\',this.value)"></div>' +
+    '<div class="fld"><label>Số đoàn viên công đoàn (người)</label><input type="text" value="' + esc(rec.ct.doanVien) + '" onchange="dtSetCT(\'doanVien\',this.value)"></div>' +
+    '<div class="fld"><label>Quỹ lương đóng KPCĐ (đồng)</label><input type="text" class="num" value="' + (rec.ct.qlKPCD ? fmt(parseMoney(rec.ct.qlKPCD)) : '') + '" onchange="dtSetCT(\'qlKPCD\',this.value)"></div>' +
+    '<div class="fld"><label>Quỹ lương đóng ĐPCĐ (đồng)</label><input type="text" class="num" value="' + (rec.ct.qlDPCD ? fmt(parseMoney(rec.ct.qlDPCD)) : '') + '" onchange="dtSetCT(\'qlDPCD\',this.value)"></div>' +
+    '</div>' +
+    '<h3>B — Các chỉ tiêu thu, chi tài chính công đoàn</h3>' +
+    '<div class="tblwrap"><table class="tbl"><tr>' +
+    '<th style="width:5%">TT</th><th>Nội dung</th><th style="width:9%">Mục lục TCCĐ</th>' +
+    '<th style="width:17%" class="num">Ước thực hiện năm ' + rec.namCS + '</th>' +
+    '<th style="width:17%" class="num">Dự toán năm ' + nam + '</th><th style="width:12%">Ghi chú</th></tr>';
+  DT_DONG.forEach(function (d, i) {
+    const uoc = dtGia(rec, 'uoc', d), dt = dtGia(rec, 'dt', d);
+    const sua = dtSuaDuoc(d);
+    h += '<tr' + (d.dam ? ' class="sum"' : '') + '>' +
+      '<td class="center">' + esc(d.tt) + '</td>' +
+      '<td' + (d.dam ? ' class="b"' : '') + (d.con ? ' style="padding-left:22px"' : '') + '>' + esc(d.ten) + '</td>' +
+      '<td class="center">' + esc(d.ma) + '</td>' +
+      '<td class="num">' + (sua
+        ? '<input class="num" type="text" value="' + (uoc ? fmt(uoc) : '') + '" onchange="dtSet(\'uoc\',\'' + d.ma + '\',this.value)">'
+        : '<b>' + (uoc === null ? '' : fmt(uoc)) + '</b>') + '</td>' +
+      '<td class="num">' + (sua
+        ? '<input class="num" type="text" value="' + (dt ? fmt(dt) : '') + '" onchange="dtSet(\'dt\',\'' + d.ma + '\',this.value)">'
+        : '<b>' + (dt === null ? '' : fmt(dt)) + '</b>') + '</td>' +
+      '<td></td></tr>';
+  });
+  h += '</table></div>' +
+    '<h3 style="margin-top:14px">C — Thuyết minh</h3>' +
+    '<div class="fld"><textarea style="min-height:70px" onchange="dtSetTM(this.value)">' + esc(rec.tm) + '</textarea></div>' +
+    '</div>';
+  $('mod-dutoan').innerHTML = h;
+}
+function dtSet(cot, ma, v) { const r = duToanRec(dtState.nam); if (!r[cot]) r[cot] = {}; r[cot][ma] = parseMoney(v); saveDB(); renderModDuToan(); }
+function dtSetCT(k, v) { const r = duToanRec(dtState.nam); r.ct[k] = String(v).trim(); saveDB(); }
+function dtSetTM(v) { const r = duToanRec(dtState.nam); r.tm = String(v); saveDB(); }
+function dtDoiNamCS(v) { const r = duToanRec(dtState.nam); r.namCS = Number(v); saveDB(); dtLayLai(); }
+function dtLayLai() {
+  const nam = dtState.nam;
+  showModal('Lấy lại số liệu',
+    'Lấy lại toàn bộ số liệu dự toán năm <b>' + nam + '</b> từ thực hiện năm <b>' + duToanRec(nam).namCS + '</b>?<br>Các số đã sửa tay sẽ bị ghi đè.', [
+    { text: 'Lấy lại', warn: true, onClick: function () { duToanRec(nam, true); renderModDuToan(); } },
+    { text: 'Hủy', sec: true }
+  ]);
+}
+/* ---------- Bảng dự toán dạng in ---------- */
+function dtBangIn(nam) {
+  const rec = duToanRec(nam);
+  let h = '<table class="ptbl" style="font-size:11px"><tr>' +
+    '<th style="width:5%">TT</th><th>Nội dung</th><th style="width:10%">Mục lục TCCĐ</th>' +
+    '<th style="width:16%">Ước thực hiện năm ' + rec.namCS + '</th>' +
+    '<th style="width:16%">Dự toán năm ' + nam + '</th><th style="width:10%">Ghi chú</th></tr>';
+  DT_DONG.forEach(function (d) {
+    const uoc = dtGia(rec, 'uoc', d), dt = dtGia(rec, 'dt', d);
+    h += '<tr><td class="center">' + esc(d.tt) + '</td>' +
+      '<td' + (d.dam ? ' class="b"' : '') + (d.con ? ' style="padding-left:14px"' : '') + '>' + esc(d.ten) + '</td>' +
+      '<td class="center">' + esc(d.ma) + '</td>' +
+      '<td class="num' + (d.dam ? ' b' : '') + '">' + (uoc === null ? '' : fmt(uoc)) + '</td>' +
+      '<td class="num' + (d.dam ? ' b' : '') + '">' + (dt === null ? '' : fmt(dt)) + '</td><td></td></tr>';
+  });
+  return h + '</table>';
+}
+function printDuToan() {
+  const nam = dtState.nam, rec = duToanRec(nam), s = DB.settings;
+  const html = '<div class="pdoc">' +
+    '<div class="phead"><div class="porgwrap"><img class="plogo" src="' + LOGO_CD + '" alt=""><div class="porg">' +
+    esc(s.capTren) + '<br><span class="u">' + esc(s.donVi) + '</span></div></div>' +
+    '<div class="pmau">Mẫu B14-TLĐ<br>(Ban hành kèm theo Hướng dẫn số 47/HD-TLĐ ngày 30/12/2021 của Tổng Liên đoàn)</div></div>' +
+    '<h1 class="ptitle" style="margin-bottom:0">BÁO CÁO<br>DỰ TOÁN THU - CHI TÀI CHÍNH CÔNG ĐOÀN CƠ SỞ</h1>' +
+    '<div class="center b" style="margin:4px 0 12px">NĂM ' + nam + '</div>' +
+    '<div class="b">A - CÁC CHỈ TIÊU CƠ BẢN:</div>' +
+    '<div class="pinfo">- Số lao động tính quỹ lương đóng KPCĐ: <b>' + esc(rec.ct.laoDong || '……') + '</b> người. &nbsp;&nbsp; Quỹ lương đóng KPCĐ: <b>' + (rec.ct.qlKPCD ? fmt(parseMoney(rec.ct.qlKPCD)) : '……') + '</b> đồng.</div>' +
+    '<div class="pinfo">- Số đoàn viên công đoàn: <b>' + esc(rec.ct.doanVien || '……') + '</b> người. &nbsp;&nbsp; Quỹ lương đóng ĐPCĐ: <b>' + (rec.ct.qlDPCD ? fmt(parseMoney(rec.ct.qlDPCD)) : '……') + '</b> đồng.</div>' +
+    '<div class="b" style="margin-top:8px">B - CÁC CHỈ TIÊU THU, CHI TÀI CHÍNH CÔNG ĐOÀN:</div>' +
+    dtBangIn(nam) +
+    '<div class="b" style="margin-top:8px">C - THUYẾT MINH:</div>' +
+    '<div style="min-height:34px">' + (rec.tm ? esc(rec.tm).replace(/\n/g, '<br>') : '…'.repeat(120)) + '</div>' +
+    '<div style="text-align:right;margin-top:10px" class="i">' + esc(s.diaChi ? String(s.diaChi).split(',').pop().trim() : 'Thành phố Hồ Chí Minh') + ', ngày …… tháng …… năm ' + (nam - 1) + '</div>' +
+    '<div class="psig"><div><div class="role">NGƯỜI LẬP BIỂU</div><div class="fn">(Ký, họ tên)</div><div class="name">' + esc(s.keToan).toUpperCase() + '</div></div>' +
+    '<div><div class="role">TM. BAN CHẤP HÀNH CĐCS<br>CHỦ TỊCH</div><div class="fn">(Ký tên, đóng dấu)</div><div class="name">' + esc(s.chuTich).toUpperCase() + '</div></div></div>' +
+    '</div>';
+  printDoc(html, 'A4 portrait');
+}
+
+/* ================================================================
+   XUẤT EXCEL CÓ ĐỊNH DẠNG SẴN (bố cục giống hệt bản in / PDF)
+   ================================================================ */
+/* ô dùng cho biểu mẫu: 7 tiêu đề lớn · 8 tiêu đề phụ · 9 chữ thường không viền
+   10 chữ đậm không viền · 11 căn giữa có viền · 12 chữ nghiêng nhỏ
+   13 số đậm có viền · 14 chữ đậm có viền · 15 căn phải nghiêng · 16 đậm căn giữa */
+function oT(v) { return { v: v, t: 's', s: 7 }; }
+function oT2(v) { return { v: v, t: 's', s: 8 }; }
+function oP(v) { return { v: v, t: 's', s: 9 }; }
+function oB(v) { return { v: v, t: 's', s: 10 }; }
+function oC(v) { return { v: v, t: 's', s: 11 }; }
+function oI(v) { return { v: v, t: 's', s: 12 }; }
+function oNB(v) { return { v: v, t: 'n', s: 13 }; }
+function oSB(v) { return { v: v, t: 's', s: 14 }; }
+function oR(v) { return { v: v, t: 's', s: 15 }; }
+function oBC(v) { return { v: v, t: 's', s: 16 }; }
+function hangTrong(n) { const r = []; for (let i = 0; i < n; i++) r.push(null); return r; }
+
+/* ---------- Tên kỳ báo cáo (quy = 0 nghĩa là cả năm) ---------- */
+function tenKy(quy, nam) { return (quy ? 'QUÝ ' + ['I', 'II', 'III', 'IV'][quy - 1] + ' ' : '') + 'NĂM ' + nam; }
+function tenCot1(quy) { return quy ? 'Quyết toán kỳ này' : 'Quyết toán năm'; }
+
+/* ---------- Các dòng của báo cáo B07 (dùng chung cho màn hình, in và Excel) ---------- */
+function bcDongs(quy, nam) {
+  const d = baoCaoData(quy, nam);
+  return [
+    { muc: 'I', ten: 'PHẦN THU', ma: '', ky: '', lk: '', dam: 1 },
+    { muc: '1', ten: 'Thu kinh phí Công đoàn', ma: '22', ky: d.thu['22'], lk: d.thuLK['22'] },
+    { muc: '2', ten: 'Thu đoàn phí công đoàn', ma: '23', ky: d.thu['23'], lk: d.thuLK['23'] },
+    { muc: '3', ten: 'Các khoản thu khác', ma: '24', ky: d.thu['24'], lk: d.thuLK['24'] },
+    { muc: '', ten: 'Cộng thu NSCĐ', ma: '', ky: d.congThu_ky, lk: d.congThu_lk, dam: 1 },
+    { muc: '4', ten: 'Kinh phí cấp trên cấp', ma: '25', ky: d.thu['25'], lk: d.thuLK['25'] },
+    { muc: '5', ten: 'Số dư kỳ trước chuyển sang (Tiền mặt)', ma: '26', ky: d.duTM_ky, lk: d.duTM_lk },
+    { muc: '6', ten: 'Số dư kỳ trước chuyển sang (TK ngân hàng)', ma: '', ky: d.duNH_ky, lk: d.duNH_lk },
+    { muc: '', ten: 'Tổng cộng tiền kỳ trước chuyển sang', ma: '', ky: d.duKyTruoc_ky, lk: d.duKyTruoc_lk, dam: 1 },
+    { muc: '', ten: 'TỔNG CỘNG (I)', ma: '', ky: d.tongThu_ky, lk: d.tongThu_lk, dam: 1 },
+    { muc: 'II', ten: 'PHẦN CHI', ma: '', ky: '', lk: '', dam: 1 },
+    { muc: '1', ten: 'Lương, phụ cấp và các khoản phải nộp', ma: '27', ky: d.chi['27'], lk: d.chiLK['27'] },
+    { muc: '2', ten: 'Phụ cấp cán bộ không chuyên trách', ma: '28', ky: d.chi['28'], lk: d.chiLK['28'] },
+    { muc: '3', ten: 'Quản lý hành chánh', ma: '29', ky: d.chi['29'], lk: d.chiLK['29'] },
+    { muc: '4', ten: 'Hoạt động phong trào', ma: '31', ky: d.chi['31'], lk: d.chiLK['31'] },
+    { muc: '5', ten: 'Thăm hỏi đoàn viên', ma: '33', ky: d.chi['33'], lk: d.chiLK['33'] },
+    { muc: '6', ten: 'Các khoản chi khác', ma: '35', ky: d.chi['35'], lk: d.chiLK['35'] },
+    { muc: '', ten: 'Cộng chi NSCĐ', ma: '', ky: d.congChi_ky, lk: d.congChi_lk, dam: 1 },
+    { muc: '7', ten: 'Kinh phí nộp cấp trên trực tiếp', ma: '36', ky: d.chi['36'], lk: d.chiLK['36'] },
+    { muc: '8', ten: 'Đoàn phí nộp cấp trên trực tiếp', ma: '37', ky: d.chi['37'], lk: d.chiLK['37'] },
+    { muc: '', ten: 'TỔNG CỘNG (II)', ma: '', ky: d.tongChi_ky, lk: d.tongChi_lk, dam: 1 },
+    { muc: 'III', ten: 'Số dư cuối kỳ (tồn quỹ tiền mặt + số dư TK ngân hàng)', ma: '38', ky: d.duCuoiKy, lk: d.duCuoiKy, dam: 1 },
+    { muc: 'IV', ten: 'Kinh phí phải nộp cấp trên trong kỳ (29%)', ma: '49', ky: d.chi['49'] || d.kpPhaiNop_ky, lk: d.chiLK['49'] || d.kpPhaiNop_lk },
+    { muc: 'V', ten: 'Đoàn phí phải nộp cấp trên trong kỳ (40%)', ma: '', ky: d.dpPhaiNop_ky, lk: d.dpPhaiNop_lk }
+  ];
+}
+
+/* ---------- Excel: Báo cáo quyết toán B07/TLĐ ---------- */
+function xlsxBaoCao(quy, nam) {
+  const s = DB.settings, ct = (s.chiTieu && s.chiTieu[nam]) || {};
+  const rows = [], merges = [];
+  const add = function (r) { rows.push(r); return rows.length; };     // trả về số dòng (1-based)
+  add([oP(s.capTren), null, null, null, null, oI('Mẫu số: B07/TLĐ')]);
+  merges.push('A1:C1');
+  add([oB(s.donVi)]); merges.push('A2:D2');
+  add(hangTrong(6));
+  let n = add([oT('BÁO CÁO')]); merges.push('A' + n + ':F' + n);
+  n = add([oT2('QUYẾT TOÁN THU - CHI NGÂN SÁCH CÔNG ĐOÀN CƠ SỞ')]); merges.push('A' + n + ':F' + n);
+  n = add([oT2(tenKy(quy, nam))]); merges.push('A' + n + ':F' + n);
+  add(hangTrong(6));
+  add([oB('A - CÁC CHỈ TIÊU CƠ BẢN')]);
+  n = add([oP('- Số lao động: ' + (ct.laoDong || '……') + ' người'), null, null, oP('- Số cán bộ chuyên trách: ' + (ct.chuyenTrach || '……') + ' người')]);
+  merges.push('A' + n + ':C' + n, 'D' + n + ':F' + n);
+  n = add([oP('- Số đoàn viên: ' + (ct.doanVien || '……') + ' người'), null, null, oP('- Tổng quỹ tiền lương: ' + (ct.quyLuong ? fmt(parseMoney(ct.quyLuong)) : '……') + ' đồng')]);
+  merges.push('A' + n + ':C' + n, 'D' + n + ':F' + n);
+  add(hangTrong(6));
+  add([oB('B - CÁC CHỈ TIÊU NGÂN SÁCH:')]);
+  add([oH('Mục'), oH('Nội dung'), oH('Mã số'), oH(tenCot1(quy)), oH('Lũy kế từ đầu năm đến nay'), oH('Cấp trên duyệt')]);
+  add([oC('A'), oC('B'), oC('C'), oC('1'), oC('2'), oC('3')]);
+  bcDongs(quy, nam).forEach(function (d) {
+    rows.push([
+      oC(d.muc),
+      d.dam ? oSB(d.ten) : oS(d.ten),
+      oC(d.ma),
+      d.ky === '' ? oS('') : (d.dam ? oNB(d.ky) : oN(d.ky)),
+      d.lk === '' ? oS('') : (d.dam ? oNB(d.lk) : oN(d.lk)),
+      oS('')
+    ]);
+  });
+  add(hangTrong(6));
+  add([oB('C - THUYẾT MINH VÀ KIẾN NGHỊ CỦA CÔNG ĐOÀN CƠ SỞ')]);
+  add(hangTrong(6)); add(hangTrong(6));
+  n = add([null, null, null, oR('Ngày …… tháng …… năm ' + nam)]); merges.push('D' + n + ':F' + n);
+  n = add([oBC('KẾ TOÁN CÔNG ĐOÀN CƠ SỞ'), null, null, oBC('TM. BAN CHẤP HÀNH CĐCS')]);
+  merges.push('A' + n + ':C' + n, 'D' + n + ':F' + n);
+  n = add([null, null, null, oBC('CHỦ TỊCH')]); merges.push('D' + n + ':F' + n);
+  add(hangTrong(6)); add(hangTrong(6));
+  n = add([oBC(String(s.keToan || '').toUpperCase()), null, null, oBC(String(s.chuTich || '').toUpperCase())]);
+  merges.push('A' + n + ':C' + n, 'D' + n + ':F' + n);
+  return {
+    ten: 'B07 ' + (quy ? 'Quy ' + quy + ' ' : '') + nam,
+    rows: rows, merges: merges,
+    w: [7, 46, 9, 18, 20, 14],
+    page: { orient: 'portrait', fit: 1 }
+  };
+}
+function xuatExcelBaoCao() {
+  const quy = bcState.quy, nam = bcState.nam;
+  taiXlsx(taoXlsx([xlsxBaoCao(quy, nam)]), 'BaoCao-B07-' + (quy ? 'Quy' + quy + '-' : '') + nam);
+}
+
+/* ---------- Excel: Dự toán B14-TLĐ ---------- */
+function xlsxDuToan(nam) {
+  const s = DB.settings, rec = duToanRec(nam);
+  const rows = [], merges = [];
+  const add = function (r) { rows.push(r); return rows.length; };
+  let n = add([oP('Công đoàn cấp trên: ' + s.capTren), null, null, null, oI('Mẫu B14-TLĐ (Ban hành kèm theo Hướng dẫn số 47/HD-TLĐ ngày 30/12/2021 của Tổng Liên đoàn)')]);
+  merges.push('A1:D1', 'E1:F3');
+  add([oP('Công đoàn cơ sở: ' + s.donVi)]); merges.push('A2:D2');
+  add([oP('Loại hình đơn vị: SXKD')]); merges.push('A3:D3');
+  add(hangTrong(6));
+  n = add([oT('BÁO CÁO')]); merges.push('A' + n + ':F' + n);
+  n = add([oT2('DỰ TOÁN THU - CHI TÀI CHÍNH CÔNG ĐOÀN CƠ SỞ')]); merges.push('A' + n + ':F' + n);
+  n = add([oT2('NĂM ' + nam)]); merges.push('A' + n + ':F' + n);
+  add(hangTrong(6));
+  n = add([oB('A - CÁC CHỈ TIÊU CƠ BẢN:')]); merges.push('A' + n + ':F' + n);
+  n = add([oP('- Số lao động tính quỹ lương đóng KPCĐ: ' + (rec.ct.laoDong || '……') + ' người'), null, null,
+  oP('Quỹ lương đóng KPCĐ:'), oN(parseMoney(rec.ct.qlKPCD) || 0), oP('đồng')]);
+  merges.push('A' + n + ':C' + n);
+  n = add([oP('- Số đoàn viên công đoàn: ' + (rec.ct.doanVien || '……') + ' người'), null, null,
+  oP('Quỹ lương đóng ĐPCĐ:'), oN(parseMoney(rec.ct.qlDPCD) || 0), oP('đồng')]);
+  merges.push('A' + n + ':C' + n);
+  n = add([oB('B - CÁC CHỈ TIÊU THU, CHI TÀI CHÍNH CÔNG ĐOÀN:')]); merges.push('A' + n + ':F' + n);
+  add([oH('TT'), oH('Nội dung'), oH('Mục lục TCCĐ'), oH('Ước thực hiện năm ' + rec.namCS), oH('Dự toán năm ' + nam), oH('Ghi chú')]);
+  DT_DONG.forEach(function (d) {
+    const uoc = dtGia(rec, 'uoc', d), dt = dtGia(rec, 'dt', d);
+    rows.push([
+      oC(d.tt),
+      d.dam ? oSB(d.ten) : oS((d.con ? '    ' : '') + d.ten),
+      oC(d.ma),
+      uoc === null ? oS('') : (d.dam ? oNB(uoc) : oN(uoc)),
+      dt === null ? oS('') : (d.dam ? oNB(dt) : oN(dt)),
+      oS('')
+    ]);
+  });
+  add(hangTrong(6));
+  n = add([oB('C - THUYẾT MINH:')]); merges.push('A' + n + ':F' + n);
+  n = add([oP(rec.tm || '')]); merges.push('A' + n + ':F' + n);
+  add(hangTrong(6));
+  const tp = s.diaChi ? String(s.diaChi).split(',').pop().trim() : 'Thành phố Hồ Chí Minh';
+  n = add([null, null, oR(tp + ', ngày      tháng      năm ' + (nam - 1))]); merges.push('C' + n + ':F' + n);
+  n = add([oBC('Người lập biểu'), null, oBC('TM. BAN CHẤP HÀNH CĐCS')]); merges.push('A' + n + ':B' + n, 'C' + n + ':F' + n);
+  n = add([oI('(Ký, họ tên)'), null, oBC('CHỦ TỊCH')]); merges.push('A' + n + ':B' + n, 'C' + n + ':F' + n);
+  n = add([null, null, oI('(Ký tên, đóng dấu)')]); merges.push('C' + n + ':F' + n);
+  add(hangTrong(6)); add(hangTrong(6));
+  n = add([oBC(String(s.keToan || '').toUpperCase()), null, oBC(String(s.chuTich || '').toUpperCase())]);
+  merges.push('A' + n + ':B' + n, 'C' + n + ':F' + n);
+  return {
+    ten: 'Du toan ' + nam,
+    rows: rows, merges: merges,
+    w: [6, 52, 11, 19, 19, 12],
+    page: { orient: 'portrait', fit: 1 }
+  };
+}
+function xuatExcelDuToan() { taiXlsx(taoXlsx([xlsxDuToan(dtState.nam)]), 'DuToan-B14-' + dtState.nam); }
+
+/* ---------- Tải file xlsx xuống máy ---------- */
+function taiXlsx(bytes, tenGoc) {
+  const d = new Date();
+  const ten = tenGoc + '-' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') +
+    '-' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') + '.xlsx';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  a.download = ten; a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 8000);
+  try { sbToast('📊 Đã tải ' + ten); } catch (e) { }
+}
+
+/* ---------- Thẻ "Dung lượng lưu trữ" trong màn hình Cài đặt ---------- */
+function khoLuuTruHTML() {
+  const tk = thongKeKho();
+  const muc = (DB.settings && DB.settings.nenAnh) || 'vua';
+  const HAN = 5 * 1048576;                       // localStorage thường ~5 MB
+  const pct = Math.min(100, Math.round(tk.local / HAN * 100));
+  const mau = pct >= 85 ? '#b91c1c' : (pct >= 60 ? '#b45309' : '#15803d');
+  return '<div class="card"><h3>Dung lượng lưu trữ &amp; nén ảnh đính kèm</h3>' +
+    '<p class="note">Chữ &amp; số của phiếu nằm trong localStorage (giới hạn ~5 MB), còn <b>ảnh/chứng từ đính kèm để riêng trong IndexedDB</b> nên không còn làm đầy bộ nhớ như trước.</p>' +
+    '<div style="margin:8px 0">' +
+    '<div style="font-size:12.5px;margin-bottom:4px">Phần chữ &amp; số đang dùng: <b style="color:' + mau + '">' + mbStr(tk.local) + '</b> / ~5 MB (' + pct + '%)</div>' +
+    '<div style="height:10px;background:#e5e7eb;border-radius:5px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + mau + '"></div></div>' +
+    '</div>' +
+    '<p class="note">Ảnh đính kèm: <b>' + tk.soAnh + ' file</b>, tổng <b>' + mbStr(tk.byteAnh) + '</b>' +
+    (tk.lonNhat.byte ? ' · lớn nhất: ' + esc(tk.lonNhat.ten) + ' (' + Math.round(tk.lonNhat.byte / 1024) + ' KB)' : '') +
+    ' · Kho ảnh: <b>' + (FILE_IDB_OK ? 'IndexedDB ✓' : (IDB_LOI ? 'lỗi — ' + esc(IDB_LOI) : 'đang chuyển…')) + '</b></p>' +
+    '<div class="frm"><div class="fld half"><label>Mức nén ảnh khi đính kèm</label>' +
+    '<select onchange="doiMucNen(this.value)">' +
+    Object.keys(MUC_NEN).map(function (k) { return '<option value="' + k + '"' + (k === muc ? ' selected' : '') + '>' + MUC_NEN[k].ten + '</option>'; }).join('') +
+    '</select></div></div>' +
+    '<div class="btnrow">' +
+    '<button class="btn" onclick="nenLaiAnhCu()">🗜 Nén lại ảnh đã lưu</button>' +
+    '<button class="btn sec" onclick="renderModCaiDat()">↻ Tính lại dung lượng</button>' +
+    '</div><div class="msg" id="khoMsg"></div>' +
+    '<p class="note">“Nén lại ảnh đã lưu” sẽ nén mọi ảnh hiện có xuống mức đang chọn — ảnh sẽ nhỏ đi nhưng không khôi phục lại được bản nét hơn, nên hãy <b>Xuất dữ liệu</b> sao lưu trước nếu cần giữ bản gốc.</p>' +
+    '</div>';
+}
+
+/* ================================================================
    KHỞI ĐỘNG
    ================================================================ */
 const RENDERERS = {
@@ -2980,6 +3624,7 @@ const RENDERERS = {
   soquy: renderModSoQuy,
   sonh: renderModSoNH,
   baocao: renderModBaoCao,
+  dutoan: renderModDuToan,
   kpdp: renderModKPDP,
   thamvieng: renderModThamVieng,
   phucap: renderModPhuCap,
@@ -2994,7 +3639,9 @@ const RENDERERS = {
 loadDB();
 renderNav();
 goMod('dashboard');
-sbInit();
+// Phải nạp xong kho ảnh RỒI mới bật đồng bộ: nếu Supabase kéo dữ liệu về giữa chừng,
+// bản ghi phiếu bị thay bằng bản chưa có nội dung ảnh và lần lưu kế tiếp sẽ ghi đè mất file.
+khoiDongKhoFile().then(sbInit, sbInit);
 window.addEventListener('afterprint', function () { $('printArea').innerHTML = ''; });
 </script>
 </body>
