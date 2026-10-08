@@ -3149,11 +3149,19 @@ function ingestBuffer(name,buf){        // exposed for automated testing too
       /* bonus: its Daily by Month sheets give a PROVISIONAL month until the official Monthly STAR */
       if(parsed.dailyMonthKey&&parsed.daily){
         const slot=monthSlot(parsed.dailyMonthKey);
-        if(!slot.star||slot.star.provisional){
-          slot.star=provisionalStarFromDaily(parsed.daily,parsed.dailyMonthKey,parsed.warns);
-          label+=` + PROVISIONAL ${fmtMonthKey(parsed.dailyMonthKey)} (replaced by official Monthly STAR)`;
+        /* Weekly exports come in the same three variants as the Monthly STAR (incl / excl /
+           new comp set), with identical filenames and the same TOC/Glance markers. They must
+           go to their own slots or the last one dropped overwrites the other two. */
+        const {kind,inclSubject}=starCompsetInfo(wb);
+        const sk=starSlotKey(kind,inclSubject);
+        const vName=STAR_VARIANTS.find(([k])=>k===sk)?.[1]||sk;
+        if(!slot[sk]||slot[sk].provisional){
+          const pv=provisionalStarFromDaily(parsed.daily,parsed.dailyMonthKey,parsed.warns);
+          pv.compsetKind=kind; pv.inclSubject=inclSubject;
+          slot[sk]=pv; if(kind==='new') state.compsetSeen=true;
+          label+=` + PROVISIONAL ${fmtMonthKey(parsed.dailyMonthKey)} — ${vName} (replaced by official Monthly STAR)`;
           state.month=parsed.dailyMonthKey;
-        } else label+=` (official ${fmtMonthKey(parsed.dailyMonthKey)} STAR already stored — provisional skipped)`;
+        } else label+=` (official ${fmtMonthKey(parsed.dailyMonthKey)} STAR — ${vName} — already stored, provisional skipped)`;
       }
     }
     else if(type==='starDaily'){ parsed=parseStarDaily(wb); state.store.pace.daily=parsed; label='Daily STAR (pace): '+parsed.label; }
@@ -5474,7 +5482,7 @@ function renderMarket(d){
   : benchSrc==='submkt'
   ? `Benchmark = the STAR <b>Summary</b> sheet row <b>“${escH(benchName)}”</b> — <b>the whole city, every price class</b>, so it sits well below the luxury benchmarks and Sofitel usually indexes above 100 against it. Only the Summary sheet carries it. Last-year figures are derived exactly from STR's published % change (level ÷ 1+chg), since that sheet lists changes but not prior-year levels.`
   : benchSrc==='glance'
-  ? `<span class="tag a">Industry sheet not in this file</span> This is a provisional month built from a Weekly STAR, which carries no Industry sheet — the benchmark shown is the <b>industry figure from the file's Glance</b>. It refreshes from the Industry sheet once the official Monthly STAR is dropped.`
+  ? `<span class="tag a">Provisional — from daily sheets</span> This month is built from a Weekly STAR. The comp-set column comes from its <b>Daily by Month</b> sheet and the industry column from its <b>Daily by Month Ind</b> sheet, averaged over the days reported so far (ADR revenue-weighted as mean RevPAR ÷ mean Occ). YTD / 3M / 12M and last-year changes need the official Monthly STAR, which replaces this month automatically when dropped.`
   : benchSrc==='summary'
   ? `<span class="tag a">Industry sheet not in this file</span> Falling back to the Summary sheet row <b>“${escH(benchName)}”</b>, which is a <b>wider population</b> than the Industry sheet and will read lower — re-drop the Monthly STAR to source it properly.`
   : `No industry benchmark in this file.`} Two indexes, both 100 = parity: <b>Index vs comp</b> is Sofitel against the ${compN}-property competitive set (STR's MPI / ARI / RGI), <b>Index vs industry</b> is Sofitel against the ${escH(benchShort)} — a broader field, so it usually reads lower on rate. Rank = standing within the ${compN}-property comp set above (#1 = best; green = top, red = bottom)${SFm?' for the selected period, from the STR monthly full-data extract':` — a <b>monthly</b> figure from the Comp sheet for ${fmtMonthKey(st.monthKey)}, so it is blank on the YTD / 3M / 12M views; drop <b>Sofitel_Saigon_Plaza_Fulldata.xlsx</b> to fill those`}. Rank in ${fmtMonthKey(st.monthKey)} — Occ: <b>${rankOf('occ','cm')||'—'}</b> · ADR: <b>${rankOf('adr','cm')||'—'}</b> · RevPAR: <b>${rankOf('revpar','cm')||'—'}</b> · Fair share: ${fair}</div>
