@@ -347,18 +347,39 @@ function migrateData() {
     if (!r.id) r.id = uid();          // cần mã riêng để đồng bộ từng dòng
   });
   (DB.phieu || []).forEach(p => { if (p.boPhan === undefined) p.boPhan = ''; });
+  // Chuẩn hóa chữ tiếng Việt về dạng dựng sẵn (Unicode NFC). Dữ liệu chép từ Excel có
+  // ~20 phiếu lưu kiểu tổ hợp ("u" + dấu sắc rời) — trông giống hệt nhưng ô tìm kiếm
+  // và việc nhận diện "Rút quỹ…" đều không khớp được.
+  let nNFC = 0;
+  (DB.phieu || []).forEach(p => {
+    ['so', 'nguoi', 'boPhan', 'diaChi', 'dienGiai'].forEach(f => {
+      if (typeof p[f] === 'string' && p[f] !== p[f].normalize('NFC')) { p[f] = p[f].normalize('NFC'); nNFC++; }
+    });
+  });
+  if (nNFC) NB_CAN_LUU += nNFC;
   // Rút quỹ / nộp quỹ giữa ngân hàng và tiền mặt là chuyển nội bộ, không phải thu–chi
   // ngân sách. Trước đây vế thu bị gán mã 24 (thu khác) nên báo cáo bị thổi phồng,
   // còn vế chi lại để trống mã → hai bên không triệt tiêu nhau. Chuẩn hóa về mã NB.
   const reNoiBo = /r[uú]t\s*(qu[yỹ]|nh[aậ]p)|nh[aậ]p\s*qu[yỹ]\s*ti[eề]n\s*m[aặ]t|n[oộ]p\s*qu[yỹ]\s*ti[eề]n\s*m[aặ]t/i;
   let nNB = 0;
   (DB.phieu || []).forEach(p => {
-    if (p.maSo === MA_NOI_BO) return;
+    if (p.maSo === MA_NOI_BO && p.maSoMoi === MA_NOI_BO) return;
     // nhận theo DIỄN GIẢI, không phụ thuộc mã cũ: thực tế phiếu rút quỹ đang bị gán
     // lẫn lộn mã 24 (thu khác), 35 (chi khác) hoặc bỏ trống.
-    if (reNoiBo.test(p.dienGiai || '')) { p.maSo = MA_NOI_BO; nNB++; }
+    if (p.maSo === MA_NOI_BO || reNoiBo.test(p.dienGiai || '')) { p.maSo = MA_NOI_BO; p.maSoMoi = MA_NOI_BO; nNB++; }
   });
-  if (nNB) { NB_CAN_LUU = nNB; console.info('Đã chuẩn hóa ' + nNB + ' phiếu rút/nộp quỹ nội bộ sang mã ' + MA_NOI_BO + ' (không tính vào báo cáo).'); }
+  // Mã mới (mục lục TCCĐ theo HD 47) cho các phiếu chưa có — quy đổi từ mã cũ
+  let nMoi = 0;
+  (DB.phieu || []).forEach(p => {
+    if (p.maSoMoi === undefined || p.maSoMoi === null || (p.maSoMoi === '' && p.maSo)) {
+      p.maSoMoi = cuSangMoi(p.maSo, p.dienGiai);
+      if (p.maSoMoi) nMoi++;
+    }
+  });
+  if (nNB + nMoi) {
+    NB_CAN_LUU += nNB + nMoi;
+    console.info('Chuẩn hóa mã: ' + nNB + ' phiếu chuyển quỹ nội bộ (NB), ' + nMoi + ' phiếu được gán mã mới theo HD 47.');
+  }
   // bổ sung các trường của mẫu Ủy nhiệm chi ngân hàng OCB cho dữ liệu cũ
   (DB.unc || []).forEach(u => {
     ['traChiNhanh', 'traDiaChi', 'nhanTinh', 'nhanDiaChi', 'nhanGTTT', 'nhanGTTTNgay', 'nhanGTTTNoi', 'maGD']
@@ -405,16 +426,14 @@ function moneyInput(el) {
   });
 }
 function dmOptions(dm, sel) {
-  const list = dm === 'THU' ? DM_THU : dm === 'CHI' ? DM_CHI : DM_THU.concat(DM_CHI);
+  const list = dm === 'THU' ? dmThuHien() : dm === 'CHI' ? dmChiHien() : dmThuHien().concat(dmChiHien());
   let h = '<option value="">— Chọn mục / mã số —</option>';
   for (const it of list) h += '<option value="' + it.ma + '"' + (sel === it.ma ? ' selected' : '') + '>' + it.ma + ' — ' + esc(it.ten) + '</option>';
   h += '<option value="' + MA_NOI_BO + '"' + (sel === MA_NOI_BO ? ' selected' : '') + '>' + MA_NOI_BO + ' — ' + esc(DM_NOI_BO.ten) + '</option>';
   return h;
 }
-function tenMuc(ma) {
-  if (ma === MA_NOI_BO) return DM_NOI_BO.ten;
-  const it = DM_THU.concat(DM_CHI).find(x => x.ma === ma); return it ? it.ten : '';
-}
+/* Tên mục theo HỆ MÃ ĐANG DÙNG — gọi kèm maHien(p) */
+function tenMuc(ma) { return tenMucTheoHe(ma, heMa()); }
 
 /* ---------- Hạn mức thăm hỏi đoàn viên ---------- */
 function normName(s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
@@ -611,11 +630,14 @@ function phieuFormHTML(loai) {
     '<div class="fld" style="display:flex;gap:8px"><div style="flex:1"><label>Nợ</label><input type="text" id="f_' + loai + '_no"></div><div style="flex:1"><label>Có</label><input type="text" id="f_' + loai + '_co"></div></div>' +
     (isPC ?
       '<div class="fld fw" id="pc33box" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:4px;padding:8px">' +
+      // Mã mới 31 gộp cả thăm hỏi lẫn chăm lo khác (quà Tết, trung thu…) → cần hỏi rõ
+      '<div class="chkline" id="pcThBox" style="margin-bottom:6px"><input type="checkbox" id="pcLaThamHoi" onchange="this.dataset.daChon=1;pc33Toggle()"> <label for="pcLaThamHoi" style="margin:0;font-size:13px"><b>Đây là khoản thăm hỏi đoàn viên</b> (thăm bệnh, viếng, mừng cưới, thai sản) — tính vào hạn mức</label></div>' +
+      '<div id="pcThChiTiet">' +
       '<div class="chkline"><input type="checkbox" id="pc33chk" checked> <label for="pc33chk" style="margin:0;font-size:13px">Thêm vào Danh sách thăm viếng đoàn viên</label> <span class="note">· Hạn mức thăm hỏi: <b>' + fmt(HAN_MUC_TH) + ' đ/đoàn viên/năm</b></span></div>' +
       '<div class="frm" style="margin-top:6px"><div class="fld"><label>Họ tên đoàn viên</label><input type="text" id="pc33ten"></div>' +
       '<div class="fld"><label>Bộ phận</label><input type="text" id="pc33bophan"></div>' +
       '<div class="fld"><label>Loại</label><select id="pc33loai">' + TH_LOAI.map(t => '<option value="' + t.k + '">' + t.ten + '</option>').join('') + '</select></div></div>' +
-      '<div id="pc33hint"></div></div>'
+      '<div id="pc33hint"></div></div></div>'
       : '') +
     (isPC ?
       '<div class="fld fw" id="pcckbox" style="display:none;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:4px;padding:8px">' +
@@ -710,15 +732,31 @@ function resetPhieuForm(loai) {
   renderAttList(ATT_BUF['att_' + loai], 'att_' + loai);
   if (loai === 'PC') {
     $('pc33box').style.display = 'none'; $('pc33chk').checked = true; $('pc33ten').value = ''; $('pc33bophan').value = ''; $('pc33hint').innerHTML = '';
+    $('pcLaThamHoi').checked = false; delete $('pcLaThamHoi').dataset.daChon;
     $('pcckbox').style.display = 'none'; $('pcckchk').checked = true; $('pcck_phi').value = 'TT';
     ['pcck_ten', 'pcck_stk', 'pcck_nh', 'pcck_tinh', 'pcck_diachi'].forEach(k => { $(k).value = ''; });
   }
   if (loai === 'HU') { fillPURefs(''); huRefInfo(); }
 }
+/* Phiếu chi đang lập có phải khoản thăm hỏi đoàn viên không?
+   Mã cũ: 33 là thăm hỏi. Mã mới: 31 gộp cả thăm hỏi lẫn chăm lo khác → theo ô đánh dấu. */
+function laThamHoiForm() {
+  const v = $('f_PC_maso') ? $('f_PC_maso').value : '';
+  if (heMa() === 'cu') return v === '33';
+  return v === '31' && !!($('pcLaThamHoi') && $('pcLaThamHoi').checked);
+}
 function pc33Toggle() {
-  const on = $('f_PC_maso').value === '33';
-  $('pc33box').style.display = on ? 'block' : 'none';
-  if (on) {
+  const v = $('f_PC_maso').value, moi = heMa() === 'moi';
+  const hien = v === maThamHoiHien();
+  $('pc33box').style.display = hien ? 'block' : 'none';
+  $('pcThBox').style.display = moi ? 'flex' : 'none';
+  // mã mới 31: lần đầu mở ô thì tự đoán theo diễn giải (thăm bệnh, viếng, mừng cưới…)
+  if (hien && moi && !$('pcLaThamHoi').dataset.daChon) {
+    $('pcLaThamHoi').checked = RE_THAM_HOI.test(($('f_PC_diengiai').value || '').normalize('NFC'));
+  }
+  const th = laThamHoiForm();
+  $('pcThChiTiet').style.display = th ? 'block' : 'none';
+  if (th) {
     if (!$('pc33ten').value) $('pc33ten').value = $('f_PC_nguoi').value;
     if (!$('pc33bophan').value) $('pc33bophan').value = $('f_PC_bophan').value;
     pc33Hint();
@@ -726,7 +764,7 @@ function pc33Toggle() {
 }
 function pc33Hint() {
   const el = $('pc33hint');
-  if (!el || $('f_PC_maso').value !== '33') return;
+  if (!el || !laThamHoiForm()) return;
   const ten = $('pc33ten').value.trim() || $('f_PC_nguoi').value.trim();
   if (!ten) { el.innerHTML = ''; return; }
   const nam = yearOf($('f_PC_ngay').value) || new Date().getFullYear();
@@ -765,8 +803,23 @@ function savePhieu(loai, inUNCNgay) {
   if (!ngay) { alert('Chưa nhập Ngày lập.'); return; }
   if (!soTien) { alert('Chưa nhập Số tiền.'); return; }
   if ((loai === 'PT' || loai === 'PC') && !g('maso').value) { alert('Chưa chọn Mục / Mã số.'); return; }
-  // Cảnh báo hạn mức thăm hỏi (3.000.000 đ/đoàn viên/năm) khi lập phiếu chi mã 33
-  if (loai === 'PC' && g('maso').value === '33') {
+  // ----- Mã số: lưu song song mã cũ (maSo) và mã mới (maSoMoi) -----
+  const maChon = g('maso').value;
+  const goc = editingPhieu[loai] ? DB.phieu.find(x => x.id === editingPhieu[loai]) : null;
+  const thamHoi = loai === 'PC' && laThamHoiForm();
+  let maCu, maMoi;
+  if (heMa() === 'moi') {
+    maMoi = maChon;
+    // không đổi mã thì giữ nguyên mã cũ đã có (vd. 36/37/49 cùng quy về 39 — không được làm mất)
+    if (goc && goc.maSoMoi === maChon && maChon !== '31') maCu = goc.maSo;
+    else maCu = moiSangCu(maChon, thamHoi);
+  } else {
+    maCu = maChon;
+    if (goc && goc.maSo === maChon && goc.maSoMoi) maMoi = goc.maSoMoi;
+    else maMoi = cuSangMoi(maChon, g('diengiai').value);
+  }
+  // Cảnh báo hạn mức thăm hỏi (3.000.000 đ/đoàn viên/năm)
+  if (thamHoi) {
     const tenTH = ($('pc33ten').value.trim() || g('nguoi').value.trim());
     if (tenTH) {
       const daChi = tongThamHoi(tenTH, yearOf(ngay));
@@ -780,13 +833,14 @@ function savePhieu(loai, inUNCNgay) {
     loai: loai,
     so: g('so').value.trim(),
     ngay: ngay,
-    nguoi: g('nguoi').value.trim(),
-    boPhan: g('bophan').value.trim(),
+    nguoi: g('nguoi').value.trim().normalize('NFC'),
+    boPhan: g('bophan').value.trim().normalize('NFC'),
     diaChi: g('diachi').value.trim(),
-    dienGiai: g('diengiai').value.trim(),
+    dienGiai: g('diengiai').value.trim().normalize('NFC'),
     soTien: soTien,
     bangChu: g('bangchu').value.trim() || soThanhChu(soTien),
-    maSo: g('maso').value,
+    maSo: maCu,
+    maSoMoi: maMoi,
     taiKhoan: g('taikhoan').value.trim() || 'Công đoàn',
     hinhThuc: g('hinhthuc').value,
     no: g('no').value.trim(),
@@ -801,8 +855,8 @@ function savePhieu(loai, inUNCNgay) {
     if (DB.phieu.some(x => x.loai === loai && x.so === p.so)) p.so = nextSo(loai, yearOf(ngay) || undefined);
     DB.phieu.push(p);
   }
-  // Phiếu chi mã 33 → thêm vào danh sách thăm viếng
-  if (loai === 'PC' && p.maSo === '33' && $('pc33chk').checked && idx < 0) {
+  // Phiếu chi thăm hỏi đoàn viên (mã cũ 33 / mã mới 31 có đánh dấu thăm hỏi) → thêm vào danh sách thăm viếng
+  if (loai === 'PC' && thamHoi && $('pc33chk').checked && idx < 0) {
     const lv = $('pc33loai').value;
     const row = {
       id: uid(),
@@ -877,7 +931,12 @@ function editPhieu(id) {
   $('f_' + loai + '_diengiai').value = p.dienGiai;
   $('f_' + loai + '_sotien').value = fmt(p.soTien);
   $('f_' + loai + '_bangchu').value = p.bangChu;
-  $('f_' + loai + '_maso').value = p.maSo;
+  $('f_' + loai + '_maso').value = maHien(p);
+  if (loai === 'PC') {
+    // mã mới 31: phiếu là thăm hỏi khi mã cũ tương ứng là 33
+    $('pcLaThamHoi').checked = p.maSo === '33';
+    $('pcLaThamHoi').dataset.daChon = 1;
+  }
   $('f_' + loai + '_taikhoan').value = p.taiKhoan;
   $('f_' + loai + '_hinhthuc').value = p.hinhThuc;
   $('f_' + loai + '_no').value = p.no;
@@ -933,7 +992,7 @@ function refreshPhieuTable(k) {
 function phieuListHTML(loaiArr, modKey) {
   const st = listState(modKey);
   const dmKind = modKey === 'pt' ? 'THU' : modKey === 'pc' ? 'CHI' : 'ALL';
-  const dmList = dmKind === 'THU' ? DM_THU : dmKind === 'CHI' ? DM_CHI : DM_THU.concat(DM_CHI);
+  const dmList = (dmKind === 'THU' ? dmThuHien() : dmKind === 'CHI' ? dmChiHien() : dmThuHien().concat(dmChiHien())).concat([DM_NOI_BO]);
   let h = '<div class="searchrow">' +
     '<input type="text" placeholder="Tìm theo số phiếu, ngày, tên, diễn giải…" value="' + esc(st.q) + '" oninput="setLF(\'' + modKey + '\',\'q\',this.value)">' +
     '<label style="font-size:12.5px">Năm: <select onchange="setLF(\'' + modKey + '\',\'nam\',this.value)"><option value="">Tất cả</option>' +
@@ -951,11 +1010,11 @@ function phieuTableHTML(loaiArr, modKey) {
   const q = st.q.trim().toLowerCase();
   let list = DB.phieu.filter(p => loaiArr.indexOf(p.loai) >= 0);
   if (st.nam) list = list.filter(p => String(yearOf(p.ngay)) === String(st.nam));
-  if (st.ma) list = list.filter(p => p.maSo === st.ma);
+  if (st.ma) list = list.filter(p => maHien(p) === st.ma);
   if (st.ht) list = list.filter(p => p.hinhThuc === st.ht);
   if (q) list = list.filter(p =>
     (p.so || '').toLowerCase().indexOf(q) >= 0 ||
-    (p.maSo || '').indexOf(q) >= 0 ||
+    maHien(p).indexOf(q) >= 0 ||
     fmtDate(p.ngay).indexOf(q) >= 0 ||
     (p.nguoi || '').toLowerCase().indexOf(q) >= 0 ||
     (p.boPhan || '').toLowerCase().indexOf(q) >= 0 ||
@@ -967,7 +1026,7 @@ function phieuTableHTML(loaiArr, modKey) {
       case 'so': r = soVal(a.so) - soVal(b.so) || String(a.so).localeCompare(String(b.so), 'vi'); break;
       case 'loai': r = String(a.loai).localeCompare(b.loai); break;
       case 'nguoi': r = String(a.nguoi || '').localeCompare(String(b.nguoi || ''), 'vi'); break;
-      case 'maSo': r = String(a.maSo || '').localeCompare(String(b.maSo || '')); break;
+      case 'maSo': r = maHien(a).localeCompare(maHien(b), undefined, { numeric: true }); break;
       case 'soTien': r = (a.soTien || 0) - (b.soTien || 0); break;
       case 'hinhThuc': r = String(a.hinhThuc).localeCompare(b.hinhThuc); break;
       default: r = String(a.ngay || '').localeCompare(String(b.ngay || '')) || String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
@@ -991,7 +1050,7 @@ function phieuTableHTML(loaiArr, modKey) {
       '<td>' + esc(p.nguoi) + (p.boPhan ? '<div class="hint">' + esc(p.boPhan) + '</div>' : '') + '</td>' +
       '<td class="wrap">' + esc(p.dienGiai || '').replace(/\n/g, '<br>') +
       (p.loai === 'HU' && p.puRef ? '<div class="hint">↩ hoàn cho ' + esc((DB.phieu.find(x => x.id === p.puRef) || {}).so || '?') + '</div>' : '') + '</td>' +
-      '<td>' + esc(p.maSo) + '</td><td class="num">' + fmt(p.soTien) + '</td>' +
+      '<td>' + esc(maHien(p)) + '</td><td class="num">' + fmt(p.soTien) + '</td>' +
       '<td><span class="badge ' + (p.hinhThuc === 'TM' ? 'tm' : 'ck') + '">' + (p.hinhThuc === 'TM' ? 'TM' : 'CK') + '</span></td>' +
       '<td>' + ((p.files || []).length ? '📎' + p.files.length : '') + '</td>' +
       '<td><button class="mini" onclick="printPhieu(\'' + p.id + '\')">🖨 In</button>' +
@@ -1092,7 +1151,7 @@ function phieuPrintHTML(p) {
     '<table class="ptbl"><tr><th style="width:52%">Diễn giải</th><th style="width:16%">Số tiền</th><th style="width:8%">Nợ</th><th style="width:8%">Có</th><th style="width:16%">Tài khoản</th></tr>' +
     '<tr><td style="height:56px">' + esc(p.dienGiai).replace(/\n/g, '<br>') +
     (p.boPhan ? '<div style="margin-top:4px">Bộ phận: <b>' + esc(p.boPhan) + '</b></div>' : '') +
-    (p.maSo ? '<div class="i" style="font-size:11px;margin-top:4px">(Mục ' + p.maSo + ' — ' + esc(tenMuc(p.maSo)) + ')</div>' : '') + '</td>' +
+    (maHien(p) ? '<div class="i" style="font-size:11px;margin-top:4px">(Mục ' + maHien(p) + ' — ' + esc(tenMuc(maHien(p))) + ')</div>' : '') + '</td>' +
     '<td class="num">' + fmt(p.soTien) + '</td><td class="center">' + esc(p.no) + '</td><td class="center">' + esc(p.co) + '</td><td>' + esc(p.taiKhoan) + '</td></tr>' +
     extra +
     '<tr><td class="num b">Tổng cộng</td><td class="num b">' + fmt(p.soTien) + '</td><td></td><td></td><td></td></tr></table>' +
@@ -1505,9 +1564,9 @@ function ledgerTableHTML(kind, nam, filterKey) {
     const vao = (p.loai === 'PT' || p.loai === 'HU') ? p.soTien : 0;
     const ra = vao ? 0 : p.soTien;
     bal += vao - ra; tThu += vao; tChi += ra;
-    const match = !f || (p.so || '').toLowerCase().indexOf(f) >= 0 || fmtDate(p.ngay).indexOf(f) >= 0 || (p.maSo || '').indexOf(f) >= 0 || (p.dienGiai || '').toLowerCase().indexOf(f) >= 0;
+    const match = !f || (p.so || '').toLowerCase().indexOf(f) >= 0 || fmtDate(p.ngay).indexOf(f) >= 0 || maHien(p).indexOf(f) >= 0 || (p.dienGiai || '').toLowerCase().indexOf(f) >= 0;
     if (!match) continue;
-    rows += '<tr><td>' + fmtDate(p.ngay) + '</td><td>' + (vao ? '<b>' + esc(p.so) + '</b>' : '') + '</td><td>' + (ra ? '<b>' + esc(p.so) + '</b>' : '') + '</td><td>' + esc(p.maSo) + '</td><td>' + esc(p.dienGiai) + '</td>' +
+    rows += '<tr><td>' + fmtDate(p.ngay) + '</td><td>' + (vao ? '<b>' + esc(p.so) + '</b>' : '') + '</td><td>' + (ra ? '<b>' + esc(p.so) + '</b>' : '') + '</td><td>' + esc(maHien(p)) + '</td><td>' + esc(p.dienGiai) + '</td>' +
       '<td class="num">' + (vao ? fmt(vao) : '') + '</td><td class="num">' + (ra ? fmt(ra) : '') + '</td><td class="num">' + fmt(bal) + '</td></tr>';
   }
   rows += '<tr class="sum"><td colspan="5">Cộng phát sinh & tồn cuối kỳ</td><td class="num">' + fmt(tThu) + '</td><td class="num">' + fmt(tChi) + '</td><td class="num">' + fmt(open + tThu - tChi) + '</td></tr>';
@@ -1617,7 +1676,7 @@ function baoCaoTableHTML(quy, nam, forPrint) {
 }
 function renderModBaoCao() {
   const ct = (DB.settings.chiTieu[bcState.nam]) || {};
-  $('mod-baocao').innerHTML = '<h2 class="mtitle">Báo cáo quyết toán thu – chi ngân sách CĐCS (Mẫu B07/TLĐ)</h2>' +
+  $('mod-baocao').innerHTML = '<h2 class="mtitle">' + (heMa() === 'moi' ? 'Báo cáo quyết toán thu – chi tài chính CĐCS (mục lục TCCĐ — HD 47/HD-TLĐ)' : 'Báo cáo quyết toán thu – chi ngân sách CĐCS (Mẫu B07/TLĐ cũ)') + '</h2>' +
     '<div class="card"><div class="searchrow">' +
     '<label style="font-size:13px">Kỳ: <select onchange="bcState.quy=Number(this.value);renderAll()">' +
     [1, 2, 3, 4].map(q => '<option value="' + q + '"' + (q === bcState.quy ? ' selected' : '') + '>Quý ' + ['I', 'II', 'III', 'IV'][q - 1] + '</option>').join('') +
@@ -1634,7 +1693,7 @@ function renderModBaoCao() {
     '<div class="fld"><label>Tổng quỹ tiền lương (đồng)</label><input type="text" id="ct_quyluong" value="' + esc(ct.quyLuong || '') + '" onchange="saveChiTieu()"></div>' +
     '</div>' +
     '<h3>B — Các chỉ tiêu ngân sách · ' + (bcState.quy ? 'Quý ' + ['I', 'II', 'III', 'IV'][bcState.quy - 1] + ' năm ' : 'Cả năm ') + bcState.nam + '</h3>' +
-    baoCaoTableHTML(bcState.quy, bcState.nam, false) +
+    (heMa() === 'moi' ? qtBangMoiHTML(bcState.quy, bcState.nam, false) : baoCaoTableHTML(bcState.quy, bcState.nam, false)) +
     '<p class="note" style="margin-top:8px">Số liệu tổng hợp tự động từ Phiếu Thu / Phiếu Chi trong kỳ. Dòng số dư kỳ trước lấy theo Sổ quỹ tiền mặt và Sổ TK ngân hàng. Mục IV, V tự tính theo tỷ lệ 29% thu KPCĐ / 40% thu đoàn phí (nếu chưa có phiếu chi mã 49).<br>' +
     '<b>Không tính vào báo cáo:</b> phiếu mang mã <b>' + MA_NOI_BO + ' — chuyển quỹ nội bộ</b> (rút tiền ngân hàng nhập quỹ tiền mặt và ngược lại) vì hai vế thu – chi tự triệt tiêu; phiếu tạm ứng / hoàn ứng cũng không vào báo cáo. Các khoản này vẫn hiện đầy đủ trong Sổ quỹ tiền mặt và Sổ TK ngân hàng.</p>' +
     '</div>';
@@ -1652,7 +1711,7 @@ function printBaoCao() {
   const s = DB.settings, ct = DB.settings.chiTieu[bcState.nam] || {};
   const html = '<div class="pdoc">' +
     '<div class="phead"><div class="porg">' + esc(s.capTren) + '<br><span class="u">' + esc(s.donVi) + '</span></div><div class="b" style="font-size:12px">Mẫu số: B07/TLĐ</div></div>' +
-    '<h1 class="ptitle" style="margin-bottom:0">BÁO CÁO<br>QUYẾT TOÁN THU - CHI NGÂN SÁCH CÔNG ĐOÀN CƠ SỞ</h1>' +
+    '<h1 class="ptitle" style="margin-bottom:0">BÁO CÁO<br>QUYẾT TOÁN THU - CHI ' + (heMa() === 'moi' ? 'TÀI CHÍNH' : 'NGÂN SÁCH') + ' CÔNG ĐOÀN CƠ SỞ</h1>' +
     '<div class="center b" style="margin:4px 0 12px">' + tenKy(bcState.quy, bcState.nam) + '</div>' +
     '<div class="b">A - CÁC CHỈ TIÊU CƠ BẢN</div>' +
     // số liệu căn lề PHẢI cho thẳng cột, nhất là ô Tổng quỹ tiền lương
@@ -1665,8 +1724,8 @@ function printBaoCao() {
     '<td>- Tổng quỹ tiền lương:</td>' +
     '<td style="text-align:right"><b>' + esc(ct.quyLuong ? fmt(parseMoney(ct.quyLuong)) : '……') + '</b></td>' +
     '<td style="padding-left:6px">đồng</td></tr></table>' +
-    '<div class="b" style="margin-top:8px">B - CÁC CHỈ TIÊU NGÂN SÁCH:</div>' +
-    baoCaoTableHTML(bcState.quy, bcState.nam, true) +
+    '<div class="b" style="margin-top:8px">' + (heMa() === 'moi' ? 'B - CÁC CHỈ TIÊU THU, CHI TÀI CHÍNH CÔNG ĐOÀN:' : 'B - CÁC CHỈ TIÊU NGÂN SÁCH:') + '</div>' +
+    (heMa() === 'moi' ? qtBangMoiHTML(bcState.quy, bcState.nam, true) : baoCaoTableHTML(bcState.quy, bcState.nam, true)) +
     '<div class="b" style="margin-top:8px">C - THUYẾT MINH VÀ KIẾN NGHỊ CỦA CÔNG ĐOÀN CƠ SỞ</div>' +
     '<div>' + '…'.repeat(120) + '</div><div>' + '…'.repeat(120) + '</div>' +
     '<div style="text-align:right;margin-top:10px" class="i">Ngày …… tháng …… năm ' + bcState.nam + '</div>' +
@@ -1758,7 +1817,7 @@ function renderModThamVieng() {
     '<button class="btn sec" onclick="tvAddRow()">＋ Thêm dòng</button>' +
     '<button class="btn sec" onclick="printTV()">🖨 In danh sách</button></div>' +
     '<div id="tvtbl">' + tvTableHTML() + '</div>' +
-    '<p class="note" style="margin-top:8px">Khi lập Phiếu Chi mã số 33 (Thăm hỏi đoàn viên), tick "Thêm vào Danh sách thăm viếng" để tự tạo dòng ở đây. Các loại thăm hỏi: Thăm bệnh, Thăm viếng, Mừng cưới, Thăm thai sản — tính chung vào hạn mức ' + fmt(HAN_MUC_TH) + ' đ/đoàn viên/năm.</p></div>';
+    '<p class="note" style="margin-top:8px">Khi lập Phiếu Chi thăm hỏi đoàn viên (' + (heMa() === 'moi' ? 'mã 31 và đánh dấu “khoản thăm hỏi”' : 'mã 33') + '), tick "Thêm vào Danh sách thăm viếng" để tự tạo dòng ở đây. Các loại thăm hỏi: Thăm bệnh, Thăm viếng, Mừng cưới, Thăm thai sản — tính chung vào hạn mức ' + fmt(HAN_MUC_TH) + ' đ/đoàn viên/năm.</p></div>';
 }
 function refreshTvTable() { const el = $('tvtbl'); if (el) el.innerHTML = tvTableHTML(); }
 function tvTableHTML() {
@@ -1934,7 +1993,7 @@ function renderModDashboard() {
   const vuot = stats.filter(s => s.tong > HAN_MUC_TH);
   const canKiet = stats.filter(s => s.tong === HAN_MUC_TH);
   const tongTH = stats.reduce((s, x) => s + x.tong, 0);
-  h += '<div class="card"><h3>Hạn mức thăm hỏi đoàn viên năm ' + nam + ' (mã 33 — ' + fmt(HAN_MUC_TH) + ' đ/người/năm)</h3>' +
+  h += '<div class="card"><h3>Hạn mức thăm hỏi đoàn viên năm ' + nam + ' (' + (heMa() === 'moi' ? 'mã 31 — thăm hỏi' : 'mã 33') + ' — ' + fmt(HAN_MUC_TH) + ' đ/người/năm)</h3>' +
     '<p class="note">Tổng chi thăm hỏi năm ' + nam + ': <b>' + fmt(tongTH) + ' đ</b> cho <b>' + stats.length + '</b> đoàn viên (Thăm bệnh / Thăm viếng / Mừng cưới / Thăm thai sản).</p>' +
     (vuot.length ? '<div class="warnbox">⚠ <b>' + vuot.length + ' đoàn viên VƯỢT hạn mức:</b> ' + vuot.map(s => esc(s.hoTen) + ' — ' + fmt(s.tong) + ' đ (vượt ' + fmt(s.tong - HAN_MUC_TH) + ' đ)').join(' · ') + '</div>' : '<div class="okbox">✓ Chưa có đoàn viên nào vượt hạn mức.</div>') +
     (canKiet.length ? '<div class="warnbox" style="background:#fefce8;border-color:#fde68a;color:#78350f">Đã dùng hết hạn mức: ' + canKiet.map(s => esc(s.hoTen)).join(', ') + '</div>' : '') +
@@ -1982,6 +2041,7 @@ function renderModCaiDat() {
     '<div class="fld half"><label>Số dư đầu kỳ Tiền mặt năm ' + nam + '</label><input type="text" id="s_sdtm" value="' + fmt(sd.TM) + '"></div>' +
     '<div class="fld half"><label>Số dư đầu kỳ Ngân hàng năm ' + nam + '</label><input type="text" id="s_sdnh" value="' + fmt(sd.NH) + '"></div>' +
   '</div><div class="btnrow"><button class="btn" onclick="saveSettings()">💾 Lưu cài đặt</button><span class="note" id="s_msg"></span></div></div>' +
+  heMaHTML() +
   khoLuuTruHTML() +
   '<div class="card"><h3>Xuất / Nhập dữ liệu (chia sẻ bằng file)</h3>' +
     '<p class="note"><b>.xlsx</b> — mở bằng Excel để xem/lọc/in, gồm 8 sheet theo từng năm. <b>PDF</b> — bộ hồ sơ đầy đủ để lưu trữ hoặc gửi cấp trên (qua hộp thoại In → “Lưu dạng PDF”). <b>.json</b> — file dữ liệu gốc dùng để sao lưu và nạp lại vào app (Excel/PDF không nhập ngược lại được).</p>' +
@@ -2191,7 +2251,7 @@ function sbRowPhieu(p) {
   return {
     id: p.id, loai: p.loai, so: p.so || '', ngay: p.ngay || null, nguoi: p.nguoi || '', bo_phan: p.boPhan || '',
     dia_chi: p.diaChi || '', dien_giai: p.dienGiai || '', so_tien: Number(p.soTien) || 0, bang_chu: p.bangChu || '',
-    ma_so: p.maSo || '', tai_khoan: p.taiKhoan || '', hinh_thuc: p.hinhThuc || 'TM', no_tk: p.no || '', co_tk: p.co || '',
+    ma_so: p.maSo || '', ma_so_moi: p.maSoMoi || '', tai_khoan: p.taiKhoan || '', hinh_thuc: p.hinhThuc || 'TM', no_tk: p.no || '', co_tk: p.co || '',
     pu_ref: p.puRef || '', has_files: (p.files || []).length > 0, created_at: p.createdAt || null
   };
 }
@@ -2199,7 +2259,7 @@ function sbPhieuFromRow(r, old) {
   return {
     id: r.id, loai: r.loai, so: r.so || '', ngay: r.ngay || '', nguoi: r.nguoi || '', boPhan: r.bo_phan || '',
     diaChi: r.dia_chi || '', dienGiai: r.dien_giai || '', soTien: Number(r.so_tien) || 0, bangChu: r.bang_chu || '',
-    maSo: r.ma_so || '', taiKhoan: r.tai_khoan || 'Công đoàn', hinhThuc: r.hinh_thuc || 'TM', no: r.no_tk || '', co: r.co_tk || '',
+    maSo: r.ma_so || '', maSoMoi: (r.ma_so_moi != null && r.ma_so_moi !== '') ? r.ma_so_moi : cuSangMoi(r.ma_so || '', r.dien_giai || ''), taiKhoan: r.tai_khoan || 'Công đoàn', hinhThuc: r.hinh_thuc || 'TM', no: r.no_tk || '', co: r.co_tk || '',
     puRef: r.pu_ref || '', files: (old && old.files) ? old.files : [], createdAt: r.created_at || ''
   };
 }
@@ -2250,7 +2310,7 @@ function sbTvFromRow(r) {
 /* Các mục dạng khóa–giá trị (cài đặt đơn vị, số dư, bảng kê…) */
 function sbKvEntries() {
   const s = DB.settings, out = [];
-  out.push(['org', { capTren: s.capTren, donVi: s.donVi, diaChi: s.diaChi, keToan: s.keToan, chuTich: s.chuTich, thuQuy: s.thuQuy, nhTen: s.nhTen, nhSTK: s.nhSTK, nhNganHang: s.nhNganHang, nhChiNhanh: s.nhChiNhanh || '', nhDiaChi: s.nhDiaChi || '' }]);
+  out.push(['org', { capTren: s.capTren, donVi: s.donVi, diaChi: s.diaChi, keToan: s.keToan, chuTich: s.chuTich, thuQuy: s.thuQuy, nhTen: s.nhTen, nhSTK: s.nhSTK, nhNganHang: s.nhNganHang, nhChiNhanh: s.nhChiNhanh || '', nhDiaChi: s.nhDiaChi || '', heMa: heMa() }]);
   out.push(['nguoinhan', s.nguoiNhan || {}]);
   out.push(['sodu', s.soDu || {}]);
   out.push(['chitieu', s.chiTieu || {}]);
@@ -2261,7 +2321,11 @@ function sbKvEntries() {
 function sbKvValue(k) { const e = sbKvEntries().find(x => x[0] === k); return e ? e[1] : null; }
 function sbApplyKv(k, v) {
   if (v == null) return;
-  if (k === 'org') ['capTren', 'donVi', 'diaChi', 'keToan', 'chuTich', 'thuQuy', 'nhTen', 'nhSTK', 'nhNganHang', 'nhChiNhanh', 'nhDiaChi'].forEach(f => { if (v[f] !== undefined) DB.settings[f] = v[f]; });
+  if (k === 'org') {
+    const heTruoc = heMa();
+    ['capTren', 'donVi', 'diaChi', 'keToan', 'chuTich', 'thuQuy', 'nhTen', 'nhSTK', 'nhNganHang', 'nhChiNhanh', 'nhDiaChi', 'heMa'].forEach(f => { if (v[f] !== undefined) DB.settings[f] = v[f]; });
+    if (heMa() !== heTruoc) lamMoiFormMa();   // máy khác vừa đổi hệ mã → dựng lại dropdown
+  }
   else if (k === 'nguoinhan') DB.settings.nguoiNhan = Object.assign({}, DB.settings.nguoiNhan || {}, v);
   else if (k === 'sodu') DB.settings.soDu = v;
   else if (k === 'chitieu') DB.settings.chiTieu = v;
@@ -2322,10 +2386,25 @@ function sbBuildRow(k, id) {
   if (k === 'kv') { const v = sbKvValue(id); return v == null ? null : { row: { k: id, v: v }, files: null }; }
   return null;
 }
+let SB_THIEU_COT_MA_MOI = false;   // bảng cd_phieu trên Supabase chưa có cột ma_so_moi
 async function sbUpsert(kind, row) {
   row.updated_at = new Date().toISOString();
   row.updated_by = SB_DEVICE;
-  await sbReq(SB_T[kind], { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(row) });
+  if (kind === 'phieu' && SB_THIEU_COT_MA_MOI) delete row.ma_so_moi;
+  const gui = function () {
+    return sbReq(SB_T[kind], { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(row) });
+  };
+  try { await gui(); }
+  catch (e) {
+    // Chưa chạy câu SQL thêm cột ma_so_moi: vẫn đồng bộ phần còn lại để không kẹt hàng đợi,
+    // mã mới sẽ được mỗi máy tự quy đổi lại từ mã cũ; báo cho người dùng trong Cài đặt.
+    if (kind === 'phieu' && !SB_THIEU_COT_MA_MOI && /ma_so_moi/.test(e.message || '')) {
+      SB_THIEU_COT_MA_MOI = true;
+      delete row.ma_so_moi;
+      console.warn('Supabase chưa có cột ma_so_moi — đồng bộ tạm không kèm mã mới.');
+      await gui();
+    } else throw e;
+  }
 }
 async function sbPushFiles(ownerId, files) {
   await sbReq(SB_T.file + '?owner_id=eq.' + encodeURIComponent(ownerId), { method: 'DELETE' });
@@ -2861,7 +2940,7 @@ function duLieuXuat(nam) {
   phieuNam.forEach(p => {
     const vao = (p.loai === 'PT' || p.loai === 'HU') ? p.soTien : 0, ra = vao ? 0 : p.soTien;
     tThu += vao; tChi += ra;
-    rows.push([oS(p.so), oD(p.ngay), oS(p.loai), oS(p.nguoi), oS(p.boPhan), oS(p.dienGiai), oS(p.maSo), oS(tenMuc(p.maSo)),
+    rows.push([oS(p.so), oD(p.ngay), oS(p.loai), oS(p.nguoi), oS(p.boPhan), oS(p.dienGiai), oS(maHien(p)), oS(tenMuc(maHien(p))),
       oN(vao || null), oN(ra || null), oS(p.hinhThuc === 'TM' ? 'Tiền mặt' : 'Chuyển khoản'), oS(p.taiKhoan), oN((p.files || []).length || null)]);
   });
   rows.push([oS('TỔNG CỘNG', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oS('', 6), oN(tThu, 5), oN(tChi, 5), oS('', 6), oS('', 6), oS('', 6)]);
@@ -2876,7 +2955,7 @@ function duLieuXuat(nam) {
     ledgerEntries(kind, nam).forEach(p => {
       const vao = (p.loai === 'PT' || p.loai === 'HU') ? p.soTien : 0, ra = vao ? 0 : p.soTien;
       bal += vao - ra; sThu += vao; sChi += ra;
-      r.push([oD(p.ngay), oS(vao ? p.so : ''), oS(ra ? p.so : ''), oS(p.maSo), oS(p.dienGiai), oN(vao || null), oN(ra || null), oN(bal)]);
+      r.push([oD(p.ngay), oS(vao ? p.so : ''), oS(ra ? p.so : ''), oS(maHien(p)), oS(p.dienGiai), oN(vao || null), oN(ra || null), oN(bal)]);
     });
     r.push([oS(''), oS(''), oS(''), oS(''), oS('Cộng phát sinh & tồn cuối kỳ', 6), oN(sThu, 5), oN(sChi, 5), oN(open + sThu - sChi, 5)]);
     sheets.push({ ten: cfg[1] + ' ' + nam, rows: r, freeze: 1, w: [11, 14, 14, 7, 60, 15, 15, 16] });
@@ -2904,7 +2983,7 @@ function duLieuXuat(nam) {
     rq.push(dong(m[0], m[1], m[2], d => d.chi[m[2]])));
   rq.push(dong('', 'TỔNG CỘNG CHI (II)', '', d => d.tongChi_ky, true));
   rq.push([oS('III', 6), oS('Số dư cuối kỳ', 6), oS('38', 6), oN(q[0].duCuoiKy, 5), oN(q[1].duCuoiKy, 5), oN(q[2].duCuoiKy, 5), oN(q[3].duCuoiKy, 5), oS('', 6)]);
-  sheets.push({ ten: 'Quyết toán ' + nam, rows: rq, freeze: 1, w: [7, 42, 8, 16, 16, 16, 16, 17] });
+  sheets.push(heMa() === 'moi' ? qtSheet4QuyMoi(nam) : { ten: 'Quyết toán ' + nam, rows: rq, freeze: 1, w: [7, 42, 8, 16, 16, 16, 16, 17] });
 
   // 5. Thăm hỏi đoàn viên — hạn mức
   const st = thamHoiStats(nam);
@@ -2972,7 +3051,7 @@ function xuatPDF(nam) {
     const vao = (p.loai === 'PT' || p.loai === 'HU') ? p.soTien : 0, ra = vao ? 0 : p.soTien;
     tThu += vao; tChi += ra;
     bangPhieu += '<tr><td>' + esc(p.so) + '</td><td class="center">' + fmtDate(p.ngay) + '</td><td>' + esc(p.nguoi) + '</td><td>' + esc(p.boPhan) + '</td><td>' + esc(p.dienGiai) + '</td>' +
-      '<td class="center">' + esc(p.maSo) + '</td><td class="num">' + (vao ? fmt(vao) : '') + '</td><td class="num">' + (ra ? fmt(ra) : '') + '</td><td class="center">' + (p.hinhThuc === 'TM' ? 'TM' : 'CK') + '</td></tr>';
+      '<td class="center">' + esc(maHien(p)) + '</td><td class="num">' + (vao ? fmt(vao) : '') + '</td><td class="num">' + (ra ? fmt(ra) : '') + '</td><td class="center">' + (p.hinhThuc === 'TM' ? 'TM' : 'CK') + '</td></tr>';
   });
   bangPhieu += '<tr><td colspan="6" class="b">TỔNG CỘNG (' + phieuNam.length + ' phiếu)</td><td class="num b">' + fmt(tThu) + '</td><td class="num b">' + fmt(tChi) + '</td><td></td></tr></table>';
   const stat = thamHoiStats(nam);
@@ -2993,7 +3072,7 @@ function xuatPDF(nam) {
     ngat + '<div class="b" style="margin:0 0 4px">III. SỔ TÀI KHOẢN NGÂN HÀNG NĂM ' + nam + '</div>' + bangSo('CK') +
     ngat + '<div class="b" style="margin:0 0 4px">IV. THĂM HỎI ĐOÀN VIÊN — hạn mức ' + fmt(HAN_MUC_TH) + ' đ/người/năm</div>' + bangTH +
     [1, 2, 3, 4].map(qi => ngat + '<div class="b" style="margin:0 0 4px">V.' + qi + '. QUYẾT TOÁN QUÝ ' + ['I', 'II', 'III', 'IV'][qi - 1] + ' NĂM ' + nam + '</div>' +
-      baoCaoTableHTML(qi, nam, true).replace('class="tblwrap"', '').replace('table class="ptbl"', 'table class="ptbl" style="font-size:10.5px"')).join('') +
+      (heMa() === 'moi' ? qtBangMoiHTML(qi, nam, true) : baoCaoTableHTML(qi, nam, true)).replace('class="tblwrap"', '').replace('table class="ptbl"', 'table class="ptbl" style="font-size:10.5px"')).join('') +
     '<div class="psig" style="margin-top:18px"><div><div class="role">KẾ TOÁN CÔNG ĐOÀN</div><div class="name">' + esc(s.keToan) + '</div></div>' +
     '<div><div class="role">TM. BAN CHẤP HÀNH CĐCS<br>CHỦ TỊCH</div><div class="name">' + esc(s.chuTich) + '</div></div></div>' +
     '</div>';
@@ -3292,10 +3371,7 @@ const DT_DONG = [
   { tt: 'IV', ten: 'TÀI CHÍNH CÔNG ĐOÀN TÍCH LŨY CUỐI KỲ', ma: '50', dam: 1, ct: 'cuoiky' },
   { tt: 'V', ten: 'KINH PHÍ DỰ PHÒNG', ma: '70', dam: 1 }
 ];
-/* Quy đổi mã mục của app (mẫu B07 cũ) sang mục lục B14 mới.
-   Sửa tại đây nếu muốn xếp khoản chi sang dòng khác. */
-const DT_MAP_THU = { '22': '23', '23': '22', '24': '25.02', '25': '28.01' };
-const DT_MAP_CHI = { '27': '34.01', '28': '34.02', '29': '33', '31': '32', '33': '31', '35': '37', '36': '39', '37': '39', '49': '39' };
+/* Quy đổi mã cũ → mã mới nằm ở CU_SANG_MOI / cuSangMoi() (khối HỆ THỐNG MÃ SỐ), dùng chung cho cả app. */
 const DT_TONG_THU = ['22', '23', '24', '25', '28', '40'];
 const DT_TONG_CHI = ['31', '32', '33', '34', '37', '39', '42'];
 
@@ -3333,10 +3409,9 @@ function dtGiaiThich(dong) {
 function namCoSo() { return new Date().getFullYear() - 1; }
 /* Gom số liệu thực hiện của năm cơ sở theo mục lục B14 */
 function dtSoLieuNam(namCS) {
-  const from = namCS + '-01-01', to = namCS + '-12-31', v = {};
-  const them = function (ma, n) { if (ma) v[ma] = (v[ma] || 0) + (n || 0); };
-  DM_THU.forEach(function (m) { if (m.ma !== '26') them(DT_MAP_THU[m.ma], sumMa('PT', m.ma, from, to)); });
-  DM_CHI.forEach(function (m) { them(DT_MAP_CHI[m.ma], sumMa('PC', m.ma, from, to)); });
+  const from = namCS + '-01-01', to = namCS + '-12-31';
+  // cộng thẳng theo mã mới của từng phiếu (đã tách 31 chăm lo / 32 tuyên truyền, 25.01 / 25.02…)
+  const v = congTheoMaMoi(from, to);
   v['10'] = balanceAt('TM', namCS, to) + balanceAt('CK', namCS, to);
   return v;
 }
@@ -3609,7 +3684,8 @@ function xlsxBaoCao(quy, nam) {
 }
 function xuatExcelBaoCao() {
   const quy = bcState.quy, nam = bcState.nam;
-  taiXlsx(taoXlsx([xlsxBaoCao(quy, nam)]), 'BaoCao-B07-' + (quy ? 'Quy' + quy + '-' : '') + nam);
+  const sh = heMa() === 'moi' ? xlsxBaoCaoMoi(quy, nam) : xlsxBaoCao(quy, nam);
+  taiXlsx(taoXlsx([sh]), 'BaoCao-QuyetToan-' + (heMa() === 'moi' ? 'HD47-' : 'B07cu-') + (quy ? 'Quy' + quy + '-' : '') + nam);
 }
 
 /* ---------- Excel: Dự toán B14-TLĐ ---------- */
@@ -3739,6 +3815,244 @@ function khoLuuTruHTML() {
     '</div><div class="msg" id="khoMsg"></div>' +
     '<p class="note">“Nén lại ảnh đã lưu” sẽ nén mọi ảnh hiện có xuống mức đang chọn — ảnh sẽ nhỏ đi nhưng không khôi phục lại được bản nét hơn, nên hãy <b>Xuất dữ liệu</b> sao lưu trước nếu cần giữ bản gốc.</p>' +
     '</div>';
+}
+
+/* ================================================================
+   HỆ THỐNG MÃ SỐ — 2 CÁCH ĐÁNH MÃ, CHUYỂN QUA LẠI TRONG CÀI ĐẶT
+   • 'moi': mục lục tài chính công đoàn theo Hướng dẫn 47/HD-TLĐ
+            (dùng cho mẫu B14-TLĐ dự toán và báo cáo quyết toán mới)
+   • 'cu' : mã mục của mẫu báo cáo B07/TLĐ cũ
+   Mỗi phiếu lưu SONG SONG hai mã: p.maSo (mã cũ) và p.maSoMoi (mã mới).
+   Chuyển qua lại chỉ đổi cách HIỂN THỊ và mẫu báo cáo — không mất dữ liệu.
+   ================================================================ */
+const DM_THU_MOI = [
+  { ma: '22', ten: 'Thu đoàn phí công đoàn' },
+  { ma: '23', ten: 'Thu kinh phí công đoàn' },
+  { ma: '24', ten: 'NSNN cấp hỗ trợ' },
+  { ma: '25.01', ten: 'Thu khác — Chuyên môn hỗ trợ' },
+  { ma: '25.02', ten: 'Thu khác — Thu khác tại đơn vị' },
+  { ma: '28.01', ten: 'Kinh phí công đoàn cấp trên cấp theo phân phối' },
+  { ma: '28.02', ten: 'Tài chính công đoàn cấp trên cấp hỗ trợ' },
+  { ma: '40', ten: 'Nhận bàn giao tài chính công đoàn' }
+];
+const DM_CHI_MOI = [
+  { ma: '31', ten: 'Chi trực tiếp chăm lo, bảo vệ, đào tạo đoàn viên và NLĐ' },
+  { ma: '32', ten: 'Chi tuyên truyền đoàn viên và NLĐ (văn hóa, thể thao, thi đua…)' },
+  { ma: '33', ten: 'Chi quản lý hành chính' },
+  { ma: '34.01', ten: 'Lương cán bộ trong biên chế' },
+  { ma: '34.02', ten: 'Phụ cấp cán bộ công đoàn' },
+  { ma: '34.03', ten: 'Các khoản phải nộp theo lương' },
+  { ma: '37', ten: 'Chi khác' },
+  { ma: '39', ten: 'TCCĐ (ĐPCĐ) phải nộp cấp trên quản lý trực tiếp' },
+  { ma: '42', ten: 'Bàn giao tài chính công đoàn' }
+];
+const MA_THU_MOI = DM_THU_MOI.map(function (m) { return m.ma; });
+const MA_CHI_MOI = DM_CHI_MOI.map(function (m) { return m.ma; });
+/* Quy đổi mã CŨ → mã MỚI. Hai mã cũ không quy đổi 1-1 được nên phân loại theo diễn giải:
+   • 24 (thu khác): có "tài trợ"/"chuyên môn" → 25.01 chuyên môn hỗ trợ; còn lại → 25.02
+   • 31 (hoạt động phong trào): mẫu mới tách làm hai — văn hóa, thể thao, thi đua → 32;
+     quà Tết, gạo, trung thu, bữa trưa, ngày lễ, nghỉ hưu… (chăm lo đời sống) → 31   */
+const CU_SANG_MOI = {
+  '22': '23', '23': '22', '24': '25.02', '25': '28.01', '26': '',
+  '27': '34.01', '28': '34.02', '29': '33', '31': '31', '33': '31', '35': '37',
+  '36': '39', '37': '39', '49': '39'
+};
+const RE_TUYEN_TRUYEN = /th[eể]\s*(d[uụ]c|thao)|h[oộ]i\s*thao|b[oó]ng\s*đ[aá]|b[oơ]i\s*l[oộ]i|c[aầ]u\s*l[oô]ng|billard|futsal|v[aă]n\s*ngh[eệ]|ti[eế]t\s*m[uụ]c|thi\s*đua|h[oộ]i\s*thi|v[đd]v|c[oổ]\s*đ[oộ]ng\s*vi[eê]n|inter-?hotel|ng[aà]y\s*h[oộ]i\s*ng[uư][oờ]i\s*lao\s*đ[oộ]ng|gala|outing|team\s*build|tr[oồ]ng\s*c[aâ]y|h[oộ]i\s*ngh[iị]|đ[aạ]i\s*h[oộ]i|tuy[eê]n\s*truy[eề]n|gi[aả]i\s*th[uư][oở]ng/i;
+const RE_THAM_HOI = /th[aă]m\s*(b[eệ]nh|vi[eế]ng|h[oỏ]i)|vi[eế]ng|l[eễ]\s*tang|m[uừ]ng\s*c[uướ][oớ]i|thai\s*s[aả]n|t[uứ]\s*tu[aấ]t|[oố]m\s*đau/i;
+function cuSangMoi(maCu, dienGiai) {
+  if (!maCu) return '';
+  if (maCu === MA_NOI_BO) return MA_NOI_BO;
+  const dg = String(dienGiai || '').normalize('NFC');
+  if (maCu === '24') return /t[aà]i\s*tr[oợ]|chuy[eê]n\s*m[oô]n/i.test(dg) ? '25.01' : '25.02';
+  if (maCu === '31') return RE_TUYEN_TRUYEN.test(dg) ? '32' : '31';
+  return CU_SANG_MOI[maCu] !== undefined ? CU_SANG_MOI[maCu] : '';
+}
+/* Quy đổi ngược mã MỚI → mã CŨ, dùng khi lập phiếu ở chế độ mã mới */
+const MOI_SANG_CU = {
+  '22': '23', '23': '22', '24': '24', '25.01': '24', '25.02': '24', '28.01': '25', '28.02': '25', '40': '24',
+  '31': '31', '32': '31', '33': '29', '34.01': '27', '34.02': '28', '34.03': '27', '37': '35', '39': '37', '42': '35'
+};
+function moiSangCu(maMoi, laThamHoi) {
+  if (!maMoi) return '';
+  if (maMoi === MA_NOI_BO) return MA_NOI_BO;
+  if (maMoi === '31' && laThamHoi) return '33';
+  return MOI_SANG_CU[maMoi] !== undefined ? MOI_SANG_CU[maMoi] : '';
+}
+function heMa() { return (DB && DB.settings && DB.settings.heMa) === 'cu' ? 'cu' : 'moi'; }
+function dmThuHien() { return heMa() === 'moi' ? DM_THU_MOI : DM_THU; }
+function dmChiHien() { return heMa() === 'moi' ? DM_CHI_MOI : DM_CHI; }
+function maHien(p) { return heMa() === 'moi' ? (p.maSoMoi || '') : (p.maSo || ''); }
+/* Mã nào là mã "thăm hỏi đoàn viên" trong hệ đang dùng (để mở ô hạn mức 3 triệu) */
+function maThamHoiHien() { return heMa() === 'moi' ? '31' : '33'; }
+function tenHeMa(h) { return (h || heMa()) === 'moi' ? 'Mã mới — Mục lục TCCĐ theo HD 47/HD-TLĐ' : 'Mã cũ — Mẫu B07/TLĐ'; }
+/* Các form phiếu đã dựng sẵn dropdown theo hệ mã cũ → xóa để lần mở sau dựng lại */
+function lamMoiFormMa() {
+  ['pt', 'pc', 'tu'].forEach(function (k) {
+    const m = $('mod-' + k); if (m) { m.innerHTML = ''; delete m.dataset.init; }
+    LIST_STATE[k] = null;
+  });
+  if (currentMod === 'pt' || currentMod === 'pc' || currentMod === 'tu') { try { renderAll(); } catch (e) { } }
+}
+function doiHeMa(h) {
+  if (h !== 'cu' && h !== 'moi') return;
+  DB.settings.heMa = h;
+  saveDB();
+  lamMoiFormMa();
+  renderModCaiDat();
+  try { sbToast('🔁 Đã chuyển sang ' + tenHeMa(h)); } catch (e) { }
+}
+/* Thống kê quy đổi để người dùng rà soát */
+function thongKeHeMa() {
+  const tk = { tong: 0, coMaMoi: 0, cu31: 0, sang31: 0, sang32: 0, cu24: 0, sang2501: 0, sang2502: 0 };
+  (DB.phieu || []).forEach(function (p) {
+    if (!p.maSo && !p.maSoMoi) return;
+    tk.tong++;
+    if (p.maSoMoi) tk.coMaMoi++;
+    if (p.maSo === '31') { tk.cu31++; if (p.maSoMoi === '31') tk.sang31++; else if (p.maSoMoi === '32') tk.sang32++; }
+    if (p.maSo === '24') { tk.cu24++; if (p.maSoMoi === '25.01') tk.sang2501++; else if (p.maSoMoi === '25.02') tk.sang2502++; }
+  });
+  return tk;
+}
+function heMaHTML() {
+  const h = heMa(), tk = thongKeHeMa();
+  const nut = function (gt, nhan) {
+    return '<button class="btn' + (h === gt ? '' : ' sec') + '" onclick="doiHeMa(\'' + gt + '\')">' + (h === gt ? '✓ ' : '') + nhan + '</button>';
+  };
+  let bang = '<table class="tbl" style="font-size:12px;margin-top:6px"><tr><th>Mã cũ (B07/TLĐ)</th><th>Nội dung cũ</th><th>→ Mã mới (HD 47)</th><th>Nội dung mới</th></tr>';
+  DM_THU.concat(DM_CHI).forEach(function (m) {
+    let moi;
+    if (m.ma === '24') moi = '25.01 / 25.02';
+    else if (m.ma === '31') moi = '31 / 32';
+    else moi = CU_SANG_MOI[m.ma] || '—';
+    const tenMoi = m.ma === '24' ? 'Chuyên môn hỗ trợ (tài trợ) / Thu khác tại đơn vị'
+      : m.ma === '31' ? 'Chăm lo (quà Tết, gạo, trung thu, bữa trưa, ngày lễ…) / Tuyên truyền (thể thao, văn nghệ, hội thao, thi đua…)'
+        : (moi !== '—' ? tenMucTheoHe(moi, 'moi') : 'Không dùng trên phiếu (số dư lấy từ sổ quỹ)');
+    bang += '<tr><td class="center">' + m.ma + '</td><td>' + esc(m.ten) + '</td><td class="center"><b>' + moi + '</b></td><td>' + esc(tenMoi) + '</td></tr>';
+  });
+  bang += '<tr><td class="center">NB</td><td>Chuyển quỹ nội bộ</td><td class="center"><b>NB</b></td><td>Chuyển quỹ nội bộ (không tính vào báo cáo)</td></tr></table>';
+  return '<div class="card"><h3>Hệ thống mã số mục lục</h3>' +
+    '<p class="note">Đang dùng: <b>' + esc(tenHeMa()) + '</b>. Mỗi phiếu luôn lưu song song cả mã cũ lẫn mã mới, nên chuyển qua lại bất cứ lúc nào cũng không mất dữ liệu — chỉ đổi danh sách mã khi lập phiếu và mẫu báo cáo quyết toán.</p>' +
+    '<div class="btnrow">' + nut('moi', 'Dùng mã mới (HD 47/HD-TLĐ)') + nut('cu', 'Dùng mã cũ (B07/TLĐ)') + '</div>' +
+    '<p class="note" style="margin-top:8px"><b>Kết quả quy đổi dữ liệu cũ:</b> ' + tk.coMaMoi + '/' + tk.tong + ' phiếu đã có mã mới. ' +
+    'Mã 31 cũ (phong trào, ' + tk.cu31 + ' phiếu) tách thành <b>' + tk.sang31 + '</b> phiếu 31 chăm lo + <b>' + tk.sang32 + '</b> phiếu 32 tuyên truyền; ' +
+    'mã 24 cũ (' + tk.cu24 + ' phiếu) tách thành <b>' + tk.sang2501 + '</b> phiếu 25.01 + <b>' + tk.sang2502 + '</b> phiếu 25.02. ' +
+    'Việc tách dựa vào diễn giải — nếu phiếu nào xếp chưa đúng, mở phiếu đó ra chọn lại mã là xong.</p>' +
+    (SB_THIEU_COT_MA_MOI ? '<div class="warnbox">⚠ Bảng <code>cd_phieu</code> trên Supabase <b>chưa có cột mã mới</b> nên mã mới chưa được đồng bộ giữa các máy (mỗi máy tạm tự quy đổi từ mã cũ). Vào Supabase → SQL Editor chạy 1 dòng:<br><code>alter table public.cd_phieu add column if not exists ma_so_moi text;</code><br>rồi bấm <b>Đẩy toàn bộ lên</b> ở mục Đồng bộ.</div>' : '') +
+    '<details><summary class="note" style="cursor:pointer">Xem bảng quy đổi mã cũ → mã mới</summary>' + bang + '</details>' +
+    '</div>';
+}
+function tenMucTheoHe(ma, h) {
+  if (ma === MA_NOI_BO) return DM_NOI_BO.ten;
+  const ds = (h === 'moi') ? DM_THU_MOI.concat(DM_CHI_MOI) : DM_THU.concat(DM_CHI);
+  const it = ds.find(function (x) { return x.ma === ma; });
+  return it ? it.ten : '';
+}
+
+/* ================================================================
+   BÁO CÁO QUYẾT TOÁN THEO MÃ MỚI (mục lục TCCĐ — HD 47/HD-TLĐ)
+   Dùng chung khung dòng DT_DONG với mẫu dự toán B14 để hai báo cáo khớp nhau.
+   ================================================================ */
+function ngayTruoc(iso) {
+  const d = new Date(new Date(iso + 'T00:00:00').getTime() - 86400000);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+/* Cộng phiếu PT (mã thu) và PC (mã chi) theo mã mới trong khoảng ngày */
+function congTheoMaMoi(fromISO, toISO) {
+  const v = {};
+  (DB.phieu || []).forEach(function (p) {
+    if (!p.ngay || p.ngay < fromISO || p.ngay > toISO) return;
+    const ma = p.maSoMoi;
+    if (!ma || ma === MA_NOI_BO) return;
+    // chỉ cộng đúng chiều: phiếu thu với mã thu, phiếu chi với mã chi (phiếu gán nhầm chiều bị bỏ qua)
+    if ((p.loai === 'PT' && MA_THU_MOI.indexOf(ma) >= 0) || (p.loai === 'PC' && MA_CHI_MOI.indexOf(ma) >= 0)) {
+      v[ma] = (v[ma] || 0) + (Number(p.soTien) || 0);
+    }
+  });
+  return v;
+}
+function qtSoLieuMoi(quy, nam) {
+  const r = quarterRange(quy, nam), y1 = nam + '-01-01';
+  const ky = congTheoMaMoi(r.from, r.to), lk = congTheoMaMoi(y1, r.to);
+  const sd = getSoDu(nam);
+  ky['10'] = quy <= 1 ? (sd.TM + sd.NH) : (balanceAt('TM', nam, ngayTruoc(r.from)) + balanceAt('CK', nam, ngayTruoc(r.from)));
+  lk['10'] = sd.TM + sd.NH;
+  return { ky: ky, lk: lk, thucTe: balanceAt('TM', nam, r.to) + balanceAt('CK', nam, r.to) };
+}
+function qtBangMoiHTML(quy, nam, forPrint) {
+  const q = qtSoLieuMoi(quy, nam);
+  const cls = forPrint ? 'ptbl' : 'tbl';
+  const w = function (p) { return forPrint ? '' : ' style="width:' + p + '"'; };
+  let h = '<div class="tblwrap"><table class="' + cls + '"' + (forPrint ? ' style="width:auto;table-layout:auto"' : '') + '><tr>' +
+    '<th' + w('6%') + '>TT</th><th>Nội dung</th><th' + w('9%') + '>Mục lục<br>TCCĐ</th>' +
+    '<th' + w('15%') + ' class="num">' + tenCot1(quy) + '</th><th' + w('16%') + ' class="num">Lũy kế từ đầu năm<br>đến nay</th><th' + w('11%') + ' class="num">Cấp trên<br>duyệt</th></tr>';
+  DT_DONG.forEach(function (d) {
+    const a = dtGia(q, 'ky', d), b = dtGia(q, 'lk', d);
+    const gt = forPrint ? '' : dtGiaiThich(d);
+    h += '<tr' + (d.dam ? ' class="sum"' : '') + '><td class="center">' + esc(d.tt) + '</td>' +
+      '<td' + (d.dam ? ' class="b"' : '') + (d.con ? ' style="padding-left:' + (forPrint ? 14 : 22) + 'px"' : '') + '>' + esc(d.ten) +
+      (gt ? '<div class="note" style="font-weight:400">🔒 ' + esc(gt) + '</div>' : '') + '</td>' +
+      '<td class="center">' + esc(d.ma) + '</td>' +
+      '<td class="num' + (d.dam ? ' b' : '') + '">' + (a === null ? '' : fmt(a)) + '</td>' +
+      '<td class="num' + (d.dam ? ' b' : '') + '">' + (b === null ? '' : fmt(b)) + '</td><td></td></tr>';
+  });
+  h += '</table></div>';
+  if (!forPrint) {
+    // đối chiếu với tồn quỹ thực tế (chỉ trên màn hình): lệch thường do tạm ứng chưa hoàn
+    const cuoi = dtGia(q, 'ky', { ct: 'cuoiky' });
+    const lech = q.thucTe - cuoi;
+    h += '<p class="note" style="margin-top:6px">Đối chiếu: tích lũy cuối kỳ theo công thức <b>' + fmt(cuoi) + '</b> · tồn quỹ tiền mặt + ngân hàng thực tế <b>' + fmt(q.thucTe) + '</b>' +
+      (lech ? ' · <span style="color:#b45309">chênh ' + fmt(lech) + ' đ (thường do tạm ứng chưa hoàn ứng, hoặc phiếu thiếu mã số)</span>' : ' · <span style="color:#15803d">khớp ✓</span>') + '</p>';
+  }
+  return h;
+}
+/* Sheet "Quyết toán 4 quý" trong bộ Excel tổng hợp — theo mã mới */
+function qtSheet4QuyMoi(nam) {
+  const qs = [1, 2, 3, 4].map(function (x) { return qtSoLieuMoi(x, nam); });
+  const ca = qtSoLieuMoi(0, nam);
+  const rows = [['TT', 'Nội dung', 'Mục lục TCCĐ', 'Quý I', 'Quý II', 'Quý III', 'Quý IV', 'Cả năm'].map(oH)];
+  DT_DONG.forEach(function (d) {
+    const so = qs.map(function (q) { return dtGia(q, 'ky', d); }).concat([dtGia(ca, 'ky', d)]);
+    rows.push([oC(d.tt), d.dam ? oSB(d.ten) : oS((d.con ? '    ' : '') + d.ten), oC(d.ma)]
+      .concat(so.map(function (v) { return v === null ? oS('') : (d.dam ? oNB(v) : oN(v)); })));
+  });
+  return { ten: 'Quyết toán ' + nam, rows: rows, freeze: 1, w: [6, 46, 9, 15, 15, 15, 15, 16] };
+}
+function xlsxBaoCaoMoi(quy, nam) {
+  const s = DB.settings, ct = (s.chiTieu && s.chiTieu[nam]) || {};
+  const q = qtSoLieuMoi(quy, nam);
+  const rows = [], merges = [];
+  const add = function (r) { rows.push(r); return rows.length; };
+  add([oP(s.capTren), null, null, null, oI('Mẫu B07-TLĐ (Mục lục TCCĐ theo Hướng dẫn số 47/HD-TLĐ ngày 30/12/2021)')]);
+  merges.push('A1:D1', 'E1:F2');
+  add([oB(s.donVi)]); merges.push('A2:D2');
+  add(hangTrong(6));
+  let n = add([oT('BÁO CÁO')]); merges.push('A' + n + ':F' + n);
+  n = add([oT2('QUYẾT TOÁN THU - CHI TÀI CHÍNH CÔNG ĐOÀN CƠ SỞ')]); merges.push('A' + n + ':F' + n);
+  n = add([oT2(tenKy(quy, nam))]); merges.push('A' + n + ':F' + n);
+  add(hangTrong(6));
+  add([oB('A - CÁC CHỈ TIÊU CƠ BẢN')]);
+  n = add([oP('- Số lao động: ' + (ct.laoDong || '……') + ' người'), null, null, oP('- Số cán bộ chuyên trách:'), oNP(parseMoney(ct.chuyenTrach) || 0), oP('người')]);
+  merges.push('A' + n + ':C' + n);
+  n = add([oP('- Số đoàn viên: ' + (ct.doanVien || '……') + ' người'), null, null, oP('- Tổng quỹ tiền lương:'), oNP(parseMoney(ct.quyLuong) || 0), oP('đồng')]);
+  merges.push('A' + n + ':C' + n);
+  add(hangTrong(6));
+  add([oB('B - CÁC CHỈ TIÊU THU, CHI TÀI CHÍNH CÔNG ĐOÀN:')]);
+  add([oH('TT'), oH('Nội dung'), oH('Mục lục TCCĐ'), oH(tenCot1(quy)), oH('Lũy kế từ đầu năm đến nay'), oH('Cấp trên duyệt')]);
+  DT_DONG.forEach(function (d) {
+    const a = dtGia(q, 'ky', d), b = dtGia(q, 'lk', d);
+    rows.push([oC(d.tt), d.dam ? oSB(d.ten) : oS((d.con ? '    ' : '') + d.ten), oC(d.ma),
+    a === null ? oS('') : (d.dam ? oNB(a) : oN(a)), b === null ? oS('') : (d.dam ? oNB(b) : oN(b)), oS('')]);
+  });
+  add(hangTrong(6));
+  add([oB('C - THUYẾT MINH VÀ KIẾN NGHỊ CỦA CÔNG ĐOÀN CƠ SỞ')]);
+  add(hangTrong(6)); add(hangTrong(6));
+  n = add([null, null, null, oR('Ngày …… tháng …… năm ' + nam)]); merges.push('D' + n + ':F' + n);
+  n = add([oBC('KẾ TOÁN CÔNG ĐOÀN CƠ SỞ'), null, null, oBC('TM. BAN CHẤP HÀNH CĐCS')]); merges.push('A' + n + ':C' + n, 'D' + n + ':F' + n);
+  n = add([null, null, null, oBC('CHỦ TỊCH')]); merges.push('D' + n + ':F' + n);
+  add(hangTrong(6)); add(hangTrong(6));
+  n = add([oBC(String(s.keToan || '').toUpperCase()), null, null, oBC(String(s.chuTich || '').toUpperCase())]);
+  merges.push('A' + n + ':C' + n, 'D' + n + ':F' + n);
+  return { ten: 'Quyet toan ' + (quy ? 'Quy ' + quy + ' ' : '') + nam, rows: rows, merges: merges, w: [6, 46, 9, 15, 16, 11], page: { orient: 'portrait', fit: 1 } };
 }
 
 /* ================================================================

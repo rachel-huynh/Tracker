@@ -60,6 +60,12 @@ create table if not exists public.cd_unc (
 -- thụ hưởng, bên chịu phí. Gói chung 1 cột jsonb để không phải sửa lược đồ về sau.
 alter table public.cd_unc add column if not exists ocb jsonb default '{}'::jsonb;
 
+-- Mã số theo mục lục TCCĐ mới (Hướng dẫn 47/HD-TLĐ). Mỗi phiếu lưu song song:
+--   ma_so     = mã cũ (mẫu B07/TLĐ)      ma_so_moi = mã mới (mẫu B14 / quyết toán mới)
+-- để chuyển qua lại giữa 2 cách đánh mã trong Cài đặt mà không mất thông tin.
+alter table public.cd_phieu add column if not exists ma_so_moi text;
+create index if not exists cd_phieu_ma_so_moi_idx on public.cd_phieu (ma_so_moi);
+
 -- 3) DANH SÁCH THĂM VIẾNG ĐOÀN VIÊN (hạn mức 3.000.000 đ/người/năm) ---------
 create table if not exists public.cd_tham_vieng (
   id          text primary key,
