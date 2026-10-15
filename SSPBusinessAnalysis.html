@@ -453,6 +453,11 @@ const MAP = {
     { type:'hotstats',   all:[/^Operating Statement$/i] },
     { type:'fs',         all:[/^FS\d{2}\.\d{2}$/i] },
     /* revenue-analysis workbooks (Revenue analysis\Report\*.xlsx) */
+    /* the two monthly extracts behind the Segmentation panels. "Data" alone is far too
+       generic a sheet name to key on, so each is identified by the companion sheet only it
+       carries: Coverage_RoomRev for the key-account export, Room_Map for the room-type one. */
+    { type:'kaMonthly',  all:[/^Data$/i, /^Coverage_RoomRev$/i] },
+    { type:'roomSeg',    all:[/^Data$/i, /^Room_Map$/i] },
     { type:'keyacct',    all:[/^Key Account$/i] },
     { type:'ota',        all:[/^Booking com$/i] },
     { type:'nor1',       all:[/^Nor1$/i] },
@@ -3038,8 +3043,59 @@ function parseRoomCat(wb){
   return {months,inv,ranks,unmatched,skipped,totalRooms:Object.values(inv).reduce((a,b)=>a+b,0)};
 }
 
-const REV_PARSERS={keyacct:parseKeyAcct,ota:parseOta,nor1:parseNor1,fnbdisc:parseFnbDisc,fnbsum:parseFnbSum,upsell:parseUpsell,bookstay:parseBookStay};
-const REV_LABELS={keyacct:'Key accounts',ota:'OTA price observations',nor1:'Nor1 upsell transactions',fnbdisc:'F&B discounts',fnbsum:'F&B meal-period history',upsell:'FO/Reservation upsell',bookstay:'Room upgrades (booked vs stayed)'};
+/* ---------------------------------------------------------------------
+   "12. Key account.xlsx" and "13. Room by segment.xlsx" — the two tidy
+   extracts behind the Segmentation tab's account and room-type panels.
+   Both are already one row per fact, so there is nothing to reshape: read
+   the Data sheet, keep the columns that earn their place, and drop the
+   provenance columns (Source_File, Loaded_At, Period, Month name) which
+   only repeat what Year/Month_No already say. Rows that carry neither a
+   night nor a dong are dropped too — the exports pad every account across
+   every month, and 60% of the key-account rows are those zeros.
+   Keyed by 'YYYY-MM' so the panels can slice MTD or YTD the same way the
+   rest of the tab does. --------------------------------------------- */
+function revDataGrid(wb,warns,what){
+  const ws=wb.Sheets['Data'];
+  if(!ws){ W(warns,what+': no "Data" sheet'); return null; }
+  const g=grid(ws);
+  if(g.length<2){ W(warns,what+': "Data" sheet is empty'); return null; }
+  return g;
+}
+function parseKaMonthly(wb,warns){
+  const g=revDataGrid(wb,warns,'Key account'); if(!g) return null;
+  const H=g[0].map(v=>String(v==null?'':v).trim()), ix=n=>H.indexOf(n);
+  const cS=ix('Segment'),cT=ix('Account_Type'),cA=ix('Account'),cY=ix('Year'),cM=ix('Month_No'),cN=ix('Nights'),cR=ix('Room_Rev');
+  if([cS,cA,cY,cM,cN,cR].some(i=>i<0)){ W(warns,'Key account: unexpected column layout — expected Segment / Account / Year / Month_No / Nights / Room_Rev'); return null; }
+  const rows=[], months=new Set();
+  for(let r=1;r<g.length;r++){ const x=g[r]; if(!x) continue;
+    const y=+x[cY], m=+x[cM]; if(!y||!m) continue;
+    const rn=+x[cN]||0, rev=+x[cR]||0; if(!rn&&!rev) continue;
+    const ym=y+'-'+String(m).padStart(2,'0'); months.add(ym);
+    rows.push({ym,seg:String(x[cS]||'').trim(),typ:String(x[cT]||'').trim(),
+               acct:String(x[cA]||'').trim(),rn,rev});
+  }
+  if(!rows.length){ W(warns,'Key account: no rows with nights or revenue'); return null; }
+  return {rows,months:[...months].sort()};
+}
+function parseRoomSeg(wb,warns){
+  const g=revDataGrid(wb,warns,'Room by segment'); if(!g) return null;
+  const H=g[0].map(v=>String(v==null?'':v).trim()), ix=n=>H.indexOf(n);
+  const cY=ix('Year'),cM=ix('Month_No'),cG=ix('Market_Group'),cS=ix('Segment'),
+        cC=ix('Room_Code'),cRn=ix('Room_Name'),cN=ix('Nights'),cR=ix('Room_Rev');
+  if([cY,cM,cS,cRn,cN,cR].some(i=>i<0)){ W(warns,'Room by segment: unexpected column layout — expected Year / Month_No / Segment / Room_Name / Nights / Room_Rev'); return null; }
+  const rows=[], months=new Set();
+  for(let r=1;r<g.length;r++){ const x=g[r]; if(!x) continue;
+    const y=+x[cY], m=+x[cM]; if(!y||!m) continue;
+    const rn=+x[cN]||0, rev=+x[cR]||0; if(!rn&&!rev) continue;
+    const ym=y+'-'+String(m).padStart(2,'0'); months.add(ym);
+    rows.push({ym,seg:String(x[cS]||'').trim(),mg:String(x[cG]||'').trim(),
+               code:String(x[cC]||'').trim(),room:String(x[cRn]||'').trim(),rn,rev});
+  }
+  if(!rows.length){ W(warns,'Room by segment: no rows with nights or revenue'); return null; }
+  return {rows,months:[...months].sort()};
+}
+const REV_PARSERS={kaMonthly:parseKaMonthly,roomSeg:parseRoomSeg,keyacct:parseKeyAcct,ota:parseOta,nor1:parseNor1,fnbdisc:parseFnbDisc,fnbsum:parseFnbSum,upsell:parseUpsell,bookstay:parseBookStay};
+const REV_LABELS={kaMonthly:'Key accounts by month',roomSeg:'Room category by segment',keyacct:'Key accounts',ota:'OTA price observations',nor1:'Nor1 upsell transactions',fnbdisc:'F&B discounts',fnbsum:'F&B meal-period history',upsell:'FO/Reservation upsell',bookstay:'Room upgrades (booked vs stayed)'};
 
 /* =====================================================================
  *  INGEST + STORE
@@ -4536,10 +4592,154 @@ function segSeasonality(mix,MIN_DEV=0.05){
   }
   return flags;
 }
+/* ---------------------------------------------------------------------
+   The two Segmentation panels fed by the monthly extracts. Both slice the
+   same way the rest of the tab does — MTD is the selected month, YTD is
+   January to the selected month of that year — so a figure here can be
+   read next to the P&L segmentation above it without mental arithmetic.
+   Each also computes the SAME span one year back for the vs-LY column;
+   "new" means the account or room type produced nothing in that span.
+   These are rolling multi-month extracts, not per-month uploads, so a
+   month the file does not reach says so rather than showing a zero. */
+function segSpan(){
+  const mk=state.month; if(!mk) return {cur:[],ly:[],label:''};
+  const [y,m]=mk.split('-').map(Number);
+  const k=(yy,mm)=>yy+'-'+String(mm).padStart(2,'0');
+  const cur=[], ly=[];
+  if(state.period==='YTD'){ for(let i=1;i<=m;i++){ cur.push(k(y,i)); ly.push(k(y-1,i)); } }
+  else { cur.push(k(y,m)); ly.push(k(y-1,m)); }
+  return {cur,ly,label:state.period==='YTD'?('YTD to '+fmtMonthKey(mk)):fmtMonthKey(mk)};
+}
+function segRollup(rows,months,keyOf){
+  const set=new Set(months), out=new Map();
+  for(const r of rows){ if(!set.has(r.ym)) continue;
+    const k=keyOf(r); if(k==null) continue;
+    const o=out.get(k)||{rn:0,rev:0}; o.rn+=r.rn; o.rev+=r.rev; out.set(k,o); }
+  return out;
+}
+const segArr=o=>(o&&o.rn)?o.rev/o.rn:null;
+const segSum=list=>list.reduce((a,o)=>({rn:a.rn+o.rn,rev:a.rev+o.rev}),{rn:0,rev:0});
+/* the span this extract can actually answer for, and a line to say so when it cannot */
+function segCover(ext,sp,file){
+  const have=sp.cur.filter(m=>ext.months.includes(m));
+  const gap=sp.cur.filter(m=>!ext.months.includes(m));
+  const range=fmtMonthKey(ext.months[0])+' – '+fmtMonthKey(ext.months[ext.months.length-1]);
+  return {have,gap,range,
+    miss:'<div class="small">'+na('This extract covers '+range+', which does not include '+sp.label+' — re-drop "'+file+'" once it has been refreshed')+'</div>'};
+}
+window.__setRsMet=v=>{ state.rsMet=v; renderSeg(derive()); };
+window.__setKaSeg=i=>{ state.kaSeg=i; renderSeg(derive()); };
+/* ---- Room category by segment: what each segment actually sleeps in ---- */
+function roomSegPanel(){
+  const rs=state.store.rev?.roomSeg; if(!rs) return '';
+  const sp=segSpan(); if(!sp.cur.length) return '';
+  const cov=segCover(rs,sp,'13. Room by segment.xlsx');
+  if(!cov.have.length) return '<div class="panel"><h3>Room category by segment — '+sp.label+'</h3>'+cov.miss+'</div>';
+  const met=['rn','rev','arr'].includes(state.rsMet)?state.rsMet:'rn';
+  const cell=o=>met==='rn'?n1(o?.rn,0):met==='rev'?money(o?.rev):(segArr(o)==null?na():money(segArr(o)));
+  const sortV=o=>met==='rn'?o.rn:met==='rev'?o.rev:(segArr(o)??0);
+  const bySeg=segRollup(rs.rows,cov.have,r=>r.seg);
+  const segs=[...bySeg.entries()].sort((a,b)=>b[1].rn-a[1].rn).map(e=>e[0]);
+  const byRoom=segRollup(rs.rows,cov.have,r=>r.room);
+  const rooms=[...byRoom.entries()].sort((a,b)=>b[1].rn-a[1].rn).map(e=>e[0]);
+  const byCell=segRollup(rs.rows,cov.have,r=>r.room+'\u0000'+r.seg);
+  const lyRoom=segRollup(rs.rows,sp.ly.filter(m=>rs.months.includes(m)),r=>r.room);
+  const tot=segSum([...byRoom.values()]), totLy=segSum([...lyRoom.values()]);
+  const totRN=tot.rn||1;
+  const body=rooms.map(rm=>{
+    const t=byRoom.get(rm), l=lyRoom.get(rm);
+    const cells=segs.map(s=>{ const o=byCell.get(rm+'\u0000'+s);
+      return o?('<td data-v="'+sortV(o)+'">'+cell(o)+'</td>')
+              :'<td style="color:var(--grey2)">&ndash;</td>'; }).join('');
+    return '<tr><td class="wrap">'+escH(rm)+'</td>'+cells+
+      '<td data-v="'+sortV(t)+'"><b>'+cell(t)+'</b></td>'+
+      '<td data-v="'+(t.rn/totRN)+'">'+pct(t.rn/totRN)+'</td>'+varTd(t.rn,l?l.rn:null)+'</tr>'; }).join('');
+  const totRow='<tr class="tot"><td>All room types</td>'+
+    segs.map(s=>'<td>'+cell(bySeg.get(s))+'</td>').join('')+
+    '<td><b>'+cell(tot)+'</b></td><td>100%</td>'+varTd(tot.rn,totLy.rn)+'</tr>';
+  const metBtns=[['rn','Room nights'],['rev','Revenue'],['arr','ARR']]
+    .map(a=>'<button class="heatbtn '+(met===a[0]?'on':'')+'" onclick="__setRsMet(\''+a[0]+'\')">'+a[1]+'</button>').join(' ');
+  const other=bySeg.get('Other');
+  return '<div class="panel"><h3 class="h3ctl"><span class="ttl">Room category by segment — '+sp.label+'</span>'+
+    '<span class="noprint fcctl">'+metBtns+'</span></h3>'+
+    '<div style="overflow-x:auto"><table><thead><tr><th>Room type</th>'+
+      segs.map(s=>'<th>'+escH(s)+'</th>').join('')+'<th>Total</th><th>Mix %</th><th>RN %LY</th></tr></thead>'+
+      '<tbody>'+body+totRow+'</tbody></table></div>'+
+    '<div class="small" style="margin-top:6px">The segmentation above says how many nights a segment bought; this says <b>what it slept in</b>. Columns run largest first for this period. <b>Mix %</b> and <b>RN %LY</b> always read room nights whichever metric button is on, so the shape of the business stays comparable when you switch to revenue or ARR.'+
+    (other?'<br><b>&ldquo;Other&rdquo;</b> is the export\'s own bucket for nights whose market code came through blank — not a commercial segment, and at '+pct(other.rn/totRN)+' of nights too big to ignore: worth asking Reservations to code those.':'')+
+    (cov.gap.length?'<br><b>'+cov.gap.length+' month(s) of this period are not in the extract</b> ('+cov.gap.map(fmtMonthKey).join(', ')+') — the figures above cover '+cov.have.map(fmtMonthKey).join(', ')+' only.':'')+
+    '<br>Source: <b>13. Room by segment.xlsx</b>, '+cov.range+'.</div></div>';
+}
+/* ---- Key accounts: who the revenue actually comes from ---- */
+function keyAcctPanel(){
+  const ka=state.store.rev?.kaMonthly; if(!ka) return '';
+  const sp=segSpan(); if(!sp.cur.length) return '';
+  const cov=segCover(ka,sp,'12. Key account.xlsx');
+  if(!cov.have.length) return '<div class="panel"><h3>Key accounts — '+sp.label+'</h3>'+cov.miss+'</div>';
+  /* the segment filter travels as an INDEX, never as the name — segment names carry
+     slashes, brackets and apostrophes ("Business/MICE Group", "Public Indirect (OTA)")
+     and one of those in an inline onclick string is a broken handler waiting to happen */
+  const allSegs=[...new Set(ka.rows.map(r=>r.seg))].sort();
+  const si=Number.isInteger(state.kaSeg)&&state.kaSeg>=0&&state.kaSeg<allSegs.length?state.kaSeg:-1;
+  const segSel=si<0?null:allSegs[si];
+  const rows=segSel?ka.rows.filter(r=>r.seg===segSel):ka.rows;
+  const cur=segRollup(rows,cov.have,r=>r.acct);
+  const ly =segRollup(rows,sp.ly.filter(m=>ka.months.includes(m)),r=>r.acct);
+  const mainSeg=new Map(), typeOf=new Map(), haveSet=new Set(cov.have);
+  for(const r of rows){ if(!haveSet.has(r.ym)) continue;
+    const m=mainSeg.get(r.acct)||{}; m[r.seg]=(m[r.seg]||0)+r.rev; mainSeg.set(r.acct,m);
+    if(r.typ) typeOf.set(r.acct,r.typ); }
+  const topSegOf=a=>{ const m=mainSeg.get(a)||{};
+    const e=Object.entries(m).sort((x,y)=>y[1]-x[1])[0]; return e?e[0]:''; };
+  const ranked=[...cur.entries()].sort((a,b)=>b[1].rev-a[1].rev);
+  const tot=segSum([...cur.values()]), totLy=segSum([...ly.values()]);
+  const totRev=tot.rev||1;
+  const N=[10,20,50].includes(state.kaN)?state.kaN:20;
+  const shown=ranked.slice(0,N), rest=segSum(ranked.slice(N).map(e=>e[1]));
+  const body=shown.map((e,i)=>{ const a=e[0], o=e[1], l=ly.get(a);
+    return '<tr><td data-v="'+(i+1)+'">'+(i+1)+'</td><td class="wrap">'+escH(a)+'</td>'+
+      '<td class="wrap">'+escH(topSegOf(a))+'</td><td>'+escH(typeOf.get(a)||'')+'</td>'+
+      '<td data-v="'+o.rn+'">'+n1(o.rn,0)+'</td>'+
+      '<td data-v="'+o.rev+'">'+money(o.rev)+'</td>'+
+      '<td data-v="'+(segArr(o)??'')+'">'+(segArr(o)==null?na():money(segArr(o)))+'</td>'+
+      '<td data-v="'+(o.rev/totRev)+'">'+pct(o.rev/totRev)+'</td>'+
+      varTd(o.rev,l?l.rev:null)+'</tr>'; }).join('');
+  const tailRow=(rest.rn||rest.rev)
+    ? '<tr><td></td><td class="wrap" style="color:var(--grey)">All other accounts ('+(ranked.length-N)+')</td><td></td><td></td>'+
+      '<td>'+n1(rest.rn,0)+'</td><td>'+money(rest.rev)+'</td><td>'+(segArr(rest)==null?na():money(segArr(rest)))+'</td>'+
+      '<td>'+pct(rest.rev/totRev)+'</td><td></td></tr>' : '';
+  const totRow='<tr class="tot"><td></td><td><b>'+escH(segSel||'All segments')+'</b></td><td></td><td></td>'+
+    '<td><b>'+n1(tot.rn,0)+'</b></td><td><b>'+money(tot.rev)+'</b></td>'+
+    '<td><b>'+(segArr(tot)==null?na():money(segArr(tot)))+'</b></td><td>100%</td>'+varTd(tot.rev,totLy.rev)+'</tr>';
+  const segBtns=['<button class="heatbtn '+(si<0?'on':'')+'" onclick="__setKaSeg(-1)">All segments</button>']
+    .concat(allSegs.map((s,i)=>'<button class="heatbtn '+(si===i?'on':'')+'" onclick="__setKaSeg('+i+')">'+escH(s)+'</button>')).join(' ');
+  const nBtns=[10,20,50].map(k=>'<button class="heatbtn '+(N===k?'on':'')+'" onclick="__setKaN('+k+')">Top '+k+'</button>').join(' ');
+  const conc=shown.slice(0,10).reduce((a,e)=>a+e[1].rev,0)/totRev;
+  return '<div class="panel"><h3 class="h3ctl"><span class="ttl">Key accounts — '+sp.label+'</span>'+
+    '<span class="noprint fcctl">'+nBtns+'</span></h3>'+
+    '<div class="small noprint" style="margin:-2px 0 8px">'+segBtns+'</div>'+
+    '<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Account</th><th>Main segment</th><th>Type</th>'+
+      '<th>RN</th><th>Room revenue</th><th>ARR</th><th>Share</th><th>Rev %LY</th></tr></thead>'+
+      '<tbody>'+body+tailRow+totRow+'</tbody></table></div>'+
+    '<div class="small" style="margin-top:6px">Ranked by <b>room revenue</b>, not nights — the account that fills the most rooms is rarely the one that pays most for them, and the ARR column is where that shows. <b>Main segment</b> is where the account spent most this period (several book across more than one). <b>Share</b> is of the '+(segSel?escH(segSel):'whole')+' account revenue here; <b>Rev %LY</b> is the same account over the same span a year earlier, and <b>new</b> means it produced nothing then.'+
+    '<br>The top 10 carry <b>'+pct(conc)+'</b> of '+(segSel?escH(segSel):'all')+' account revenue'+(conc>0.5?' — concentrated enough that losing one is a budget event, not a variance':'')+'.'+
+    (cov.gap.length?'<br><b>'+cov.gap.length+' month(s) of this period are not in the extract</b> ('+cov.gap.map(fmtMonthKey).join(', ')+').':'')+
+    '<br>Source: <b>12. Key account.xlsx</b>, '+cov.range+'.</div></div>';
+}
+window.__setKaN=v=>{ state.kaN=+v; renderSeg(derive()); };
 function renderSeg(d){
   const el=$('#tab-seg');
   const seg=d.p?.seg;
-  if(!d.ok||!seg||!seg.rows.length){ el.innerHTML=noData(); return; }
+  /* The two extracts are independent of the P&L, so a month with no P&L still has something
+     worth showing rather than a bare "no data" — say what is missing, then show them. */
+  if(!d.ok||!seg||!seg.rows.length){
+    const extra=roomSegPanel()+keyAcctPanel();
+    el.innerHTML=extra
+      ? '<div class="panel"><h3>Segmentation — '+fmtMonthKey(state.month)+'</h3><div class="small">'
+        +na('No P&L segmentation for this month, so the mix, seasonality and variance panels are unavailable — the two monthly extracts below do not depend on it')
+        +'</div></div>'+extra
+      : noData();
+    return; }
   const P=state.period;
   const A=P==='YTD'?'ytdAct':'mtdAct', B=P==='YTD'?'ytdBud':'mtdBud', L=P==='YTD'?'ytdLy':'mtdLy';
   const grand=seg.grand.inclSC?.vals?.[A], grandLy=seg.grand.inclSC?.vals?.[L], grandBud=seg.grand.inclSC?.vals?.[B];
@@ -4657,6 +4857,7 @@ function renderSeg(d){
       <div class="panel"><h3>Top 10 sub-segments by revenue — ${P}</h3><div class="chartbox"><canvas id="chSegTop"></canvas></div></div>
     </div>
     ${seasPanel}
+    ${roomSegPanel()}
     <div class="cols c2">
       <div class="panel"><h3>Biggest gains vs LY</h3>${wl(win,'good')||'<div class="small">—</div>'}</div>
       <div class="panel"><h3>Biggest losses vs LY</h3>${wl(lose,'crit')||'<div class="small">—</div>'}</div>
@@ -4669,7 +4870,8 @@ function renderSeg(d){
       <div class="small" style="margin-top:6px">Click any column header to sort · type in the filter box to search · grey rows = segment subtotals, navy rows = main-group totals.
         In the variance columns <b>new</b> means the comparison period was zero — the segment produced nothing then and something now, so a percentage would be meaningless rather than missing; <b>–</b> means zero on both sides; <b>N/A</b> is kept only where the figure genuinely was not reported.
         ${sel.length?`<br><b>Slicer active — showing ${selLabels.join(' + ')}.</b> The gold <b>Selection total</b> aggregates only those groups, summed from the sub-segment rows (never the subtotals, which would double-count) with ARR re-derived as revenue ÷ room nights. The two Grand Total rows below it are the workbook's own file-level totals and always cover <b>every</b> group, selected or not. Click <b>All</b> to clear.`
-          :`<br>Use the <b>group buttons</b> above to slice the table — pick several to aggregate them together; a <b>Selection total</b> line then appears above the grand totals. The selection is not saved between sessions.`}</div></div>`;
+          :`<br>Use the <b>group buttons</b> above to slice the table — pick several to aggregate them together; a <b>Selection total</b> line then appears above the grand totals. The selection is not saved between sessions.`}</div></div>
+    ${keyAcctPanel()}`;
 
   /* mix chart: stacked RN by group for Actual/Budget/LY */
   const groups=seg.rows.filter(r=>r.type==='grouptotal');
