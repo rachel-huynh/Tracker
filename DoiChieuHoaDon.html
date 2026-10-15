@@ -41,6 +41,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 button.primary,.btn.primary{background:var(--navy);color:#fff;border-color:var(--navy);font-weight:600}
 button.gold{background:var(--gold2);border-color:var(--gold2);color:#fff;font-weight:600}
 button.danger{color:var(--red);border-color:#e7b7b1}
+button.primary.danger-fill{background:var(--red);border-color:var(--red);color:#fff}
+.slot .acts{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+.slot .acts button{font-size:10.5px;padding:2px 7px}
+.cmpf{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+.cmpf th,.cmpf td{border:1px solid var(--line);padding:6px 8px;vertical-align:top;text-align:left}
+.cmpf th{background:#f5f7fb;color:var(--navy);font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+.cmpf td.old{background:#fdf0ef}.cmpf td.new{background:#effaf3}
 button.on{background:var(--navy);color:#fff;font-weight:700;border-color:var(--navy)}
 .seg{display:inline-flex;border:1px solid #cfd6e2;border-radius:5px;overflow:hidden}
 .seg button{border:none;border-radius:0}
@@ -454,6 +461,12 @@ td.nw{white-space:nowrap}
   <div class="body" id="mrBody"></div>
   <div class="foot" id="mrFoot"></div></div></div>
 
+<!-- Modal: hỏi xác nhận (ghi đè / xóa dữ liệu file đã nạp) -->
+<div class="modal" id="mAsk"><div class="mcard">
+  <div class="head"><div id="askTitle">Xác nhận</div></div>
+  <div class="body" id="askBody"></div>
+  <div class="foot"><button id="askNo">Hủy</button><button class="primary" id="askOk">Đồng ý</button></div></div></div>
+
 <!-- Modal: nhận dữ liệu từ bookmarklet -->
 <div class="modal" id="mRecv"><div class="mcard sm">
   <div class="head"><div>NHẬN DỮ LIỆU TỪ CỔNG THUẾ</div><button class="x" data-close>✕</button></div>
@@ -833,6 +846,7 @@ footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);font-si
       <div><b>Số hóa đơn nhận được là 0</b>Đừng bấm “Nạp vào app”. Kiểm tra kỳ đã nhập đúng dạng <code>MM/YYYY</code>, rồi làm lại từ bước đăng nhập cổng thuế.</div>
       <div><b>App trắng trang hoặc không bấm được menu</b>Bấm <kbd>Ctrl</kbd> + <kbd>F5</kbd> để tải bản mới nhất. Nếu vẫn lỗi, báo người quản trị app kèm ảnh màn hình.</div>
       <div><b>Mở app lại thấy ô “Kết nối Supabase”</b>Máy đã mất cấu hình (xóa dữ liệu trình duyệt, đổi trình duyệt). Mở lại link cài sẵn.</div>
+      <div><b>Lỡ nạp nhầm file (sai loại, sai tháng, sai số liệu)</b>Vào <b>Tải dữ liệu</b>, chọn đúng kỳ và lần. Ở ô bị nhầm, bấm <b>↻ Ghi đè</b> rồi chọn file đúng. App hiện bảng so sánh file cũ ↔ file mới; bấm <b>Ghi đè</b> để xóa dữ liệu file cũ và ghi nhận file mới. Muốn gỡ hẳn thì bấm <b>🗑 Xóa</b>. Thả lại file vào ô lớn cũng được: ô nào đã có file ở cùng lần, app sẽ hỏi trước khi ghi đè. Tờ khai làm tương tự ở ô ②. Duyệt & ghi chú vẫn được giữ.</div>
       <div><b>Lỡ mở app trên máy dùng chung</b>Vào <b>Cài đặt &amp; Sao lưu → 🧹 Xóa kết nối trên máy này</b>. App đăng xuất và xóa kết nối khỏi trình duyệt đó. Dữ liệu đối chiếu vẫn còn nguyên.</div>
       <div><b>Kỳ đã chốt nhưng cần sửa</b>Chọn đúng tháng → <b>Kết quả đối chiếu</b> → bấm <b>🔓 Mở lại kỳ</b>. Sửa xong thì chốt lại.</div>
     </div>
@@ -1453,36 +1467,115 @@ function parseTk(wb, fname) {
 /* =====================================================================
    NẠP DỮ LIỆU CỔNG THUẾ
    ===================================================================== */
-function sigOf(rows) { let h = 0; const s = rows.map(r => r.id).sort().join(';'); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return rows.length + ':' + (h >>> 0).toString(16); }
+/* hộp xác nhận có nội dung HTML; trả về Promise<boolean> */
+function ask(title, html, okLabel, danger) {
+  return new Promise(res => {
+    $('askTitle').textContent = title; $('askBody').innerHTML = html;
+    const ok = $('askOk'), no = $('askNo');
+    ok.textContent = okLabel || 'Đồng ý'; ok.className = danger ? 'primary danger-fill' : 'primary';
+    const done = v => { closeModal('mAsk'); ok.onclick = no.onclick = null; res(v); };
+    ok.onclick = () => done(true); no.onclick = () => done(false);
+    openModal('mAsk'); setTimeout(() => no.focus(), 30);
+  });
+}
+const fileLine = f => '<b>' + esc(f.file) + '</b><br><span class="muted small">' + (f.rows ?? f.hd ?? 0).toLocaleString('vi-VN') + ' HĐ · nạp ' + fmtTs(f.at) + ' · ' + esc(f.by || '') + '</span>';
+
+/* ---------- Ô dữ liệu cổng thuế = kỳ × lần × nguồn × kết quả kiểm tra ----------
+   File đã nạp ghi trong hd_ky.files; file bị ghi đè/xóa được đánh dấu replaced_at (giữ lịch sử, không hiện ở ô). */
+const slotCatOf = p => kqCat(p.kqkt) || (p.nguon === 'MTT' ? 'mtt' : '');
+const isActiveFile = f => !f.replaced_at;
+function slotFiles(ky, lan, nguon, cat) {
+  return ((S.kys.get(ky) || {}).files || []).filter(f => f.kind !== 'tk' && isActiveFile(f) && f.lan === lan && f.nguon === nguon && f.cats && cat in f.cats);
+}
+/* dữ liệu "của" một ô ở một lần = HĐ thuộc ô mà lần nạp gần nhất là lần đó (lần 1 đã được lần 2 cập nhật thì thuộc lần 2) */
+function slotRows(ky, lan, nguon, cat) {
+  return [...S.portal.values()].filter(p => p.ky === ky && p.nguon === nguon && slotCatOf(p) === cat && (p.lan_cuoi || 1) === lan);
+}
+async function deleteIds(table, ids) {
+  for (let i = 0; i < ids.length; i += 150) {
+    const { error } = await S.sb.from(table).delete().in('id', ids.slice(i, i + 150));
+    if (error) throw error;
+  }
+}
+/* xoá dữ liệu 1 ô (1 lần) + đánh dấu các file của ô là đã thay; trả về số HĐ đã xoá */
+async function clearSlot(ky, lan, nguon, cat, reason) {
+  const ids = slotRows(ky, lan, nguon, cat).map(p => p.id);
+  await deleteIds(T.portal, ids);
+  ids.forEach(id => S.portal.delete(id));
+  const files = ((S.kys.get(ky) || {}).files || []).map(f =>
+    f.kind !== 'tk' && isActiveFile(f) && f.lan === lan && f.nguon === nguon && f.cats && cat in f.cats ? Object.assign({}, f, { replaced_at: nowIso(), replaced_by: me(), replaced_why: reason }) : f);
+  await saveKy(ky, { files });
+  return ids.length;
+}
+
+/* chữ ký file = danh sách HĐ + số tiền + trạng thái → file "giống hệt" mới coi là trùng; cùng số HĐ mà khác tiền thì hỏi ghi đè */
+function sigOf(rows) { let h = 0; const s = rows.map(r => [r.id, r.tien_chua_thue, r.tien_thue, r.tong_tt, r.trang_thai].join(',')).sort().join(';'); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return rows.length + ':' + (h >>> 0).toString(16); }
 
 async function importPortalRows(parsedList, lan, sourceLabel) {
   // parsedList: [{fname, nguon, rows, cats}]
-  const msgs = []; const byKy = new Map(); const merged = new Map();
+  const msgs = []; const accepted = [];
   for (const pf of parsedList) {
     const ky = pf.periodKy || (pf.rows[0] && pf.rows[0].ky);
     if (!ky) { msgs.push('⚠ ' + pf.fname + ': không xác định được kỳ, bỏ qua'); continue; }
     const kyRow = S.kys.get(ky) || {};
     const sig = sigOf(pf.rows);
-    const dupOld = (kyRow.files || []).find(f => f.sig === sig && f.lan === lan && f.rows > 0);
-    const dupNew = (byKy.get(ky) || []).find(f => f.sig === sig && f.rows > 0);
-    if (dupOld || dupNew) { msgs.push('↷ ' + pf.fname + ': trùng với file “' + (dupOld || dupNew).file + '” đã nạp — bỏ qua'); continue; }
-    if (!byKy.has(ky)) byKy.set(ky, []);
-    byKy.get(ky).push({ at: nowIso(), by: me(), lan, file: pf.fname, nguon: pf.nguon, cats: pf.cats, rows: pf.rows.length, sig, via: sourceLabel });
-    for (const r of pf.rows) merged.set(r.id, r);
-    msgs.push('✔ ' + pf.fname + ' — ' + SRC[pf.nguon] + ' · ' + Object.entries(pf.cats).map(([c, n]) => (KQ[c] || '?') + ': ' + n).join(', ') + ' (kỳ ' + kyLabel(ky) + ')');
+    const dupOld = (kyRow.files || []).find(f => isActiveFile(f) && f.sig === sig && f.lan === lan && f.rows > 0);
+    const dupNew = accepted.find(a => a.ky === ky && a.sig === sig && a.pf.rows.length > 0);
+    if (dupOld || dupNew) { msgs.push('↷ ' + pf.fname + ': trùng với file “' + (dupOld ? dupOld.file : dupNew.pf.fname) + '” đã nạp — bỏ qua'); continue; }
+    if (kyLocked(ky)) throw new Error('Kỳ ' + kyLabel(ky) + ' đã chốt. Mở lại kỳ trước khi nạp thêm.');
+    accepted.push({ pf, ky, sig, cats: Object.keys(pf.cats) });
   }
-  if (!merged.size && !byKy.size) return msgs;
-  for (const ky of byKy.keys()) {
-    const k = S.kys.get(ky);
-    if (k && k.chot) throw new Error('Kỳ ' + kyLabel(ky) + ' đã chốt. Mở lại kỳ trước khi nạp thêm.');
+  if (!accepted.length) return msgs;
+
+  // ô nào đã có file ở CÙNG lần → hỏi ghi đè (xóa dữ liệu file cũ trước khi ghi file mới)
+  const conflicts = [];
+  for (const a of accepted) for (const cat of a.cats) {
+    const old = slotFiles(a.ky, lan, a.pf.nguon, cat);
+    if (old.length && !conflicts.some(c => c.ky === a.ky && c.nguon === a.pf.nguon && c.cat === cat))
+      conflicts.push({ ky: a.ky, nguon: a.pf.nguon, cat, old, a, n: slotRows(a.ky, lan, a.pf.nguon, cat).length });
+  }
+  const withData = conflicts.filter(c => c.old.some(f => f.rows > 0));
+  if (withData.length) {
+    const ok = await ask('Ghi đè dữ liệu đã nạp?',
+      '<div class="warnbox">Các ô dưới đây đã có file ở <b>lần ' + lan + '</b>. Chọn <b>Ghi đè</b> để <b>xóa toàn bộ HĐ của file cũ</b> rồi ghi nhận file mới. Duyệt & ghi chú theo từng HĐ vẫn được giữ.</div>' +
+      '<table class="cmpf"><tr><th>Ô · kỳ</th><th>File cũ (sẽ xóa)</th><th>File mới</th></tr>' +
+      withData.map(c => '<tr><td>' + SRC[c.nguon] + '<br><span class="muted small">' + KQ_FULL[c.cat] + ' · ' + kyLabel(c.ky) + '</span></td>' +
+        '<td class="old">' + c.old.map(fileLine).join('<br>') + '<br><span class="small">→ xóa <b>' + c.n.toLocaleString('vi-VN') + '</b> HĐ</span></td>' +
+        '<td class="new"><b>' + esc(c.a.pf.fname) + '</b><br><span class="muted small">' + (c.a.pf.cats[c.cat] || 0).toLocaleString('vi-VN') + ' HĐ</span></td></tr>').join('') + '</table>',
+      'Ghi đè', true);
+    if (!ok) {
+      const skip = new Set(withData.map(c => c.a));
+      skip.forEach(a => msgs.push('↷ ' + a.pf.fname + ': không ghi đè — giữ dữ liệu cũ'));
+      for (let i = accepted.length - 1; i >= 0; i--) if (skip.has(accepted[i])) accepted.splice(i, 1);
+      if (!accepted.length) return msgs;
+    }
   }
   // tự lưu ảnh kết quả lần 1 trước khi nạp lần 2 (để còn so sánh)
-  if (lan === 2) for (const ky of byKy.keys()) { const k = S.kys.get(ky); if (k && k.lan1_at && !k.snap_lan1) { try { await saveSnap(ky, 'lan1'); } catch (e) { } } }
-  const rows = [];
+  const kysIn = [...new Set(accepted.map(a => a.ky))];
+  if (lan === 2) for (const ky of kysIn) { const k = S.kys.get(ky); if (k && k.lan1_at && !k.snap_lan1) { try { await saveSnap(ky, 'lan1'); } catch (e) { } } }
+  // thực hiện ghi đè: nhớ lần đầu tiên thấy HĐ trước khi xóa
+  const prevLanDau = new Map();
+  for (const c of conflicts) {
+    if (!accepted.includes(c.a)) continue;
+    slotRows(c.ky, lan, c.nguon, c.cat).forEach(p => prevLanDau.set(p.id, p.lan_dau || lan));
+    const n = await clearSlot(c.ky, lan, c.nguon, c.cat, 'ghi đè bởi ' + c.a.pf.fname);
+    if (n) msgs.push('♻ Ghi đè ' + SRC[c.nguon] + ' · ' + KQ[c.cat] + ' (kỳ ' + kyLabel(c.ky) + '): đã xóa ' + n.toLocaleString('vi-VN') + ' HĐ của file cũ');
+  }
+  const byKy = new Map(); const merged = new Map();
+  for (const a of accepted) {
+    if (!byKy.has(a.ky)) byKy.set(a.ky, []);
+    byKy.get(a.ky).push({ at: nowIso(), by: me(), lan, file: a.pf.fname, nguon: a.pf.nguon, cats: a.pf.cats, rows: a.pf.rows.length, sig: a.sig, via: sourceLabel });
+    for (const r of a.pf.rows) merged.set(r.id, r);
+    msgs.push('✔ ' + a.pf.fname + ' — ' + SRC[a.pf.nguon] + ' · ' + Object.entries(a.pf.cats).map(([c, n]) => (KQ[c] || '?') + ': ' + n).join(', ') + ' (kỳ ' + kyLabel(a.ky) + ')');
+  }
+  const rows = []; let keptNewer = 0;
   for (const r of merged.values()) {
     const old = S.portal.get(r.id);
+    // HĐ đã được lần sau cập nhật (vd đang nạp lại lần 1 sau khi có lần 2) → giữ số liệu mới hơn
+    if (old && (old.lan_cuoi || 1) > lan) { keptNewer++; rows.push(Object.assign({}, old, { lan_dau: Math.min(old.lan_dau || lan, lan) })); continue; }
     const row = Object.assign({}, r); delete row.__cat;
-    row.lan_dau = old ? Math.min(old.lan_dau || lan, lan) : lan;
+    const ld = old ? old.lan_dau || lan : prevLanDau.get(r.id) || lan;
+    row.lan_dau = Math.min(ld, lan);
     row.lan_cuoi = Math.max(old ? old.lan_cuoi || lan : lan, lan);
     if (old && old.hd_goc && !row.hd_goc) row.hd_goc = old.hd_goc;
     row.updated_at = nowIso(); row.updated_by = me();
@@ -1498,6 +1591,7 @@ async function importPortalRows(parsedList, lan, sourceLabel) {
   }
   await logAct('nap_cong_thue', { lan, via: sourceLabel, kys: [...byKy.keys()], rows: rows.length, files: parsedList.map(p => p.fname) });
   msgs.push('→ Đã hợp nhất & lưu ' + rows.length.toLocaleString('vi-VN') + ' hóa đơn (lần ' + lan + ').');
+  if (keptNewer) msgs.push('ℹ ' + keptNewer.toLocaleString('vi-VN') + ' HĐ đã có số liệu lần ' + (lan + 1) + ' (mới hơn) — giữ nguyên số liệu đó.');
   if (byKy.size === 1) setMonth([...byKy.keys()][0]);
   initKySelect(); recompute(); renderAll();
   return msgs;
@@ -1505,14 +1599,42 @@ async function importPortalRows(parsedList, lan, sourceLabel) {
 async function handlePortalFiles(files) {
   const box = $('portalMsg'); box.innerHTML = '<div class="warnbox">Đang đọc ' + files.length + ' file…</div>';
   const parsed = [], errs = [];
+  const want = S.expectSlot; S.expectSlot = null;   // đang bấm "Ghi đè" ở 1 ô cụ thể
   for (const f of files) {
-    try { const wb = await readWb(f); const p = parsePortal(wb, f.name); p.fname = f.name; parsed.push(p); }
+    try {
+      const wb = await readWb(f); const p = parsePortal(wb, f.name); p.fname = f.name;
+      if (want && (p.nguon !== want.nguon || !(want.cat in p.cats)))
+        throw new Error('file này là ' + SRC[p.nguon] + ' · ' + Object.keys(p.cats).map(c => KQ[c] || '?').join(', ') + ', không phải ô ' + SRC[want.nguon] + ' · ' + KQ[want.cat] + ' — không nạp');
+      parsed.push(p);
+    }
     catch (e) { errs.push('✖ ' + f.name + ': ' + e.message); }
   }
+  if (!parsed.length) { box.innerHTML = '<div class="errbox">' + errs.map(esc).join('<br>') + '</div>'; return; }
   try {
     const msgs = await importPortalRows(parsed, S.lan, 'excel');
     box.innerHTML = (errs.length ? '<div class="errbox">' + errs.map(esc).join('<br>') + '</div>' : '') + '<div class="okbox">' + msgs.map(esc).join('<br>') + '</div>';
   } catch (e) { box.innerHTML = '<div class="errbox">' + errs.concat(['✖ ' + e.message]).map(esc).join('<br>') + '</div>'; }
+}
+/* nút 🗑 Xóa ở 1 ô: xóa dữ liệu file của ô (lần đang chọn) để nạp lại từ đầu */
+async function deleteSlot(nguon, cat) {
+  const ky = S.ky, lan = S.lan;
+  if (kyLocked(ky)) return toast('Kỳ đã chốt — mở lại kỳ trước', true);
+  const old = slotFiles(ky, lan, nguon, cat); const n = slotRows(ky, lan, nguon, cat).length;
+  const ok = await ask('Xóa dữ liệu ô này?',
+    '<div class="kv"><div>Ô</div><div><b>' + SRC[nguon] + '</b> · ' + KQ_FULL[cat] + '</div><div>Kỳ · lần</div><div>' + kyLabel(ky) + ' · lần ' + lan + '</div></div>' +
+    '<table class="cmpf"><tr><th>File sẽ bị gỡ</th></tr><tr><td class="old">' + old.map(fileLine).join('<br>') + '</td></tr></table>' +
+    '<div class="warnbox">Sẽ xóa <b>' + n.toLocaleString('vi-VN') + '</b> HĐ khỏi hệ thống. HĐ đã được nạp ở lần khác vẫn giữ. Duyệt & ghi chú theo HĐ vẫn giữ (hiện lại khi nạp lại đúng HĐ đó).</div>',
+    'Xóa dữ liệu', true);
+  if (!ok) return;
+  try {
+    const d = await clearSlot(ky, lan, nguon, cat, 'xóa thủ công');
+    await logAct('xoa_o_cong_thue', { ky, lan, nguon, cat, hd: d, files: old.map(f => f.file) });
+    recompute(); renderAll(); toast('Đã xóa ' + d.toLocaleString('vi-VN') + ' HĐ — ô đã trống, có thể nạp lại');
+  } catch (e) { toast(e.message, true); }
+}
+function replaceSlot(nguon, cat) {
+  if (kyLocked(S.ky)) return toast('Kỳ đã chốt — mở lại kỳ trước', true);
+  S.expectSlot = { nguon, cat }; $('fiPortal').click();
 }
 async function markSlotEmpty(nguon, cat) {
   const ky = S.ky; const k = S.kys.get(ky) || {};
@@ -1528,42 +1650,77 @@ async function markSlotEmpty(nguon, cat) {
 /* tình trạng tờ khai từng đơn vị của 1 kỳ (từ nhật ký file; dữ liệu cũ chỉ có tk_file → coi là Sofitel) */
 function tkStatus(ky) {
   const k = S.kys.get(ky) || {}; const out = {};
-  (k.files || []).filter(f => f.kind === 'tk').forEach(f => out[f.nguon_tk] = f);
+  (k.files || []).filter(f => f.kind === 'tk' && isActiveFile(f)).forEach(f => out[f.nguon_tk] = f);
   if (!out.SSP && k.tk_file && [...S.tk.values()].some(t => t.ky === ky && tkSrcOf(t) === 'SSP')) out.SSP = { file: k.tk_file, at: k.tk_at, by: k.tk_by };
   return out;
 }
 async function handleTkFiles(files) {
   const box = $('tkMsg'); box.innerHTML = '<div class="warnbox">Đang đọc ' + files.length + ' file…</div>';
+  const want = S.expectTk; S.expectTk = null;   // đang bấm "Ghi đè" ở ô tờ khai của 1 đơn vị
   const msgs = [];
-  for (const f of files) msgs.push(await importTkFile(f));
+  for (const f of files) msgs.push(await importTkFile(f, want));
   box.innerHTML = msgs.join('');
 }
-async function importTkFile(file) {
+/* xóa tờ khai của 1 đơn vị ở kỳ đang chọn (dòng cũ chưa có nguon_tk tính là Sofitel) */
+async function removeTkRows(ky, src) {
+  let del = S.sb.from(T.tk).delete().eq('ky', ky);
+  del = src === 'SSP' ? del.or('nguon_tk.eq.SSP,nguon_tk.is.null') : del.eq('nguon_tk', src);
+  const { error } = await del;
+  if (error) throw /nguon_tk/.test(error.message) ? new Error('Chưa có cột nguon_tk trên Supabase. Chạy đoạn SQL bổ sung (xem hướng dẫn) rồi nạp lại.') : error;
+  const old = [...S.tk.values()].filter(t => t.ky === ky && tkSrcOf(t) === src);
+  old.forEach(t => S.tk.delete(t.id));
+  return old.length;
+}
+const markTkReplaced = (files, src, why) => files.map(f => f.kind === 'tk' && f.nguon_tk === src && isActiveFile(f) ? Object.assign({}, f, { replaced_at: nowIso(), replaced_by: me(), replaced_why: why }) : f);
+async function deleteTk(src) {
+  const ky = S.ky;
+  if (kyLocked(ky)) return toast('Kỳ đã chốt — mở lại kỳ trước', true);
+  const f = tkStatus(ky)[src]; const n = [...S.tk.values()].filter(t => t.ky === ky && tkSrcOf(t) === src).length;
+  const ok = await ask('Xóa tờ khai ' + TK_SRC[src] + '?',
+    '<table class="cmpf"><tr><th>Tờ khai sẽ bị gỡ · kỳ ' + kyLabel(ky) + '</th></tr><tr><td class="old">' + (f ? fileLine(Object.assign({ rows: n }, f)) : n + ' HĐ') + '</td></tr></table>' +
+    '<div class="warnbox">Sẽ xóa <b>' + n.toLocaleString('vi-VN') + '</b> HĐ tờ khai ' + TK_SRC[src] + '. Tờ khai đơn vị kia giữ nguyên. Duyệt & ghi chú theo HĐ vẫn giữ.</div>', 'Xóa tờ khai', true);
+  if (!ok) return;
+  try {
+    const d = await removeTkRows(ky, src);
+    await saveKy(ky, { files: markTkReplaced((S.kys.get(ky) || {}).files || [], src, 'xóa thủ công') });
+    await logAct('xoa_to_khai', { ky, don_vi: src, hd: d, file: f && f.file });
+    recompute(); renderAll(); toast('Đã xóa tờ khai ' + TK_SRC[src] + ' kỳ ' + kyLabel(ky));
+  } catch (e) { toast(e.message, true); }
+}
+async function importTkFile(file, want) {
   try {
     const wb = await readWb(file);
     const p = parseTk(wb, file.name);
     const src = p.nguon_tk;
+    if (want && want !== src) throw new Error('file này là tờ khai ' + TK_SRC[src] + ', không phải ' + TK_SRC[want] + ' — không nạp');
     let ky = p.ky;
     if (!ky) { const v = prompt('Không đọc được kỳ tính thuế trong file “' + file.name + '”. Nhập kỳ (MM/YYYY):', kyLabel(S.ky)); if (!v) return ''; const m = /(\d{1,2})\/(\d{4})/.exec(v); if (!m) throw new Error('Kỳ không hợp lệ'); ky = m[2] + '-' + pad(m[1]); }
     const k = S.kys.get(ky);
     if (k && k.chot) throw new Error('Kỳ ' + kyLabel(ky) + ' đã chốt. Mở lại kỳ trước khi nạp tờ khai.');
     const old = [...S.tk.values()].filter(t => t.ky === ky && tkSrcOf(t) === src);
     const prev = tkStatus(ky)[src];
-    if (old.length && !confirm('Kỳ ' + kyLabel(ky) + ' đã có tờ khai ' + TK_SRC[src] + ' (' + old.length + ' HĐ, file “' + ((prev && prev.file) || '?') + '”).\nNạp file mới sẽ THAY THẾ tờ khai ' + TK_SRC[src] + ' của kỳ này (tờ khai đơn vị kia giữ nguyên). Duyệt/ghi chú theo khóa HĐ vẫn giữ. Tiếp tục?')) return '';
+    if (old.length) {
+      const sumOld = f => old.reduce((a, t) => a + (Number(t[f]) || 0), 0);
+      const ok = await ask('Ghi đè tờ khai ' + TK_SRC[src] + ' kỳ ' + kyLabel(ky) + '?',
+        '<div class="warnbox">Kỳ này đã có tờ khai <b>' + TK_SRC[src] + '</b>. Chọn <b>Ghi đè</b> để <b>xóa toàn bộ HĐ của file cũ</b> rồi ghi nhận file mới. Tờ khai đơn vị kia giữ nguyên; duyệt & ghi chú theo HĐ vẫn giữ.</div>' +
+        '<table class="cmpf"><tr><th></th><th>File cũ (sẽ xóa)</th><th>File mới</th></tr>' +
+        '<tr><th>File</th><td class="old">' + (prev ? fileLine(Object.assign({ rows: old.length }, prev)) : '?') + '</td><td class="new"><b>' + esc(file.name) + '</b></td></tr>' +
+        '<tr><th>Số HĐ</th><td class="old">' + old.length.toLocaleString('vi-VN') + '</td><td class="new">' + p.rows.length.toLocaleString('vi-VN') + '</td></tr>' +
+        '<tr><th>Chưa thuế</th><td class="old">' + fmt(sumOld('tien_chua_thue')) + '</td><td class="new">' + fmt(p.sumNet) + '</td></tr>' +
+        '<tr><th>Thuế</th><td class="old">' + fmt(sumOld('tien_thue')) + '</td><td class="new">' + fmt(p.sumTax) + '</td></tr></table>',
+        'Ghi đè', true);
+      if (!ok) return '<div class="warnbox">↷ ' + esc(file.name) + ': không ghi đè — giữ tờ khai cũ.</div>';
+    }
     const rows = p.rows.map(r => {
       // id Sofitel giữ dạng cũ <kỳ>|<khóa> để không mất duyệt/ghi chú đã có; Central Plaza thêm |CP|
       const id = ky + '|' + (src === 'SSP' ? '' : src + '|') + (r.khoa || r.gid);
       const o = { id, ky }; Object.assign(o, r); delete o.gid; o.updated_at = nowIso(); o.updated_by = me(); return o;
     });
-    // xoá tờ khai cũ của đúng đơn vị này (dòng cũ chưa có nguon_tk được tính là Sofitel)
-    let del = S.sb.from(T.tk).delete().eq('ky', ky);
-    del = src === 'SSP' ? del.or('nguon_tk.eq.SSP,nguon_tk.is.null') : del.eq('nguon_tk', src);
-    const { error } = await del;
-    if (error) throw /nguon_tk/.test(error.message) ? new Error('Chưa có cột nguon_tk trên Supabase. Chạy đoạn SQL bổ sung (xem hướng dẫn) rồi nạp lại.') : error;
+    // xoá tờ khai cũ của đúng đơn vị này rồi ghi file mới
+    await removeTkRows(ky, src);
     await upsertChunks(T.tk, rows);
-    old.forEach(t => S.tk.delete(t.id));
     rows.forEach(r => S.tk.set(r.id, r));
-    const files = ((S.kys.get(ky) || {}).files || []).filter(f => !(f.kind === 'tk' && f.nguon_tk === src))
+    const files = markTkReplaced((S.kys.get(ky) || {}).files || [], src, 'ghi đè bởi ' + file.name)
       .concat([{ kind: 'tk', nguon_tk: src, at: nowIso(), by: me(), file: file.name, hd: rows.length, dong: p.nLines, net: Math.round(p.sumNet), tax: Math.round(p.sumTax) }]);
     await saveKy(ky, { tk_at: nowIso(), tk_by: me(), tk_file: file.name, files });
     await logAct('nap_to_khai', { ky, don_vi: src, file: file.name, hd: rows.length, dong: p.nLines, net: Math.round(p.sumNet), tax: Math.round(p.sumTax) });
@@ -1691,7 +1848,7 @@ $('btnRecvOk').onclick = async () => {
     // ghi nhận luôn tổ hợp không có HĐ
     const k = S.kys.get(d.ky) || {}; const have = new Set(groups.map(g => g.nguon + '/' + Object.keys(g.cats)[0]));
     const empties = [];
-    ['HDDT', 'MTT'].forEach(n => ['cap_ma', 'khong_ma', 'mtt'].forEach(c => { if (!have.has(n + '/' + c) && !(d.log || []).some(x => x.startsWith(n) && /HTTP|lỗi/.test(x) && x.includes('ttxly=' + { cap_ma: 5, khong_ma: 6, mtt: 8 }[c]))) empties.push({ at: nowIso(), by: me(), lan, file: '(không có HĐ)', nguon: n, cats: { [c]: 0 }, rows: 0, sig: 'empty:' + n + c + lan, via: 'bookmarklet' }); }));
+    ['HDDT', 'MTT'].forEach(n => ['cap_ma', 'khong_ma', 'mtt'].forEach(c => { if (!have.has(n + '/' + c) && !slotFiles(d.ky, lan, n, c).length && !(d.log || []).some(x => x.startsWith(n) && /HTTP|lỗi/.test(x) && x.includes('ttxly=' + { cap_ma: 5, khong_ma: 6, mtt: 8 }[c]))) empties.push({ at: nowIso(), by: me(), lan, file: '(không có HĐ)', nguon: n, cats: { [c]: 0 }, rows: 0, sig: 'empty:' + n + c + lan, via: 'bookmarklet' }); }));
     if (empties.length) await saveKy(d.ky, { files: (k.files || []).concat(empties) });
     closeModal('mRecv'); S.pendingRecv = null;
     toast(msgs[msgs.length - 1] || 'Đã nạp');
@@ -2296,27 +2453,38 @@ async function renderLan12() {
 
 /* ---------- TẢI DỮ LIỆU ---------- */
 function slotStatus(ky, lan) {
-  const k = S.kys.get(ky) || {}; const files = (k.files || []).filter(f => f.lan === lan);
+  const k = S.kys.get(ky) || {}; const all = (k.files || []).filter(f => f.kind !== 'tk' && f.lan === lan);
   const out = [];
   ['HDDT', 'MTT'].forEach(n => ['cap_ma', 'khong_ma', 'mtt'].forEach(c => {
-    const fs = files.filter(f => f.nguon === n && f.cats && c in f.cats);
+    const mine = all.filter(f => f.nguon === n && f.cats && c in f.cats);
+    const fs = mine.filter(isActiveFile), gone = mine.filter(f => !isActiveFile(f));
     const cnt = fs.reduce((a, f) => a + (f.cats[c] || 0), 0);
-    out.push({ n, c, ok: fs.length > 0, cnt, empty: fs.length > 0 && cnt === 0, files: fs });
+    out.push({ n, c, ok: fs.length > 0, cnt, empty: fs.length > 0 && cnt === 0, files: fs, gone });
   }));
   return out;
 }
+const goneNote = gone => gone.length ? '<div class="c" title="' + esc(gone.map(f => f.file + ' — ' + (f.replaced_why || 'đã thay') + ' lúc ' + fmtTs(f.replaced_at) + ' bởi ' + (f.replaced_by || '')).join('\n')) + '">♻ đã thay ' + gone.length + ' file trước đó</div>' : '';
 function renderNap() {
   document.querySelectorAll('#segLan button').forEach(b => b.classList.toggle('on', Number(b.dataset.lan) === S.lan));
-  const sl = slotStatus(S.ky, S.lan);
+  const sl = slotStatus(S.ky, S.lan); const locked = kyLocked(S.ky);
   $('slotBox').innerHTML = '<div style="grid-column:1/-1" class="small"><b>Kỳ ' + kyLabel(S.ky) + ' · Lần ' + S.lan + '</b>: ' + sl.filter(s => s.ok).length + '/6 tổ hợp</div>' +
     sl.map(s => '<div class="slot ' + (s.empty ? 'none' : s.ok ? 'ok' : '') + '"><div class="h">' + (s.ok ? '✔ ' : '○ ') + SRC[s.n] + '</div><div>' + KQ_FULL[s.c] + '</div><div class="c">' +
-      (s.ok ? (s.empty ? 'Không có HĐ' : s.cnt.toLocaleString('vi-VN') + ' HĐ') + ' · ' + s.files.map(f => esc(f.file)).join(', ') : 'Chưa có file · <a href="#" data-empty="' + s.n + '|' + s.c + '">Không có HĐ</a>') + '</div></div>').join('');
+      (s.ok ? (s.empty ? 'Không có HĐ' : s.cnt.toLocaleString('vi-VN') + ' HĐ') + ' · ' + s.files.map(f => esc(f.file) + ' <span title="' + esc(fmtTs(f.at) + ' · ' + (f.by || '')) + '">ⓘ</span>').join(', ') : 'Chưa có file · <a href="#" data-empty="' + s.n + '|' + s.c + '">Không có HĐ</a>') + '</div>' +
+      goneNote(s.gone) +
+      (s.ok && !locked ? '<div class="acts"><button data-repl="' + s.n + '|' + s.c + '" title="Chọn file đúng để thay — hệ thống hỏi lại trước khi xóa dữ liệu file cũ">↻ Ghi đè</button><button class="danger" data-del="' + s.n + '|' + s.c + '" title="Xóa dữ liệu của ô này ở lần ' + S.lan + '">🗑 Xóa</button></div>' : '') +
+      '</div>').join('');
   $('slotBox').querySelectorAll('[data-empty]').forEach(a => a.onclick = e => { e.preventDefault(); const [n, c] = a.dataset.empty.split('|'); markSlotEmpty(n, c).catch(er => toast(er.message, true)); });
+  $('slotBox').querySelectorAll('[data-repl]').forEach(b => b.onclick = () => { const [n, c] = b.dataset.repl.split('|'); replaceSlot(n, c); });
+  $('slotBox').querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const [n, c] = b.dataset.del.split('|'); deleteSlot(n, c); });
   $('bmlLink').href = bookmarkletSrc(location.href.split('#')[0]);
   const ts = tkStatus(S.ky);
   $('tkSlots').innerHTML = Object.keys(TK_SRC).map(s => { const f = ts[s]; const n = [...S.tk.values()].filter(t => t.ky === S.ky && tkSrcOf(t) === s).length;
+    const gone = ((S.kys.get(S.ky) || {}).files || []).filter(x => x.kind === 'tk' && x.nguon_tk === s && !isActiveFile(x));
     return '<div class="slot ' + (f ? 'ok' : '') + '"><div class="h">' + (f ? '✔ ' : '○ ') + 'Tờ khai ' + TK_SRC[s] + ' · kỳ ' + kyLabel(S.ky) + '</div><div class="c">' +
-      (f ? n.toLocaleString('vi-VN') + ' HĐ · ' + esc(f.file) + '<br>' + fmtTs(f.at) + ' · ' + esc(f.by || '') : 'Chưa nạp') + '</div></div>'; }).join('');
+      (f ? n.toLocaleString('vi-VN') + ' HĐ · ' + esc(f.file) + '<br>' + fmtTs(f.at) + ' · ' + esc(f.by || '') : 'Chưa nạp') + '</div>' + goneNote(gone) +
+      (f && !locked ? '<div class="acts"><button data-tkrepl="' + s + '" title="Chọn file tờ khai đúng để thay — hệ thống hỏi lại trước khi xóa">↻ Ghi đè</button><button class="danger" data-tkdel="' + s + '">🗑 Xóa</button></div>' : '') + '</div>'; }).join('');
+  $('tkSlots').querySelectorAll('[data-tkrepl]').forEach(b => b.onclick = () => { S.expectTk = b.dataset.tkrepl; $('fiTk').click(); });
+  $('tkSlots').querySelectorAll('[data-tkdel]').forEach(b => b.onclick = () => deleteTk(b.dataset.tkdel));
 }
 document.querySelectorAll('#segLan button').forEach(b => b.onclick = () => { S.lan = Number(b.dataset.lan); renderNap(); });
 function wireDrop(dz, fi, handler, multi) {
@@ -2328,6 +2496,11 @@ function wireDrop(dz, fi, handler, multi) {
 }
 wireDrop($('dzPortal'), $('fiPortal'), handlePortalFiles, true);
 wireDrop($('dzTk'), $('fiTk'), handleTkFiles, true);
+// bấm/thả vào ô lớn = nạp bình thường (không gắn với ô "Ghi đè" nào)
+['click', 'drop'].forEach(ev => {
+  $('dzPortal').addEventListener(ev, () => { S.expectSlot = null; }, true);
+  $('dzTk').addEventListener(ev, () => { S.expectTk = null; }, true);
+});
 $('bmlLink').onclick = e => { e.preventDefault(); toast('Hãy KÉO nút này lên thanh dấu trang, rồi bấm nó khi đang ở trang cổng thuế.'); };
 $('btnIcs').onclick = () => {
   const d = new Date(); const y = d.getFullYear(), m = pad(d.getMonth() + 1);
@@ -2395,7 +2568,7 @@ function renderGuide() {
 window.addEventListener('resize', () => { if (S.tab === 'huongdan') renderGuide(); });
 
 /* ---------- NHẬT KÝ ---------- */
-const LOG_LBL = { nap_cong_thue: 'Nạp dữ liệu cổng thuế', nap_to_khai: 'Nạp tờ khai', luu_lan1: 'Lưu kết quả lần 1', chot_ky: 'Chốt kỳ', mo_lai_ky: 'Mở lại kỳ', duyet_hang_loat: 'Duyệt hàng loạt', phuc_hoi: 'Phục hồi dữ liệu', cai_dat: 'Đổi cài đặt' };
+const LOG_LBL = { nap_cong_thue: 'Nạp dữ liệu cổng thuế', nap_to_khai: 'Nạp tờ khai', luu_lan1: 'Lưu kết quả lần 1', chot_ky: 'Chốt kỳ', mo_lai_ky: 'Mở lại kỳ', duyet_hang_loat: 'Duyệt hàng loạt', phuc_hoi: 'Phục hồi dữ liệu', xoa_o_cong_thue: 'Xóa dữ liệu 1 ô cổng thuế', xoa_to_khai: 'Xóa tờ khai', cai_dat: 'Đổi cài đặt' };
 async function renderLog() {
   const { data, error } = await S.sb.from(T.log).select('*').order('at', { ascending: false }).limit(200);
   if (error) { $('logTable').innerHTML = '<tr><td class="errbox">' + esc(error.message) + '</td></tr>'; return; }
