@@ -179,6 +179,14 @@ th:first-child,td:first-child{text-align:left}
 main table thead th{cursor:pointer;user-select:none}
 th.sa::after{content:' ▲';color:var(--gold2)}th.sd::after{content:' ▼';color:var(--gold2)}
 .tblflt,.propq{border:1px solid #cfd6e2;border-radius:5px;padding:3px 8px;font-size:11.5px;margin-left:8px;width:160px;vertical-align:middle}
+/* Text columns align LEFT, header and cells together. The global th is right-aligned for
+   figures, so a text column's header otherwise floats to the far right of its own content
+   (Account, Main segment, Type in the key-account table). */
+th.l,td.l{text-align:left}
+.kaq{border:1px solid #cfd6e2;border-radius:5px;padding:3px 8px;font-size:11.5px;width:190px;font-weight:400}
+/* every main table already sorts on a header click; .srt just makes that discoverable — a
+   faint arrow on hover, replaced by the gold ▲/▼ once a column is actually sorted */
+table.srt thead th:not(.sa):not(.sd):hover::after{content:' ⇅';color:var(--grey2)}
 /* Property list: a reference table of names and places, so every column reads left — and the
    header must match, since the global `th` rule right-aligns for numeric tables. */
 .proptbl th,.proptbl td{text-align:left}
@@ -3118,7 +3126,7 @@ const REV_LABELS={kaMonthly:'Key accounts by month',roomSeg:'Room category by se
    cross-checks the constant: if the version says today and the file stamp
    says last week, the page came from a cache. ------------------------ */
 const APP_VERSION='2026.10.15';
-const APP_NOTE='Segmentation: key accounts + room category by segment';
+const APP_NOTE='Segmentation: key-account search across all accounts, text columns left-aligned, sortable tables';
 const LS_KEY='ssp_dash_v1';
 /* ---- Primary store = IndexedDB (localStorage's ~5 MB quota chokes on a full
    STAR history; IDB quota is measured in GB). The old localStorage key is read
@@ -4664,7 +4672,23 @@ function roomSegPanel(){
   const byCell=segRollup(rs.rows,cov.have,r=>r.room+'\u0000'+r.seg);
   const lyRoom=segRollup(rs.rows,sp.ly.filter(m=>rs.months.includes(m)),r=>r.room);
   const tot=segSum([...byRoom.values()]), totLy=segSum([...lyRoom.values()]);
-  const totRN=tot.rn||1;
+  /* Mix and the vs-LY column follow the metric button. Two of the three are plain shares;
+     ARR is not — a rate is a ratio, so "share of ARR" would be arithmetic nonsense (the
+     column would not sum to 100 and a big cheap room type would look small). For ARR the
+     slot answers the question that IS worth asking of a rate: how this room type prices
+     against the house average, 0% being exactly on it. The header changes with it so the
+     number is never read as the wrong thing. */
+  const metVal=o=>o?(met==='rn'?o.rn:met==='rev'?o.rev:segArr(o)):null;
+  const houseArr=segArr(tot);
+  const mixCell=o=>{
+    if(met==='arr'){ const a=segArr(o);
+      const d=(a!=null&&houseArr)?a/houseArr-1:null;
+      return d==null?'<td>'+na()+'</td>'
+        :'<td data-v="'+d+'" class="'+cls(d)+'">'+(d>0?'+':'')+pct(d)+'</td>'; }
+    const den=met==='rev'?(tot.rev||1):(tot.rn||1), num=met==='rev'?o.rev:o.rn;
+    return '<td data-v="'+(num/den)+'">'+pct(num/den)+'</td>'; };
+  const mixHead=met==='arr'?'vs house ARR':'Mix %';
+  const lyHead=met==='rn'?'RN %LY':met==='rev'?'Rev %LY':'ARR %LY';
   const body=rooms.map(rm=>{
     const t=byRoom.get(rm), l=lyRoom.get(rm);
     const cells=segs.map(s=>{ const o=byCell.get(rm+'\u0000'+s);
@@ -4672,32 +4696,36 @@ function roomSegPanel(){
               :'<td style="color:var(--grey2)">&ndash;</td>'; }).join('');
     return '<tr><td class="wrap">'+escH(rm)+'</td>'+cells+
       '<td data-v="'+sortV(t)+'"><b>'+cell(t)+'</b></td>'+
-      '<td data-v="'+(t.rn/totRN)+'">'+pct(t.rn/totRN)+'</td>'+varTd(t.rn,l?l.rn:null)+'</tr>'; }).join('');
+      mixCell(t)+varTd(metVal(t),metVal(l))+'</tr>'; }).join('');
   const totRow='<tr class="tot"><td>All room types</td>'+
     segs.map(s=>'<td>'+cell(bySeg.get(s))+'</td>').join('')+
-    '<td><b>'+cell(tot)+'</b></td><td>100%</td>'+varTd(tot.rn,totLy.rn)+'</tr>';
+    '<td><b>'+cell(tot)+'</b></td>'+
+    '<td>'+(met==='arr'?'&ndash;':'100%')+'</td>'+varTd(metVal(tot),metVal(totLy))+'</tr>';
   const metBtns=[['rn','Room nights'],['rev','Revenue'],['arr','ARR']]
     .map(a=>'<button class="heatbtn '+(met===a[0]?'on':'')+'" onclick="__setRsMet(\''+a[0]+'\')">'+a[1]+'</button>').join(' ');
   const other=bySeg.get('Other');
   return '<div class="panel"><h3 class="h3ctl"><span class="ttl">Room category by segment — '+sp.label+'</span>'+
     '<span class="noprint fcctl">'+metBtns+'</span></h3>'+
-    '<div style="overflow-x:auto"><table><thead><tr><th>Room type</th>'+
-      segs.map(s=>'<th>'+escH(s)+'</th>').join('')+'<th>Total</th><th>Mix %</th><th>RN %LY</th></tr></thead>'+
+    '<div style="overflow-x:auto"><table class="srt"><thead><tr><th>Room type</th>'+
+      segs.map(s=>'<th>'+escH(s)+'</th>').join('')+'<th>Total</th><th>'+mixHead+'</th><th>'+lyHead+'</th></tr></thead>'+
       '<tbody>'+body+totRow+'</tbody></table></div>'+
-    '<div class="small" style="margin-top:6px">The segmentation above says how many nights a segment bought; this says <b>what it slept in</b>. Columns run largest first for this period. <b>Mix %</b> and <b>RN %LY</b> always read room nights whichever metric button is on, so the shape of the business stays comparable when you switch to revenue or ARR.'+
-    (other?'<br><b>&ldquo;Other&rdquo;</b> is the export\'s own bucket for nights whose market code came through blank — not a commercial segment, and at '+pct(other.rn/totRN)+' of nights too big to ignore: worth asking Reservations to code those.':'')+
+    '<div class="small" style="margin-top:6px">The segmentation above says how many nights a segment bought; this says <b>what it slept in</b>. Columns run largest first for this period — <b>click any header to sort</b> — and the last two columns follow the metric button: on <b>Room nights</b> and <b>Revenue</b> they are that metric’s share of the house and its change on last year. <b>ARR has no share</b> — a rate is a ratio, so a column of ARR shares would not sum to 100 and a big cheap room type would read as small; the slot instead shows how each room type prices <b>against the house average</b>, 0% being exactly on it.'+
+    (other?'<br><b>&ldquo;Other&rdquo;</b> is the export\'s own bucket for nights whose market code came through blank — not a commercial segment, and at '+pct(other.rn/(tot.rn||1))+' of nights too big to ignore: worth asking Reservations to code those.':'')+
     (cov.gap.length?'<br><b>'+cov.gap.length+' month(s) of this period are not in the extract</b> ('+cov.gap.map(fmtMonthKey).join(', ')+') — the figures above cover '+cov.have.map(fmtMonthKey).join(', ')+' only.':'')+
     '<br>Source: <b>13. Room by segment.xlsx</b>, '+cov.range+'.</div></div>';
 }
-/* ---- Key accounts: who the revenue actually comes from ---- */
-function keyAcctPanel(){
-  const ka=state.store.rev?.kaMonthly; if(!ka) return '';
-  const sp=segSpan(); if(!sp.cur.length) return '';
+/* ---- Key accounts: who the revenue actually comes from ----
+   Split in three so a search can redraw ONLY the table: re-rendering the whole tab on every
+   keystroke would rebuild its charts and, worse, replace the search box itself and drop the
+   cursor out of it mid-word. kaModel() does the arithmetic once, keyAcctTable() draws rows
+   from it, keyAcctPanel() is the shell around them. */
+function kaModel(){
+  const ka=state.store.rev?.kaMonthly; if(!ka) return null;
+  const sp=segSpan(); if(!sp.cur.length) return null;
   const cov=segCover(ka,sp,'12. Key account.xlsx');
-  if(!cov.have.length) return '<div class="panel"><h3>Key accounts — '+sp.label+'</h3>'+cov.miss+'</div>';
-  /* the segment filter travels as an INDEX, never as the name — segment names carry
-     slashes, brackets and apostrophes ("Business/MICE Group", "Public Indirect (OTA)")
-     and one of those in an inline onclick string is a broken handler waiting to happen */
+  /* the segment filter travels as an INDEX, never as the name — "Business/MICE Group" and
+     "Public Indirect (OTA)" carry slashes and brackets, and one apostrophe in an inline
+     onclick would be a broken handler waiting to happen */
   const allSegs=[...new Set(ka.rows.map(r=>r.seg))].sort();
   const si=Number.isInteger(state.kaSeg)&&state.kaSeg>=0&&state.kaSeg<allSegs.length?state.kaSeg:-1;
   const segSel=si<0?null:allSegs[si];
@@ -4711,39 +4739,73 @@ function keyAcctPanel(){
   const topSegOf=a=>{ const m=mainSeg.get(a)||{};
     const e=Object.entries(m).sort((x,y)=>y[1]-x[1])[0]; return e?e[0]:''; };
   const ranked=[...cur.entries()].sort((a,b)=>b[1].rev-a[1].rev);
+  /* rank is fixed by revenue across ALL accounts, so a searched-for account keeps its true
+     position: "Siemens is #2" stays #2 whether or not anything else is on screen */
+  const rankOf=new Map(ranked.map((e,i)=>[e[0],i+1]));
   const tot=segSum([...cur.values()]), totLy=segSum([...ly.values()]);
-  const totRev=tot.rev||1;
+  return {ka,sp,cov,allSegs,si,segSel,cur,ly,topSegOf,typeOf,ranked,rankOf,tot,totLy};
+}
+function keyAcctTable(M){
+  const totRev=M.tot.rev||1;
+  const q=String(state.kaQ||'').trim().toLowerCase();
   const N=[10,20,50].includes(state.kaN)?state.kaN:20;
-  const shown=ranked.slice(0,N), rest=segSum(ranked.slice(N).map(e=>e[1]));
-  const body=shown.map((e,i)=>{ const a=e[0], o=e[1], l=ly.get(a);
-    return '<tr><td data-v="'+(i+1)+'">'+(i+1)+'</td><td class="wrap">'+escH(a)+'</td>'+
-      '<td class="wrap">'+escH(topSegOf(a))+'</td><td>'+escH(typeOf.get(a)||'')+'</td>'+
+  /* searching reaches every account in the period, not just the Top N on screen:
+     account name, main segment or type, case-insensitive */
+  const hit=e=>{ const a=e[0];
+    return a.toLowerCase().includes(q)||M.topSegOf(a).toLowerCase().includes(q)
+        ||(M.typeOf.get(a)||'').toLowerCase().includes(q); };
+  const list=q?M.ranked.filter(hit):M.ranked.slice(0,N);
+  const rest=q?null:segSum(M.ranked.slice(N).map(e=>e[1]));
+  const arrTd=o=>'<td data-v="'+(segArr(o)==null?'':segArr(o))+'">'+(segArr(o)==null?na():money(segArr(o)))+'</td>';
+  const body=list.map(e=>{ const a=e[0], o=e[1], l=M.ly.get(a), rk=M.rankOf.get(a);
+    return '<tr><td data-v="'+rk+'">'+rk+'</td><td class="wrap l">'+escH(a)+'</td>'+
+      '<td class="wrap l">'+escH(M.topSegOf(a))+'</td><td class="l">'+escH(M.typeOf.get(a)||'')+'</td>'+
       '<td data-v="'+o.rn+'">'+n1(o.rn,0)+'</td>'+
-      '<td data-v="'+o.rev+'">'+money(o.rev)+'</td>'+
-      '<td data-v="'+(segArr(o)??'')+'">'+(segArr(o)==null?na():money(segArr(o)))+'</td>'+
+      '<td data-v="'+o.rev+'">'+money(o.rev)+'</td>'+arrTd(o)+
       '<td data-v="'+(o.rev/totRev)+'">'+pct(o.rev/totRev)+'</td>'+
       varTd(o.rev,l?l.rev:null)+'</tr>'; }).join('');
-  const tailRow=(rest.rn||rest.rev)
-    ? '<tr><td></td><td class="wrap" style="color:var(--grey)">All other accounts ('+(ranked.length-N)+')</td><td></td><td></td>'+
-      '<td>'+n1(rest.rn,0)+'</td><td>'+money(rest.rev)+'</td><td>'+(segArr(rest)==null?na():money(segArr(rest)))+'</td>'+
+  /* the tail row is PINNED (class pin) so a header-click sort cannot shuffle it into the
+     ranking: it is a remainder, not an account */
+  const tailRow=(rest&&(rest.rn||rest.rev))
+    ? '<tr class="pin"><td></td><td class="wrap l" style="color:var(--grey)">All other accounts ('+(M.ranked.length-N)+')</td><td></td><td></td>'+
+      '<td data-v="'+rest.rn+'">'+n1(rest.rn,0)+'</td><td>'+money(rest.rev)+'</td>'+arrTd(rest)+
       '<td>'+pct(rest.rev/totRev)+'</td><td></td></tr>' : '';
-  const totRow='<tr class="tot"><td></td><td><b>'+escH(segSel||'All segments')+'</b></td><td></td><td></td>'+
-    '<td><b>'+n1(tot.rn,0)+'</b></td><td><b>'+money(tot.rev)+'</b></td>'+
-    '<td><b>'+(segArr(tot)==null?na():money(segArr(tot)))+'</b></td><td>100%</td>'+varTd(tot.rev,totLy.rev)+'</tr>';
-  const segBtns=['<button class="heatbtn '+(si<0?'on':'')+'" onclick="__setKaSeg(-1)">All segments</button>']
-    .concat(allSegs.map((s,i)=>'<button class="heatbtn '+(si===i?'on':'')+'" onclick="__setKaSeg('+i+')">'+escH(s)+'</button>')).join(' ');
+  /* while searching, the total is the total of what MATCHED, with its share of the whole */
+  const shown=q?segSum(list.map(e=>e[1])):M.tot;
+  const shownLy=q?segSum(list.map(e=>M.ly.get(e[0])).filter(Boolean)):M.totLy;
+  const totLabel=q?('Matching accounts ('+list.length+')'):escH(M.segSel||'All segments');
+  const totRow='<tr class="tot"><td></td><td class="l"><b>'+totLabel+'</b></td><td></td><td></td>'+
+    '<td><b>'+n1(shown.rn,0)+'</b></td><td><b>'+money(shown.rev)+'</b></td>'+
+    '<td><b>'+(segArr(shown)==null?na():money(segArr(shown)))+'</b></td>'+
+    '<td>'+(q?pct(shown.rev/totRev):'100%')+'</td>'+varTd(shown.rev,shownLy.rev)+'</tr>';
+  const empty=(q&&!list.length)
+    ? '<tr><td colspan="9" class="l" style="padding:14px;color:var(--grey)">No account matches &ldquo;'+escH(state.kaQ)+'&rdquo; in '+escH(M.segSel||'any segment')+' for '+M.sp.label+'.</td></tr>' : '';
+  const note=q?'<div class="small" style="margin:4px 0 6px;color:var(--grey)">'+list.length+' of '+M.ranked.length+
+    ' accounts match &ldquo;'+escH(state.kaQ)+'&rdquo;. Searching covers every account in the period, not only the Top '+N+'; clear the box to go back to the ranking.</div>':'';
+  return note+'<div style="overflow-x:auto"><table class="srt"><thead><tr><th>#</th><th class="l">Account</th><th class="l">Main segment</th><th class="l">Type</th>'+
+    '<th>RN</th><th>Room revenue</th><th>ARR</th><th>Share</th><th>Rev %LY</th></tr></thead>'+
+    '<tbody>'+(empty||body)+tailRow+(empty?'':totRow)+'</tbody></table></div>';
+}
+window.__kaSearch=v=>{ state.kaQ=v; const M=kaModel(), box=document.getElementById('kaTbl');
+  if(M&&box) box.innerHTML=keyAcctTable(M); };
+function keyAcctPanel(){
+  const M=kaModel(); if(!M) return '';
+  if(!M.cov.have.length) return '<div class="panel"><h3>Key accounts — '+M.sp.label+'</h3>'+M.cov.miss+'</div>';
+  const N=[10,20,50].includes(state.kaN)?state.kaN:20;
+  const segBtns=['<button class="heatbtn '+(M.si<0?'on':'')+'" onclick="__setKaSeg(-1)">All segments</button>']
+    .concat(M.allSegs.map((s,i)=>'<button class="heatbtn '+(M.si===i?'on':'')+'" onclick="__setKaSeg('+i+')">'+escH(s)+'</button>')).join(' ');
   const nBtns=[10,20,50].map(k=>'<button class="heatbtn '+(N===k?'on':'')+'" onclick="__setKaN('+k+')">Top '+k+'</button>').join(' ');
-  const conc=shown.slice(0,10).reduce((a,e)=>a+e[1].rev,0)/totRev;
-  return '<div class="panel"><h3 class="h3ctl"><span class="ttl">Key accounts — '+sp.label+'</span>'+
-    '<span class="noprint fcctl">'+nBtns+'</span></h3>'+
+  const search='<input class="kaq noprint" type="search" placeholder="Search all accounts…" value="'+escA(state.kaQ||'')+'" oninput="__kaSearch(this.value)">';
+  const conc=M.ranked.slice(0,10).reduce((a,e)=>a+e[1].rev,0)/(M.tot.rev||1);
+  const scope=M.segSel?escH(M.segSel):'all';
+  return '<div class="panel"><h3 class="h3ctl"><span class="ttl">Key accounts — '+M.sp.label+'</span>'+
+    '<span class="noprint fcctl">'+search+'<span class="sep"></span>'+nBtns+'</span></h3>'+
     '<div class="small noprint" style="margin:-2px 0 8px">'+segBtns+'</div>'+
-    '<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Account</th><th>Main segment</th><th>Type</th>'+
-      '<th>RN</th><th>Room revenue</th><th>ARR</th><th>Share</th><th>Rev %LY</th></tr></thead>'+
-      '<tbody>'+body+tailRow+totRow+'</tbody></table></div>'+
-    '<div class="small" style="margin-top:6px">Ranked by <b>room revenue</b>, not nights — the account that fills the most rooms is rarely the one that pays most for them, and the ARR column is where that shows. <b>Main segment</b> is where the account spent most this period (several book across more than one). <b>Share</b> is of the '+(segSel?escH(segSel):'whole')+' account revenue here; <b>Rev %LY</b> is the same account over the same span a year earlier, and <b>new</b> means it produced nothing then.'+
-    '<br>The top 10 carry <b>'+pct(conc)+'</b> of '+(segSel?escH(segSel):'all')+' account revenue'+(conc>0.5?' — concentrated enough that losing one is a budget event, not a variance':'')+'.'+
-    (cov.gap.length?'<br><b>'+cov.gap.length+' month(s) of this period are not in the extract</b> ('+cov.gap.map(fmtMonthKey).join(', ')+').':'')+
-    '<br>Source: <b>12. Key account.xlsx</b>, '+cov.range+'.</div></div>';
+    '<div id="kaTbl">'+keyAcctTable(M)+'</div>'+
+    '<div class="small" style="margin-top:6px">Ranked by <b>room revenue</b>, not nights: the account that fills the most rooms is rarely the one that pays most for them, and the ARR column is where that shows. <b>#</b> is that revenue rank across every account, and it stays put when you search or re-sort. <b>Click any column header to sort</b>; click again to reverse. <b>Main segment</b> is where the account spent most this period (several book across more than one). <b>Share</b> is of the '+(M.segSel?escH(M.segSel):'whole')+' account revenue here; <b>Rev %LY</b> is the same account over the same span a year earlier, and <b>new</b> means it produced nothing then.'+
+    '<br>The top 10 carry <b>'+pct(conc)+'</b> of '+scope+' account revenue'+(conc>0.5?', concentrated enough that losing one is a budget event, not a variance':'')+'.'+
+    (M.cov.gap.length?'<br><b>'+M.cov.gap.length+' month(s) of this period are not in the extract</b> ('+M.cov.gap.map(fmtMonthKey).join(', ')+').':'')+
+    '<br>Source: <b>12. Key account.xlsx</b>, '+M.cov.range+'.</div></div>';
 }
 window.__setKaN=v=>{ state.kaN=+v; renderSeg(derive()); };
 function renderSeg(d){
@@ -8737,8 +8799,11 @@ document.addEventListener('click',e=>{
   tbl.querySelectorAll('th').forEach(x=>x.classList.remove('sa','sd'));
   th.classList.add(dir==='asc'?'sa':'sd');
   const all=[...tb.rows];
-  const tots=all.filter(r=>r.classList.contains('tot'));
-  const data=all.filter(r=>!r.classList.contains('tot'));
+  /* rows that are not data — totals (.tot) and remainders like "All other accounts" (.pin) —
+     stay at the bottom in their original order, whatever column is sorted */
+  const pinned=r=>r.classList.contains('tot')||r.classList.contains('pin');
+  const tots=all.filter(pinned);
+  const data=all.filter(r=>!pinned(r));
   data.sort((a,b)=>{
     const va=a.cells[ci]?parseCellVal(a.cells[ci]):null, vb=b.cells[ci]?parseCellVal(b.cells[ci]):null;
     if(va==null&&vb==null) return 0; if(va==null) return 1; if(vb==null) return -1;
