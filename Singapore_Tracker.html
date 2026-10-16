@@ -232,6 +232,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     <div style="font-size:11px;font-weight:700;color:var(--gold);margin-bottom:10px;letter-spacing:.4px">📱↔💻 CLOUD SYNC</div>
     <button class="btn btn-gold" style="width:100%;margin-bottom:8px;justify-content:center" onclick="cloudPush()">☁️ Push to Cloud</button>
     <button class="btn btn-outline" style="width:100%;margin-bottom:8px;justify-content:center" onclick="cloudPull()">🔄 Pull from Cloud</button>
+    <div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:4px">JSONBin master key (saved on this device only):</div>
+    <input id="jbin-key-input" type="password" placeholder="Paste master key…" autocomplete="off"
+      onchange="saveJbinKey(this.value)"
+      style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:white;padding:5px 8px;font-size:11px;margin-bottom:8px">
     <div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:4px">Bin ID (paste on other device to link):</div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
       <input id="bin-id-input" type="text" placeholder="Paste Bin ID here…" autocomplete="off"
@@ -1239,7 +1243,20 @@ function exportXLSX(filename, sheets) {
 }
 
 // ─── JSONBIN CLOUD SYNC ────────────────────────────────────────────────────────
-const JBIN_KEY = '$2a$10$5DwpaoPQIHCeHk8XXtJqTeeYsRfiwLxtrXWGpGlg1BkmVJANMaJ5u';
+// Master key is NOT kept in this file (it is published on GitHub Pages) — each device
+// enters it once in the Cloud Sync panel and it stays in this browser's localStorage only.
+function jbinKey() { return (localStorage.getItem('sg26_jbinKey') || '').trim(); }
+function saveJbinKey(val) {
+  const v = val.trim();
+  if (v) localStorage.setItem('sg26_jbinKey', v);
+  else localStorage.removeItem('sg26_jbinKey');
+  setSyncStatus(v ? '✓ Key saved on this device' : '⚠ Key removed from this device');
+}
+function noJbinKey() {
+  if (jbinKey()) return false;
+  setSyncStatus('⚠ Enter your JSONBin master key above first');
+  return true;
+}
 const JBIN_BASE = 'https://api.jsonbin.io/v3';
 
 function syncPayload() {
@@ -1263,11 +1280,12 @@ function applyPayload(d) {
 
 // Find or remember the shared bin ID — auto-discovers by listing bins named SG_Tracker
 async function getBinId() {
+  if (!jbinKey()) return null;
   const stored = localStorage.getItem('sg26_binId');
   if (stored) return stored;
   // Auto-discover: list all bins and find the one named SG_Tracker
   try {
-    const res = await fetch(`${JBIN_BASE}/b`, { headers: { 'X-Master-Key': JBIN_KEY } });
+    const res = await fetch(`${JBIN_BASE}/b`, { headers: { 'X-Master-Key': jbinKey() } });
     if (res.ok) {
       const j = await res.json();
       const bins = Array.isArray(j) ? j : (j.result || []);
@@ -1285,9 +1303,10 @@ async function getBinId() {
 }
 
 async function cloudPush() {
+  if (noJbinKey()) return;
   setSyncStatus('⏳ Pushing to cloud…');
   const body = JSON.stringify(syncPayload());
-  const headers = { 'Content-Type': 'application/json', 'X-Master-Key': JBIN_KEY };
+  const headers = { 'Content-Type': 'application/json', 'X-Master-Key': jbinKey() };
   try {
     let binId = await getBinId();
     let res;
@@ -1316,12 +1335,13 @@ async function cloudPush() {
 }
 
 async function cloudPull() {
+  if (noJbinKey()) return;
   setSyncStatus('⏳ Pulling from cloud…');
   try {
     let binId = await getBinId();
     if (!binId) { setSyncStatus('⚠ No cloud bin found — push from either device first'); return; }
     const res = await fetch(`${JBIN_BASE}/b/${binId}/latest`, {
-      headers: { 'X-Master-Key': JBIN_KEY }
+      headers: { 'X-Master-Key': jbinKey() }
     });
     if (!res.ok) { setSyncStatus('⚠ Pull failed (' + res.status + ')'); return; }
     const j = await res.json();
@@ -1340,6 +1360,8 @@ function toggleSyncPanel() {
   const open = panel.style.display === 'none';
   panel.style.display = open ? 'block' : 'none';
   if (open) {
+    const ki = document.getElementById('jbin-key-input');
+    if (ki) ki.value = jbinKey();
     const stored = localStorage.getItem('sg26_binId') || '';
     const inp = document.getElementById('bin-id-input');
     if (inp) inp.value = stored;

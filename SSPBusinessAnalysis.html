@@ -8219,12 +8219,44 @@ function renderDQ(d){
    Profiles live in store.users = { email: {name, position, role} } and sync to every
    reviewer through the shared cloud store like all other data.
    Roles: admin (manage users) · edit (load files, FX, notes, publish) · view (read-only).
-   NOTE: this is workflow-level control inside the app; hard enforcement of who can
-   write the shared cloud row lives in Supabase RLS policies. */
-function myProfile(){ return sbUser? (state.store.users?.[(sbUser.email||'').toLowerCase()]||null) : null; }
+   SERVER-SIDE ROLES (supabase-security.sql, 2026-10-16): once that SQL is run the list
+   lives in table dashboard_users and the DATABASE enforces it — a reviewer who copies the
+   key from F12 still cannot write, promote themselves or read while signed out.
+   dashUsers is that table (null = not installed yet → fall back to store.users so the app
+   keeps working until the SQL has been run). cloudPublic mirrors dashboard_config
+   (null = not installed → fall back to store.publicView). */
+let dashUsers=null, cloudPublic=null;
+const isNoTable=e=>/42P01|PGRST205|PGRST106|does not exist|schema cache|Could not find the table/i.test(
+  (e?.message||'')+' '+(e?.code||''));
+async function loadDashUsers(){
+  dashUsers=null;
+  if(!sb||!sbUser) return;
+  const {data,error}=await sb.from('dashboard_users').select('email,name,position,role');
+  if(error){ if(!isNoTable(error)) console.warn('dashboard_users',error); return; }
+  dashUsers=Object.fromEntries((data||[]).map(u=>[u.email,{name:u.name,position:u.position,role:u.role}]));
+}
+async function loadPublicFlag(){
+  cloudPublic=null;
+  if(!sb) return;
+  const {data,error}=await sb.from('dashboard_config').select('public_view').eq('id',1).maybeSingle();
+  if(!error&&data) cloudPublic=!!data.public_view;
+}
+const isPublicView=()=>cloudPublic!==null? cloudPublic : state.store.publicView===true;
+/* Signed in, rules installed, but not on the list → the database will refuse everything
+   anyway; say so plainly instead of showing an empty dashboard. */
+async function denyUnlisted(){
+  if(!dashUsers||dashUsers[(sbUser?.email||'').toLowerCase()]) return false;
+  const em=sbUser?.email||'';
+  try{ await sb.auth.signOut(); }catch(e){}
+  sbUser=null; dashUsers=null; cloudUi(); __loginOpen();
+  $('#loginErr').textContent=em+' is not on this dashboard\'s user list — ask the admin to add you.';
+  return true;
+}
+function myProfile(){ return sbUser? ((dashUsers||state.store.users||{})[(sbUser.email||'').toLowerCase()]||null) : null; }
 function myRole(){
   if(state.viewOnly) return 'view';                // anonymous cloud viewer — read-only
   if(!sbUser) return 'edit';                        // offline/local file: full local control
+  if(dashUsers) return myProfile()?.role||'view';   // database list — no bootstrap-to-admin
   const users=state.store.users||{};
   if(!Object.keys(users).length) return 'admin';   // bootstrap: first signed-in user sets up the list
   return myProfile()?.role||'view';                // signed in but not listed → view only
@@ -8234,13 +8266,28 @@ function myRole(){
    Executive summary lives in the System group too, but its gate is role-based rather
    than sign-in-based: any signed-in/offline viewer with role 'view' is excluded, while
    'edit'/'admin' (and offline, which is always 'edit') can see it. */
+function setWatermark(text){
+  let wm=document.getElementById('wm');
+  if(!text){ if(wm) wm.remove(); return; }
+  if(!wm){ wm=document.createElement('div'); wm.id='wm'; document.body.appendChild(wm); }
+  if(wm.dataset.t===text) return;
+  wm.dataset.t=text;
+  const esc=text.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="360" height="200"><text x="20" y="120" transform="rotate(-24 180 100)" font-family="Segoe UI,Arial" font-size="14" fill="#64748b" fill-opacity="0.13">${esc}</text></svg>`;
+  wm.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:9999;background-image:url("data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)+'")';
+}
 function applyTabVisibility(){
   const sysTabs=['dq','users','settings'];
   const cloudOn=!!(CLOUD.url&&CLOUD.anonKey);
-  const show=!cloudOn||!!sbUser;             // local tool (no cloud) always shows them; cloud → account holders only
+  const editorOnly=myRole()!=='view';
+  const show=!cloudOn||(!!sbUser&&editorOnly);  // local tool always; cloud → edit/admin accounts only
   sysTabs.forEach(t=>{ const b=$$('#tabs button').find(x=>x.dataset.tab===t); if(b) b.style.display=show?'':'none'; });
 
-  const editorOnly=myRole()!=='view';
+  /* Read-only cloud viewers (role view, or public link): no Excel export / board-pack print,
+     and a faint watermark naming who is looking, so a screenshot that travels says whose it was. */
+  const ro=cloudOn&&!editorOnly;
+  ['btnXlsx','btnPrint'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display=ro?'none':''; });
+  setWatermark(ro? (sbUser?.email||'Public view')+' · '+new Date().toLocaleDateString('en-GB') : '');
   const execBtn=$$('#tabs button').find(x=>x.dataset.tab==='exec');
   if(execBtn) execBtn.style.display=editorOnly?'':'none';
 
@@ -8256,8 +8303,19 @@ function applyTabVisibility(){
   if(active&&((!show&&sysTabs.includes(active.dataset.tab))||(!editorOnly&&active.dataset.tab==='exec')||(!revAVisible()&&active.dataset.tab==='reva')))
     $$('#tabs button').find(b=>b.dataset.tab==='conso')?.click();
 }
+/* Database-mode user edits: the table is the truth, so write → re-read → re-render.
+   The database itself refuses non-admins and refuses removing the last admin. */
+async function dashUsersWrite(q,okMsg){
+  const {error}=await q;
+  if(error){ toast('⚠ '+(error.message||error),true); }
+  else if(okMsg) toast(okMsg);
+  await loadDashUsers(); renderUsers(); cloudUi();
+  return !error;
+}
 window.__userSet=(email,field,val)=>{
   if(myRole()!=='admin'){ toast('Only an admin can change user profiles',true); return; }
+  if(dashUsers) return dashUsersWrite(sb.from('dashboard_users')
+    .update({[field]:val,updated_at:new Date().toISOString()}).eq('email',email),'✔ '+email+' updated');
   state.store.users=state.store.users||{};
   state.store.users[email]=state.store.users[email]||{};
   state.store.users[email][field]=val;
@@ -8268,6 +8326,12 @@ window.__userAdd=()=>{
   if(myRole()!=='admin'){ toast('Only an admin can add users',true); return; }
   const em=($('#nuEmail').value||'').trim().toLowerCase();
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ toast('Enter a valid email',true); return; }
+  if(dashUsers){
+    if(dashUsers[em]){ toast('User already listed',true); return; }
+    return dashUsersWrite(sb.from('dashboard_users').insert({email:em,name:($('#nuName').value||'').trim(),
+      position:($('#nuPos').value||'').trim(),role:$('#nuRole').value}),
+      '✔ '+em+' added — create the matching account in Supabase → Authentication so they can sign in');
+  }
   state.store.users=state.store.users||{};
   if(state.store.users[em]){ toast('User already listed',true); return; }
   state.store.users[em]={name:($('#nuName').value||'').trim(),position:($('#nuPos').value||'').trim(),role:$('#nuRole').value};
@@ -8277,12 +8341,24 @@ window.__userAdd=()=>{
 window.__userDel=email=>{
   if(myRole()!=='admin'){ toast('Only an admin can remove users',true); return; }
   if(!confirm('Remove '+email+' from the user list?')) return;
+  if(dashUsers) return dashUsersWrite(sb.from('dashboard_users').delete().eq('email',email),'✔ '+email+' removed');
   delete state.store.users[email]; saveStore(); schedulePublish(); renderUsers();
+};
+/* One-off move of the old in-app list (inside the published store) into the database table. */
+const legacyUsersToImport=()=>dashUsers? Object.entries(state.store.users||{}).filter(([em])=>!dashUsers[em]) : [];
+window.__userImport=()=>{
+  if(myRole()!=='admin'||!dashUsers) return;
+  const rows=legacyUsersToImport().map(([em,u])=>({email:em,name:u.name||null,position:u.position||null,
+    role:['admin','edit','view'].includes(u.role)?u.role:'view'}));
+  if(!rows.length){ toast('Nothing to import'); return; }
+  return dashUsersWrite(sb.from('dashboard_users').upsert(rows,{onConflict:'email',ignoreDuplicates:true}),
+    '✔ Imported '+rows.length+' user(s) — check their roles below');
 };
 function renderUsers(){
   const el=$('#tab-users'); if(!el) return;
-  const users=state.store.users||{};
+  const users=dashUsers||state.store.users||{};
   const admin=myRole()==='admin';
+  const toImport=admin? legacyUsersToImport() : [];
   const esc=s=>(s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   const rows=Object.entries(users).map(([em,u])=>`<tr class="${sbUser&&em===(sbUser.email||'').toLowerCase()?'tot':''}">
     <td style="text-align:left">${em}</td>
@@ -8291,9 +8367,12 @@ function renderUsers(){
     <td><select ${admin?'':'disabled'} onchange="__userSet('${em}','role',this.value)">
       ${['admin','edit','view'].map(r=>`<option value="${r}" ${(u.role||'view')===r?'selected':''}>${r}</option>`).join('')}</select></td>
     <td>${admin?`<button onclick="__userDel('${em}')" style="color:var(--red)" title="Remove">✕</button>`:''}</td></tr>`).join('');
-  const pub=state.store.publicView===true;
+  const pub=isPublicView();
+  const enforced=sbUser? (dashUsers
+    ? '<span class="tag g">🔒 Enforced by the database</span>'
+    : '<span class="tag r">⚠ Database rules not installed — run supabase-security.sql</span>') : '';
   el.innerHTML=`
-    <div class="panel"><h3>Access policy — live link</h3>
+    <div class="panel"><h3>Access policy — live link ${enforced}</h3>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:8px;cursor:${admin?'pointer':'default'}">
           <input type="checkbox" ${pub?'checked':''} ${admin?'':'disabled'} onchange="__setPublicView(this.checked)" style="width:16px;height:16px">
@@ -8301,7 +8380,7 @@ function renderUsers(){
         <span class="tag ${pub?'g':'r'}">${pub?'PUBLIC VIEW ON':'SIGN-IN REQUIRED'}</span>
       </div>
       <div class="small" style="margin-top:8px">When <b>on</b>, anyone opening the live link can choose “Continue without signing in” and see the published dashboard <b>read-only</b> — the System tabs (Data Quality, User Management, Settings) stay hidden and nothing can be edited. When <b>off</b>, the landing page requires an account. ${admin?'':'<i>Only an admin can change this.</i>'}
-      <br><b>Note:</b> this also needs a Supabase RLS policy allowing anonymous <code>select</code> on the store row for the read to succeed — see SUPABASE-SETUP.md. Without it, “Continue without signing in” will report it cannot load the data.</div></div>
+      <br>With the database rules installed (supabase-security.sql) the switch is enforced by Supabase itself: while it is <b>off</b>, the published data cannot be read without an account even by someone who copies the address and key from the page. Read-only viewers also lose Export Excel / Print and see a faint watermark with their email.</div></div>
     <div class="panel"><h3>Users & permissions ${sbUser?'':'<span class="tag a">offline — sign in to manage the shared list</span>'}</h3>
       <table><thead><tr><th>Email (Supabase account)</th><th>Display name</th><th>Position</th><th>Permission</th><th></th></tr></thead>
       <tbody>${rows||'<tr><td colspan="5" class="small">No users listed yet — the first signed-in user acts as admin: add yourself first (role admin), then your reviewers.</td></tr>'}</tbody></table>
@@ -8310,9 +8389,10 @@ function renderUsers(){
         <input id="nuName" type="text" placeholder="Display name" style="width:160px;padding:4px 6px">
         <input id="nuPos" type="text" placeholder="Position" style="width:160px;padding:4px 6px">
         <select id="nuRole"><option value="view">view</option><option value="edit">edit</option><option value="admin">admin</option></select>
-        <button onclick="__userAdd()" class="on">+ Add user</button></div>`
+        <button onclick="__userAdd()" class="on">+ Add user</button>
+        ${toImport.length?`<button onclick="__userImport()" style="margin-left:8px">⇪ Import ${toImport.length} user(s) from old list</button>`:''}</div>`
       :`<div class="small" style="margin-top:8px">Your permission: <b>${myRole()}</b> — only an admin can edit this list.</div>`}
-      <div class="small" style="margin-top:8px">Roles — <b>admin</b>: manage users + everything below · <b>edit</b>: load files, edit FX rates & notes, publish · <b>view</b>: read-only (uploads, FX edits, clear/restore and publishing are disabled). Display name & position show in the sidebar. Profiles sync to all reviewers via Publish. Sign-in accounts themselves are created in Supabase → Authentication → Users; in-app roles control what each account may do here (server-side enforcement = Supabase RLS policies).</div></div>`;
+      <div class="small" style="margin-top:8px">Roles — <b>admin</b>: manage users + everything below · <b>edit</b>: load files, edit FX rates & notes, publish · <b>view</b>: read-only (uploads, FX edits, clear/restore and publishing are disabled). Display name & position show in the sidebar. Sign-in accounts themselves are created in Supabase → Authentication → Users; ${dashUsers?'this list is stored in the database (table dashboard_users) and Supabase enforces it — an account that is not listed here cannot read anything.':'this list travels inside the published data and is only checked by the app until supabase-security.sql is run.'}</div></div>`;
 }
 
 /* ---------------- SETTINGS & DATA ---------------- */
@@ -8858,7 +8938,7 @@ function cloudUi(){
 }
 window.__loginOpen=()=>{ $('#loginErr').textContent=''; $('#loginModal').classList.add('open'); $('#loginEmail').focus(); };
 window.__loginClose=()=>$('#loginModal').classList.remove('open');
-window.__signOut=async()=>{ try{ await sb.auth.signOut(); }catch(e){} sbUser=null; state.viewOnly=false;
+window.__signOut=async()=>{ try{ await sb.auth.signOut(); }catch(e){} sbUser=null; dashUsers=null; state.viewOnly=false;
   cloudUi(); toast('Signed out'); if(sb) __loginOpen(); };
 /* Continue-as-viewer: pull the published data read-only if the admin has enabled public viewing. */
 window.__loginGuest=async()=>{
@@ -8866,8 +8946,15 @@ window.__loginGuest=async()=>{
   if(!sb){ state.viewOnly=true; __loginClose(); cloudUi(); toast('Viewing locally (read-only)'); return; }
   const btn=$('#loginGuest'); const orig=btn.textContent; btn.textContent='Loading…'; btn.disabled=true;
   try{
+    /* Ask the database first. With the rules installed, an anonymous read while the switch is
+       off returns nothing anyway — this just avoids a pointless multi-MB attempt. */
+    await loadPublicFlag();
+    if(cloudPublic===false){
+      $('#loginErr').textContent='Viewing without an account is turned off by the administrator. Please sign in.';
+      btn.textContent=orig; btn.disabled=false; return;
+    }
     await cloudPull(false);
-    if(state.store.publicView===true){
+    if(isPublicView()){
       state.viewOnly=true; __loginClose(); try{ cloudSubscribe(); }catch(e){} cloudUi();
       toast('Viewing the published dashboard (read-only)');
     } else {
@@ -8887,6 +8974,17 @@ window.__loginGuest=async()=>{
    was blocked at the login modal with exactly that message. */
 window.__setPublicView=async on=>{
   if(myRole()!=='admin'){ toast('Only an admin can change this',true); return; }
+  if(sbUser&&cloudPublic!==null){
+    /* database switch (dashboard_config) — takes effect for everyone at once, no publish needed */
+    const {error}=await sb.from('dashboard_config')
+      .update({public_view:!!on,updated_by:sbUser.email,updated_at:new Date().toISOString()}).eq('id',1);
+    if(!error) cloudPublic=!!on;
+    renderUsers();
+    toast(!error
+      ? (on?'✔ Public viewing ENABLED — anyone with the link can view read-only':'✔ Public viewing DISABLED — the database now refuses anyone not signed in')
+      : '⚠ Could not change the setting: '+error.message, !!error);
+    return;
+  }
   state.store.publicView=!!on; saveStore(); renderUsers();
   if(!sbUser){ toast(on?'✔ Public viewing ENABLED locally — sign in and this will publish automatically':'✔ Public viewing DISABLED locally'); return; }
   const err=await cloudPublish(true);
@@ -8915,7 +9013,9 @@ async function cloudInit(){
     await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js');
     sb=window.supabase.createClient(CLOUD.url,CLOUD.anonKey);
     const {data:{session}}=await sb.auth.getSession();
-    if(session){ sbUser=session.user; await cloudPull(false); cloudSubscribe(); }
+    await loadPublicFlag();
+    if(session){ sbUser=session.user; await loadDashUsers();
+      if(!(await denyUnlisted())){ await cloudPull(false); cloudSubscribe(); } }
   }catch(e){ toast('Cloud init failed: '+e.message,true); }
   cloudUi();
   if(sb&&!sbUser) __loginOpen();          // portal-style: greet with the sign-in card
@@ -8926,7 +9026,10 @@ async function cloudSignInGo(){
     $('#loginErr').textContent='';
     const {data,error}=await sb.auth.signInWithPassword({email:$('#loginEmail').value.trim(),password:$('#loginPw').value});
     if(error) throw error;
-    sbUser=data.user; state.viewOnly=false; $('#loginPw').value=''; __loginClose();
+    sbUser=data.user; state.viewOnly=false; $('#loginPw').value='';
+    await loadDashUsers();
+    if(await denyUnlisted()) return;
+    __loginClose();
     toast('✔ Signed in as '+sbUser.email);
     await cloudPull(true); cloudSubscribe(); cloudUi();
   }catch(e){ $('#loginErr').textContent='Sign-in failed: '+e.message; }
@@ -9000,7 +9103,9 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
    while six decimals leaves every money figure and every ratio exact to far beyond anything
    the app displays or checks. The LOCAL store keeps full precision — only the copy that
    travels is rounded. */
-const publishJson=store=>JSON.stringify(store,(k,v)=>
+/* With the database rules installed, the user list and the public switch live in their own
+   tables — keep them out of the published copy so a public viewer never receives the emails. */
+const publishJson=store=>JSON.stringify(dashUsers?{...store,users:undefined,publicView:undefined}:store,(k,v)=>
   typeof v==='number'&&isFinite(v)&&v!==Math.round(v) ? Math.round(v*1e6)/1e6 : v);
 async function cloudPublish(quiet=false,opts={}){
   if(!sb) return 'cloud not initialised (no internet, or Supabase failed to load)';

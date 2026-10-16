@@ -88,12 +88,7 @@ alter table public.dashboard_store add column if not exists data_gz     text;
 alter table public.dashboard_store add column if not exists data_enc    text;
 alter table public.dashboard_store add column if not exists data_bytes  bigint;
 alter table public.dashboard_store add column if not exists data_chunks int;
-
-drop policy if exists "dashboard_store delete" on public.dashboard_store;
-create policy "dashboard_store delete"
-  on public.dashboard_store for delete
-  to authenticated
-  using (id <> 'ssp');          -- the main row can never be deleted from the app
+-- (the delete policy that used to sit here now lives in supabase-security.sql)
 
 do $$
 begin
@@ -176,34 +171,13 @@ notify pgrst, 'reload config';
 
 
 -- ---------------------------------------------------------------------
--- D.  ROW-LEVEL SECURITY — confirm, do not assume
---     Your policies were never the problem, but this makes the intended
---     state explicit: everyone may READ the single shared row, only a
---     signed-in user may WRITE it.
---     NOTE: policy names below are mine. If section 0 listed policies under
---     DIFFERENT names that do the same thing, drop those instead of adding
---     these, or you will end up with two permissive policies (harmless, but
---     confusing later).
+-- D.  ROW-LEVEL SECURITY — MOVED to supabase-security.sql (2026-10-16)
+--     The old policies here let anyone read the store and any signed-in
+--     account overwrite it. Run supabase-security.sql instead; it replaces
+--     every policy on this table with role-checked ones. Do NOT recreate
+--     the old "using (true)" policies.
 -- ---------------------------------------------------------------------
 alter table public.dashboard_store enable row level security;
-
-drop policy if exists "dashboard_store read"   on public.dashboard_store;
-create policy "dashboard_store read"
-  on public.dashboard_store for select
-  to anon, authenticated
-  using (true);
-
-drop policy if exists "dashboard_store insert" on public.dashboard_store;
-create policy "dashboard_store insert"
-  on public.dashboard_store for insert
-  to authenticated
-  with check (true);
-
-drop policy if exists "dashboard_store update" on public.dashboard_store;
-create policy "dashboard_store update"
-  on public.dashboard_store for update
-  to authenticated
-  using (true) with check (true);
 
 
 -- ---------------------------------------------------------------------
@@ -245,15 +219,8 @@ alter table public.dashboard_store add column if not exists data_chunks int;    
 
 -- The app splits a payload larger than ~3 MB of base64 across sibling rows
 -- ssp#0, ssp#1, ... and leaves only a pointer (data_chunks) in row 'ssp'.
--- The read/insert/update policies above are table-wide, so those rows need no
--- extra grants. This DELETE policy is only so a publish that needs FEWER parts
--- than the last one can tidy up the leftovers; without it they linger harmlessly
--- (the reader takes exactly data_chunks of them and ignores the rest).
-drop policy if exists "dashboard_store delete" on public.dashboard_store;
-create policy "dashboard_store delete"
-  on public.dashboard_store for delete
-  to authenticated
-  using (id <> 'ssp');          -- the main row can never be deleted from the app
+-- The policies in supabase-security.sql are table-wide, so those rows need no
+-- extra grants; its delete policy lets an editor tidy up leftover parts.
 
 do $$
 begin
